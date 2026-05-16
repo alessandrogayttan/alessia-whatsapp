@@ -1,4 +1,5 @@
 import datetime
+import pytz
 import requests
 import json
 import urllib.parse
@@ -37,7 +38,6 @@ def consultar_agenda(fecha: str, especialista: str):
     especialista_completo = especialista.lower()
     nombre_clave = None
     
-    # Buscar si alguna de nuestras palabras clave está dentro de lo que dijo la IA
     for nombre in DIRECTORIO_CALENDARIOS.keys():
         if nombre in especialista_completo:
             nombre_clave = nombre
@@ -138,17 +138,29 @@ def obtener_ruta_inpulso(ubicacion_paciente: str):
     
     return f"Entrega este enlace de Google Maps al paciente para que vea la distancia y la ruta hacia Inpulso 43: {link}"
 
-hoy = datetime.datetime.now()
-fecha_actual = hoy.strftime("%Y-%m-%d")
-dias_semana = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
-dia_actual = dias_semana[hoy.weekday()]
+# ==========================================
+# 3. MEMORIA DE CHATS POR PACIENTE
+# ==========================================
+memoria_pacientes = {}
 
-instrucciones = f"""
+def obtener_chat_paciente(numero_telefono):
+    if numero_telefono not in memoria_pacientes:
+        print(f"Creando nuevo cerebro para el paciente: {numero_telefono}")
+        
+        zona_mexico = pytz.timezone('America/Mexico_City')
+        hoy = datetime.datetime.now(zona_mexico)
+        fecha_base = hoy.strftime("%Y-%m-%d")
+        dias_semana = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+        dia_actual = dias_semana[hoy.weekday()]
+        
+        instrucciones = f"""
 Eres Alessia de Inpulso 43. Tu tono es empático y muy profesional (Español de México).
 El horario de atención es de 9:00 am a 8:00 pm.
+
 INFORMACIÓN CRÍTICA DEL SISTEMA:
-- Hoy es {dia_actual}, fecha: {fecha_actual}. Usa esto como referencia absoluta si el paciente dice "hoy", "mañana", "el próximo lunes", etc.
+- Hoy es {dia_actual}, la fecha base es {fecha_base}. (Se te informará la hora exacta en cada mensaje para saber si estás dentro del horario de servicio).
 - NUNCA le exijas al paciente un formato de fecha. Deja que hablen de forma natural. TÚ eres la Inteligencia Artificial, tú debes deducir y convertir la fecha a YYYY-MM-DD en tu mente antes de usar las herramientas.
+
 Pasos para agendar o asistir:
 1. Saluda y pide el nombre.
 2. Pregunta con quién buscan la cita o con quién la tienen agendada (Juan, Sara, Patricia, Iván, Nutrición, Mentoras o Talleres).
@@ -158,15 +170,6 @@ Pasos para agendar o asistir:
 6. Si el paciente quiere CONFIRMAR o saber cuándo es su cita, usa la herramienta 'buscar_cita_paciente' con su nombre.
 7. Si el paciente envía su ubicación, pregunta cómo llegar o pide la distancia, usa 'obtener_ruta_inpulso' pasándole su ubicación o coordenadas y entrégale el enlace.
 """
-
-# ==========================================
-# 3. MEMORIA DE CHATS POR PACIENTE
-# ==========================================
-memoria_pacientes = {}
-
-def obtener_chat_paciente(numero_telefono):
-    if numero_telefono not in memoria_pacientes:
-        print(f"Creando nuevo cerebro para el paciente: {numero_telefono}")
         memoria_pacientes[numero_telefono] = client.chats.create(
             model='gemini-2.5-flash',
             config=types.GenerateContentConfig(
@@ -213,7 +216,6 @@ def webhook():
             numero_paciente = mensaje_info['from']
             tipo_mensaje = mensaje_info.get('type')
             
-            # Detecta si es texto normal o una ubicación GPS compartida
             if tipo_mensaje == 'text':
                 texto_paciente = mensaje_info['text']['body']
             elif tipo_mensaje == 'location':
@@ -221,14 +223,19 @@ def webhook():
                 lng = mensaje_info['location']['longitude']
                 texto_paciente = f"Mi ubicación es {lat}, {lng}. ¿Cómo llego y a qué distancia estoy?"
             else:
-                return "OK", 200 # Ignora audios, stickers, imágenes, etc.
+                return "OK", 200 
             
             print(f"\n[WhatsApp] Paciente {numero_paciente} dice: {texto_paciente}")
             
             chat_alessia = obtener_chat_paciente(numero_paciente)
             
             print("Alessia está pensando...")
-            respuesta_ia = chat_alessia.send_message(texto_paciente)
+            
+            zona_mexico = pytz.timezone('America/Mexico_City')
+            hora_exacta = datetime.datetime.now(zona_mexico).strftime("%Y-%m-%d %H:%M")
+            mensaje_con_contexto = f"[Sistema: Mensaje recibido el {hora_exacta}] {texto_paciente}"
+            
+            respuesta_ia = chat_alessia.send_message(mensaje_con_contexto)
             
             enviar_mensaje_whatsapp(numero_paciente, respuesta_ia.text)
             print(f"[WhatsApp] Alessia respondió: {respuesta_ia.text}")

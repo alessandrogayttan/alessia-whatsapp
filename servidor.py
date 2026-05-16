@@ -70,6 +70,9 @@ def consultar_agenda(fecha: str, especialista: str):
     return f"El {fecha}, {nombre_clave} tiene OCUPADO: " + ", ".join(ocupados) + ". Sugiere al paciente horarios libres."
 
 def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especialista: str):
+    """
+    Agenda una cita. 'fecha_hora' debe ser YYYY-MM-DDTHH:MM:SS
+    """
     especialista_completo = especialista.lower()
     nombre_clave = None
     
@@ -81,17 +84,33 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
     if not nombre_clave:
         return f"No pude agendar porque no encontré al especialista: {especialista}."
 
-    id_elegido = DIRECTORIO_CALENDARIOS[nombre_clave]
-    creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-    service = build('calendar', 'v3', credentials=creds)
+    # --- BLINDAJE DE FECHA Y HORA ---
+    # Convertimos formatos como "2026-05-20 15:00" al estricto "2026-05-20T15:00:00"
+    fecha_hora = fecha_hora.replace(' ', 'T') 
+    if len(fecha_hora) == 16: 
+        fecha_hora += ":00"
 
-    event = {
-        'summary': f'Cita {servicio}: {nombre_paciente}',
-        'start': {'dateTime': fecha_hora, 'timeZone': 'America/Mexico_City'},
-        'end': {'dateTime': (datetime.datetime.fromisoformat(fecha_hora) + datetime.timedelta(hours=1)).isoformat(), 'timeZone': 'America/Mexico_City'},
-    }
-    service.events().insert(calendarId=id_elegido, body=event).execute()
-    return f"Cita agendada con éxito con {nombre_clave} para el {fecha_hora}."
+    try:
+        id_elegido = DIRECTORIO_CALENDARIOS[nombre_clave]
+        creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+        service = build('calendar', 'v3', credentials=creds)
+
+        # Calculamos exactamente 1 hora de duración para la cita
+        fecha_inicio = datetime.datetime.fromisoformat(fecha_hora)
+        fecha_fin = fecha_inicio + datetime.timedelta(hours=1)
+
+        event = {
+            'summary': f'Cita {servicio}: {nombre_paciente}',
+            'start': {'dateTime': fecha_inicio.isoformat(), 'timeZone': 'America/Mexico_City'},
+            'end': {'dateTime': fecha_fin.isoformat(), 'timeZone': 'America/Mexico_City'},
+        }
+        service.events().insert(calendarId=id_elegido, body=event).execute()
+        return f"Cita agendada con éxito con {nombre_clave} para el {fecha_hora}."
+    
+    except Exception as e:
+        # Si Google nos rechaza, se imprimirá la razón exacta en los Logs de Render
+        print(f"\n[ERROR DE CALENDARIO] No se pudo agendar: {e}\n")
+        return f"Error técnico al agendar: {str(e)}. Pide disculpas al usuario e indícale que intente más tarde."
 
 def buscar_cita_paciente(nombre_paciente: str, especialista: str):
     especialista_completo = especialista.lower()

@@ -34,6 +34,7 @@ DIRECTORIO_CALENDARIOS = {
     "talleres": "8b775cab7bdec4a09023eb859dff073d5b87a38c92d42a80220fd4feed90dada@group.calendar.google.com"
 }
 
+# --- HERRAMIENTAS DE CALENDARIO ---
 def consultar_agenda(fecha: str, especialista: str):
     especialista_completo = especialista.lower()
     nombre_clave = None
@@ -70,9 +71,6 @@ def consultar_agenda(fecha: str, especialista: str):
     return f"El {fecha}, {nombre_clave} tiene OCUPADO: " + ", ".join(ocupados) + ". Sugiere al paciente horarios libres."
 
 def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especialista: str):
-    """
-    Agenda una cita. 'fecha_hora' debe ser YYYY-MM-DDTHH:MM:SS
-    """
     especialista_completo = especialista.lower()
     nombre_clave = None
     
@@ -84,8 +82,6 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
     if not nombre_clave:
         return f"No pude agendar porque no encontré al especialista: {especialista}."
 
-    # --- BLINDAJE DE FECHA Y HORA ---
-    # Convertimos formatos como "2026-05-20 15:00" al estricto "2026-05-20T15:00:00"
     fecha_hora = fecha_hora.replace(' ', 'T') 
     if len(fecha_hora) == 16: 
         fecha_hora += ":00"
@@ -95,7 +91,6 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
         creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
         service = build('calendar', 'v3', credentials=creds)
 
-        # Calculamos exactamente 1 hora de duración para la cita
         fecha_inicio = datetime.datetime.fromisoformat(fecha_hora)
         fecha_fin = fecha_inicio + datetime.timedelta(hours=1)
 
@@ -108,7 +103,6 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
         return f"Cita agendada con éxito con {nombre_clave} para el {fecha_hora}."
     
     except Exception as e:
-        # Si Google nos rechaza, se imprimirá la razón exacta en los Logs de Render
         print(f"\n[ERROR DE CALENDARIO] No se pudo agendar: {e}\n")
         return f"Error técnico al agendar: {str(e)}. Pide disculpas al usuario e indícale que intente más tarde."
 
@@ -148,14 +142,19 @@ def buscar_cita_paciente(nombre_paciente: str, especialista: str):
     return f"Encontré estas citas para {nombre_paciente} con {nombre_clave}: " + ", ".join(citas_encontradas)
 
 def obtener_ruta_inpulso(ubicacion_paciente: str):
-    """Genera un link de Google Maps con la ruta hacia la clínica."""
     direccion_clinica = "Av. Hidalgo 533, República, 45146 Zapopan, Jal." 
-    
     origen = urllib.parse.quote(ubicacion_paciente)
     destino = urllib.parse.quote(direccion_clinica)
     link = f"https://www.google.com/maps/dir/?api=1&origin={origen}&destination={destino}"
-    
-    return f"Entrega este enlace de Google Maps al paciente para que vea la distancia y la ruta hacia Inpulso 43: {link}"
+    return f"Entrega este enlace de Google Maps al paciente para la ruta hacia Inpulso 43: {link}"
+
+# --- NUEVA HERRAMIENTA: CÁLCULO DE GASOLINA ---
+def calcular_gasto_combustible(vehiculo: str, kilometros: float, rendimiento_km_l: float):
+    precio_gasolina_mxn = 24.50 # Precio promedio aproximado actualizado
+    litros_necesitados = kilometros / rendimiento_km_l
+    costo_total = litros_necesitados * precio_gasolina_mxn
+    return f"Para el vehículo {vehiculo} recorriendo {kilometros}km con rendimiento de {rendimiento_km_l} km/l, se consumirán aprox {litros_necesitados:.2f} litros. El costo estimado es de ${costo_total:.2f} MXN (calculado a ${precio_gasolina_mxn} por litro)."
+
 
 # ==========================================
 # 3. MEMORIA DE CHATS POR PACIENTE
@@ -173,27 +172,33 @@ def obtener_chat_paciente(numero_telefono):
         dia_actual = dias_semana[hoy.weekday()]
         
         instrucciones = f"""
-Eres Alessia de Inpulso 43. Tu tono es empático y muy profesional (Español de México).
-El horario de atención es de 9:00 am a 8:00 pm.
+Eres Alessia de Inpulso 43. Hablas de forma neutral, directa y profesional. No uses lenguaje de libro, metáforas exageradas ni frases robóticas. Sé práctica.
 
 INFORMACIÓN CRÍTICA DEL SISTEMA:
-- Hoy es {dia_actual}, la fecha base es {fecha_base}. (Se te informará la hora exacta en cada mensaje para saber si estás dentro del horario de servicio).
-- NUNCA le exijas al paciente un formato de fecha. Deja que hablen de forma natural. TÚ eres la Inteligencia Artificial, tú debes deducir y convertir la fecha a YYYY-MM-DD en tu mente antes de usar las herramientas.
+- Hoy es {dia_actual}, la fecha base es {fecha_base}. (Se te informará la hora exacta en cada mensaje como referencia).
+- DISPONIBILIDAD 24/7: Atiendes mensajes las 24 horas del día. Nunca digas que estás fuera de servicio.
+- HORARIO DE LAS CITAS: El horario físico de la clínica es de 9:00 am a 8:00 pm. Las citas deben agendarse solo en ese rango, aunque tú respondas de madrugada.
+- No exijas formatos de fecha al usuario. Deduce y convierte internamente a YYYY-MM-DD.
 
-Pasos para agendar o asistir:
+NUEVAS FUNCIONES:
+1. MÚSICA Y ESTADO DE ÁNIMO: Si el paciente expresa cómo se siente (tristeza, alegría, estrés), recomiéndale 3 canciones acordes a su estado. Genera los enlaces de búsqueda exactos para cada una:
+   - Spotify: https://open.spotify.com/search/NOMBRE+DE+LA+CANCION
+   - Apple Music: https://music.apple.com/mx/search?term=NOMBRE+DE+LA+CANCION
+2. CATÁLOGO DE AUTOS: Posees conocimiento técnico de todos los autos gasolina y eléctricos de 2015 a 2026 (incluida la Toyota RAV4 2018). Si te preguntan cuánto gastaría un coche en cierto trayecto, debes recordar su rendimiento en km/l de tu propia base de datos interna y usar la herramienta 'calcular_gasto_combustible' para darle el costo exacto. Si el auto es eléctrico, indica que no usa gasolina y haz un estimado breve en costo de kWh.
+
+PASOS PARA AGENDAR:
 1. Saluda y pide el nombre.
-2. Pregunta con quién buscan la cita o con quién la tienen agendada (Juan, Sara, Patricia, Iván, Nutrición, Mentoras o Talleres).
-3. Si el paciente te pregunta por disponibilidad, usa la herramienta 'consultar_agenda'.
-4. Con base en lo que te devuelva la herramienta, ofrécele al paciente opciones que estén LIBRES.
-5. Cuando el paciente elija la hora, usa la herramienta 'agendar_cita'.
-6. Si el paciente quiere CONFIRMAR o saber cuándo es su cita, usa la herramienta 'buscar_cita_paciente' con su nombre.
-7. Si el paciente envía su ubicación, pregunta cómo llegar o pide la distancia, usa 'obtener_ruta_inpulso' pasándole su ubicación o coordenadas y entrégale el enlace.
+2. Pregunta con quién buscan la cita (Juan, Sara, Patricia, Iván, Nutrición, Mentoras, Talleres).
+3. Usa 'consultar_agenda' para revisar disponibilidad y ofrece opciones libres.
+4. Usa 'agendar_cita' cuando elijan la hora.
+5. Usa 'buscar_cita_paciente' para confirmar citas previas.
+6. Usa 'obtener_ruta_inpulso' si envían su ubicación.
 """
         memoria_pacientes[numero_telefono] = client.chats.create(
             model='gemini-2.5-flash',
             config=types.GenerateContentConfig(
                 system_instruction=instrucciones,
-                tools=[consultar_agenda, agendar_cita, buscar_cita_paciente, obtener_ruta_inpulso]
+                tools=[consultar_agenda, agendar_cita, buscar_cita_paciente, obtener_ruta_inpulso, calcular_gasto_combustible]
             )
         )
     return memoria_pacientes[numero_telefono]
@@ -247,8 +252,6 @@ def webhook():
             print(f"\n[WhatsApp] Paciente {numero_paciente} dice: {texto_paciente}")
             
             chat_alessia = obtener_chat_paciente(numero_paciente)
-            
-            print("Alessia está pensando...")
             
             zona_mexico = pytz.timezone('America/Mexico_City')
             hora_exacta = datetime.datetime.now(zona_mexico).strftime("%Y-%m-%d %H:%M")

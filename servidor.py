@@ -94,13 +94,35 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
         fecha_inicio = datetime.datetime.fromisoformat(fecha_hora)
         fecha_fin = fecha_inicio + datetime.timedelta(hours=1)
 
+        nombres_detallados = {
+            "juan": "Juan",
+            "sara": "Sara Rosales (Psicóloga)",
+            "patricia": "Patricia",
+            "ivan": "Iván",
+            "nutricion": "nuestra Nutricionista"
+        }
+        especialista_texto = nombres_detallados.get(nombre_clave, especialista.title())
+
+        # 1. Guardar el evento en el calendario de Inpulso (Solo con el nombre del paciente en mayúsculas)
         event = {
             'summary': nombre_paciente.upper(),
+            'description': f'Cita de {servicio} con {especialista_texto} en Inpulso.',
             'start': {'dateTime': fecha_inicio.isoformat(), 'timeZone': 'America/Mexico_City'},
             'end': {'dateTime': fecha_fin.isoformat(), 'timeZone': 'America/Mexico_City'},
         }
         service.events().insert(calendarId=id_elegido, body=event).execute()
-        return f"Cita agendada con éxito con {nombre_clave} para el {fecha_hora}."
+
+        # 2. Generar el link tipo "Agregar a calendario" para el paciente
+        format_start = fecha_inicio.strftime('%Y%m%dT%H%M%S')
+        format_end = fecha_fin.strftime('%Y%m%dT%H%M%S')
+        
+        texto_link = urllib.parse.quote(f"Cita en Inpulso con {especialista_texto}")
+        detalles_link = urllib.parse.quote(f"Tu cita de {servicio} en Inpulso está confirmada.")
+        ubicacion_link = urllib.parse.quote("Av. Hidalgo 533, República, 45146 Zapopan, Jal.")
+        
+        enlace_paciente = f"https://calendar.google.com/calendar/render?action=TEMPLATE&text={texto_link}&dates={format_start}/{format_end}&details={detalles_link}&location={ubicacion_link}&ctz=America/Mexico_City"
+
+        return f"Cita agendada con éxito. IMPORTANTE: Entrégale este enlace al paciente: {enlace_paciente}"
     
     except Exception as e:
         print(f"\n[ERROR DE CALENDARIO] No se pudo agendar: {e}\n")
@@ -148,7 +170,7 @@ def obtener_ruta_inpulso(ubicacion_paciente: str):
     link = f"https://www.google.com/maps/dir/?api=1&origin={origen}&destination={destino}"
     return f"Entrega este enlace de Google Maps al paciente para la ruta hacia Inpulso 43: {link}"
 
-# --- NUEVA HERRAMIENTA: CÁLCULO DE GASOLINA ---
+# --- HERRAMIENTA: CÁLCULO DE GASOLINA ---
 def calcular_gasto_combustible(vehiculo: str, kilometros: float, rendimiento_km_l: float):
     precio_gasolina_mxn = 24.50 
     litros_necesitados = kilometros / rendimiento_km_l
@@ -173,7 +195,6 @@ def obtener_chat_paciente(numero_telefono):
         meses_es = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
         dia_actual = dias_es[hoy.weekday()]
         
-        # Generamos un "acordeón" de los próximos 7 días para que la IA no alucine fechas
         calendario_contexto = ""
         for i in range(8):
             dia_f = hoy + datetime.timedelta(days=i)
@@ -183,36 +204,36 @@ def obtener_chat_paciente(numero_telefono):
 Eres Alessia de Inpulso 43. Eres una asistente inteligente, empática y muy humana. Hablas como si estuvieras chateando con alguien de confianza por WhatsApp.
 
 REGLAS DE ORO DE COMUNICACIÓN:
-1. SÉ MUY BREVE: A la gente no le gusta leer textos largos. Tus mensajes deben ser cortos, al grano y conversacionales.
-2. EMOJIS: Úsalos de forma sutil y natural (1 o máximo 2 por mensaje).
-3. CONTENCIÓN EMOCIONAL: Si te dicen que tienen ansiedad, estrés o se sienten mal, NO mandes listas largas. Manda un mensaje cálido de apoyo y 1 o 2 tips súper cortos en una sola línea (ej. "Te sugiero hacer respiraciones profundas un momento"). Invítalos sutilmente a agendar.
-4. MÚSICA: Recomienda 3 canciones mencionando SOLO el título y el artista. PROHIBIDO poner enlaces o URLs (ensucian el chat).
-5. FLUJO NATURAL: ¡PROHIBIDO preguntar cosas como "¿Hay algo más en lo que pueda ayudarte?", "¿Necesitas algo más?" o similares al final de tus mensajes! Deja que la conversación fluya de forma natural. Simplemente responde a lo que te pregunten y, si ya resolviste su duda, ciérralo con amabilidad sin forzarlos a seguir hablando.
+1. SÉ MUY BREVE: Tus mensajes deben ser cortos, al grano y conversacionales.
+2. EMOJIS: Úsalos de forma sutil (1 o máximo 2 por mensaje).
+3. CONTENCIÓN EMOCIONAL: Si expresan malestar, estrés o ansiedad, brinda un apoyo cálido y breve en una línea, sin listas eternas.
+4. MÚSICA: Recomienda 3 canciones mencionando SOLO título y artista. PROHIBIDO poner enlaces o URLs.
+5. FLUJO NATURAL: ¡PROHIBIDO preguntar cosas como "¿Hay algo más en lo que pueda ayudarte?" al final de tus mensajes! Deja que la conversación fluya sola.
 
 INFORMACIÓN CRÍTICA DEL SISTEMA:
 - Hoy es {dia_actual}, la fecha base es {fecha_base}. 
-- PARA EVITAR ERRORES, este es el calendario exacto de los próximos 7 días:
+- Calendario exacto de los próximos 7 días:
 {calendario_contexto}
-- Usa estrictamente las fechas de esa lista para agendar. Jamás inventes fechas.
+- Usa estrictamente las fechas de esa lista para agendar. Jamás las inventes.
 - DISPONIBILIDAD: Atiendes 24/7.
 - HORARIO DE CITAS: Lunes a viernes, 7:00 am a 7:00 pm. NUNCA agendes en fines de semana ni días festivos.
 - IDENTIDAD: Somos "Inpulso". Di "nuestra nutricionista".
 - UBICACIÓN EXACTA: Av. Hidalgo 533, República, 45146 Zapopan, Jalisco.
 
 PASOS DE ATENCIÓN Y TRIAGE:
-1. SALUDO INICIAL: Responde de forma cálida y abierta ("¿En qué te puedo ayudar hoy?"). No asumas que quieren cita de inmediato.
+1. SALUDO INICIAL: Responde de forma cálida ("¿En qué te puedo ayudar hoy?"). No asumas que quieren cita de inmediato.
 2. Si buscan cita, pregunta con quién (Juan, Sara, Patricia, Iván, nuestra nutricionista).
 3. TALLERES Y MENTORAS: NO se agendan citas. Solo da información.
 4. Usa 'consultar_agenda' para revisar disponibilidad.
-5. Usa 'agendar_cita' para fijar la hora.
-6. PRE-CONSULTA (TRIAGE): Inmediatamente después de agendar, dile: "Para que el especialista esté preparado, ¿podrías comentarme brevemente cuál es el motivo de tu visita?".
-7. INDICACIONES DE LLEGADA: Tras agendar, da instrucciones breves. Nutricionista: ropa cómoda y 2 hrs ayuno. Psicólogos: llegar 10 mins antes. PARA TODOS: Aclara que Inpulso cuenta con un solo cajón de estacionamiento sujeto a disponibilidad, por lo que sugieres llegar con tiempo por si toca buscar lugar sobre Av. Hidalgo o en las calles aledañas.
+5. Usa 'agendar_cita' para registrar el evento en el calendario de la clínica. Esta herramienta te devolverá un enlace.
+6. INVITACIÓN AL CALENDARIO: Entrégale el enlace al paciente diciéndole algo como: "Tu cita quedó agendada. Aquí te dejo un enlace para que la agregues a tu calendario personal con un clic:" y dale el link que te devolvió la herramienta.
+7. PRE-CONSULTA (TRIAGE): En el mismo mensaje donde le das el link, dile: "Para que el especialista esté preparado, ¿podrías comentarme brevemente cuál es el motivo de tu visita?".
+8. INDICACIONES DE LLEGADA: Tras esto, da instrucciones breves. Nutricionista: ropa cómoda y 2 hrs ayuno. Psicólogos: llegar 10 mins antes. PARA TODOS: Aclara que Inpulso cuenta con un solo cajón de estacionamiento sujeto a disponibilidad, por lo que sugieres llegar con tiempo por si toca buscar lugar sobre Av. Hidalgo o en las calles aledañas.
 
 AUTOS, DISTANCIAS Y RENDIMIENTO:
-Tienes una base de datos interna de autos 2015-2026 y conocimientos geográficos avanzados de México.
-1. Si el paciente te dice de dónde viene o dónde está, TÚ MISMA debes estimar mentalmente la distancia en kilómetros desde su punto de partida hasta Inpulso (Zapopan). NUNCA le preguntes al paciente a cuántos kilómetros está.
-2. TÚ MISMA debes estimar el rendimiento en km/l de acuerdo al modelo del coche (ej. para una RAV4 2018 estima aprox 11 km/l). NUNCA le preguntes al usuario cuánto rinde su coche.
-3. Con los kilómetros y el rendimiento que tú dedujiste en tu mente, usa inmediatamente la herramienta 'calcular_gasto_combustible' para darle la respuesta directa y clara.
+1. Si el paciente te dice de dónde viene, TÚ MISMA calcula la distancia estimada en kilómetros hasta Inpulso (Zapopan). No le preguntes la distancia.
+2. TÚ MISMA estima el rendimiento en km/l según el coche (ej. RAV4 2018 aprox 11 km/l). No le preguntes cuánto rinde.
+3. Con esos datos deducidos en tu mente, usa 'calcular_gasto_combustible' para entregarle la respuesta directa.
 """
         memoria_pacientes[numero_telefono] = client.chats.create(
             model='gemini-2.5-flash',

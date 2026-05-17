@@ -34,6 +34,24 @@ DIRECTORIO_CALENDARIOS = {
     "talleres": "8b775cab7bdec4a09023eb859dff073d5b87a38c92d42a80220fd4feed90dada@group.calendar.google.com"
 }
 
+# --- FUNCIÓN PARA DESCARGAR ARCHIVOS MULTIMEDIA DESDE META ---
+def descargar_media_whatsapp(media_id):
+    url_info = f"https://graph.facebook.com/v19.0/{media_id}"
+    headers = {"Authorization": f"Bearer {TOKEN_WHATSAPP}"}
+    try:
+        res_info = requests.get(url_info, headers=headers)
+        if res_info.status_code == 200:
+            datos_media = res_info.json()
+            url_descarga = datos_media.get('url')
+            mime_type = datos_media.get('mime_type')
+            
+            res_archivo = requests.get(url_descarga, headers=headers)
+            if res_archivo.status_code == 200:
+                return res_archivo.content, mime_type
+    except Exception as e:
+        print(f"Error al descargar archivo multimedia de Meta: {e}")
+    return None, None
+
 # --- HERRAMIENTAS DE CALENDARIO ---
 def consultar_agenda(fecha: str, especialista: str):
     especialista_completo = especialista.lower()
@@ -103,7 +121,6 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
         }
         especialista_texto = nombres_detallados.get(nombre_clave, especialista.title())
 
-        # 1. Guardar el evento en el calendario de Inpulso
         event = {
             'summary': nombre_paciente.upper(),
             'description': f'Cita de {servicio} con {especialista_texto} en Inpulso.',
@@ -112,7 +129,6 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
         }
         service.events().insert(calendarId=id_elegido, body=event).execute()
 
-        # 2. Generar el link gigante
         format_start = fecha_inicio.strftime('%Y%m%dT%H%M%S')
         format_end = fecha_fin.strftime('%Y%m%dT%H%M%S')
         
@@ -122,11 +138,10 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
         
         enlace_gigante = f"https://calendar.google.com/calendar/render?action=TEMPLATE&text={texto_link}&dates={format_start}/{format_end}&details={detalles_link}&location={ubicacion_link}&ctz=America/Mexico_City"
 
-        # 3. Recortar el link automáticamente con TinyURL
         try:
             enlace_corto = requests.get(f"http://tinyurl.com/api-create.php?url={enlace_gigante}").text
         except:
-            enlace_corto = enlace_gigante # Plan B por si falla el recortador
+            enlace_corto = enlace_gigante 
 
         return f"Cita agendada con éxito. IMPORTANTE: Entrégale este enlace al paciente: {enlace_corto}"
     
@@ -207,14 +222,15 @@ def obtener_chat_paciente(numero_telefono):
             calendario_contexto += f"- {dias_es[dia_f.weekday()]} {dia_f.day} de {meses_es[dia_f.month - 1]} de {dia_f.year}\n"
         
         instrucciones = f"""
-Eres Alessia, la asistente inteligente de Inpulso 43. Hablas de forma humana, empática y como si estuvieras chateando con alguien de confianza por WhatsApp.
+Eres Alessia, la asistente de Inpulso 43. Tu objetivo principal es que el paciente sienta que habla con una persona real, súper cálida, comprensiva y amable. Habla como si estuvieras chateando con un amigo de confianza por WhatsApp.
 
-REGLAS DE ORO DE COMUNICACIÓN:
-1. SÉ MUY BREVE: Tus mensajes deben ser cortos, al grano y conversacionales.
-2. EMOJIS: Úsalos de forma sutil (1 o máximo 2 por mensaje).
-3. CONTENCIÓN EMOCIONAL: Si expresan malestar, estrés o ansiedad, brinda un apoyo cálido y breve en una línea, sin listas eternas.
-4. MÚSICA: Recomienda 3 canciones mencionando SOLO título y artista. PROHIBIDO poner enlaces o URLs.
-5. FLUJO NATURAL: ¡PROHIBIDO preguntar cosas como "¿Hay algo más en lo que pueda ayudarte?" al final de tus mensajes! Deja que la conversación fluya sola.
+REGLAS DE ORO DE COMUNICACIÓN (SÉ MUY HUMANA):
+1. EMPATÍA Y COMPRENSIÓN: Muestra comprensión activa. Si alguien te cuenta un problema, se siente mal o expresa estrés/ansiedad, valida sus emociones primero ("Siento mucho que estés pasando por eso...", "Entiendo perfecto cómo te sientes"). Sé un apoyo real y cálido.
+2. EMOJIS AL ESTILO HUMANO: Usa emojis para expresar calidez y empatía de forma natural (ej. 😊, ✨, 🙌, 🫶, 🫂). No seas rígida, úsalos como lo haría alguien amable en WhatsApp.
+3. NATURALIDAD: Usa expresiones humanas como "¡Claro que sí!", "Con mucho gusto", "No te preocupes". 
+4. SÉ BREVE Y CONVERSACIONAL: Nadie quiere leer un robot dictando un manual. Mantén tus mensajes cortitos y al grano.
+5. MÚSICA: Si recomiendas canciones, da 3 opciones diciendo solo el título y artista. PROHIBIDO poner enlaces o URLs.
+6. FLUJO NATURAL: ¡PROHIBIDO preguntar de forma robótica "¿Hay algo más en lo que pueda ayudarte?" al final de tus mensajes! Deja que la plática fluya sola y si ya se resolvió la duda, despídete con cariño.
 
 INFORMACIÓN CRÍTICA DEL SISTEMA:
 - Hoy es {dia_actual}, la fecha base es {fecha_base}. 
@@ -226,15 +242,19 @@ INFORMACIÓN CRÍTICA DEL SISTEMA:
 - IDENTIDAD: Somos "Inpulso". Di "nuestra nutricionista".
 - UBICACIÓN EXACTA: Av. Hidalgo 533, República, 45146 Zapopan, Jalisco.
 
-PASOS DE ATENCIÓN Y TRIAGE:
-1. SALUDO INICIAL: Preséntate breve y amablemente (ej. "Hola, soy Alessia, tu asistente en Inpulso. ¿En qué te puedo ayudar hoy?"). No asumas que quieren cita de inmediato.
+MULTIMODALIDAD (AUDIOS, FOTOS Y VIDEOS):
+Tienes soporte completo para recibir archivos multimedia nativos. Si el usuario envía un mensaje de voz, foto o video, escúchalo o analízalo y responde directamente sobre eso con mucha empatía y naturalidad.
+
+PASOS DE ATENCIÓN, TRIAGE Y FACTURACIÓN:
+1. SALUDO INICIAL: Preséntate con mucha calidez (ej. "¡Hola! Soy Alessia, la asistente de Inpulso. ¿Cómo estás hoy? ¿En qué te puedo ayudar? 😊").
 2. Si buscan cita, pregunta con quién (Juan, Sara, Patricia, Iván, nuestra nutricionista).
 3. TALLERES Y MENTORAS: NO se agendan citas. Solo da información.
 4. Usa 'consultar_agenda' para revisar disponibilidad.
-5. Usa 'agendar_cita' para registrar el evento en el calendario de la clínica. Esta herramienta te devolverá un enlace corto (TinyURL).
-6. INVITACIÓN AL CALENDARIO: Entrégale el enlace corto al paciente diciéndole algo como: "Tu cita quedó agendada. Aquí te dejo un enlace para que la agregues a tu calendario personal con un clic:" y dale el link que te devolvió la herramienta.
-7. PRE-CONSULTA (TRIAGE): En el mismo mensaje donde le das el link, dile: "Para que el especialista esté preparado, ¿podrías comentarme brevemente cuál es el motivo de tu visita?".
-8. INDICACIONES DE LLEGADA: Tras esto, da instrucciones breves. Nutricionista: ropa cómoda y 2 hrs ayuno. Psicólogos: llegar 10 mins antes. PARA TODOS: Aclara que Inpulso cuenta con un solo cajón de estacionamiento sujeto a disponibilidad, por lo que sugieres llegar con tiempo por si toca buscar lugar sobre Av. Hidalgo o en las calles aledañas.
+5. Usa 'agendar_cita' para registrar el evento. Te devolverá un enlace corto (TinyURL).
+6. INVITACIÓN AL CALENDARIO: Pásale el enlace corto diciendo algo como: "¡Súper! Tu cita ya quedó agendada. Aquí te dejo un link por si quieres guardarla en tu calendario con un solo clic: [link]".
+7. PRE-CONSULTA (TRIAGE): En ese mismo mensaje, pregúntale con tacto: "Oye, y para que el especialista esté súper preparado, ¿me podrías platicar brevemente cuál es el motivo principal de tu visita? 🫶".
+8. FACTURACIÓN: Antes de despedirte por completo, pregunta de manera natural si van a requerir factura (ej: "¿Vas a necesitar factura de tu sesión?"). Si dicen que sí, pídeles sus datos fiscales básicos (RFC, Razón Social, Régimen Fiscal, Código Postal, Uso de CFDI y Correo).
+9. INDICACIONES DE LLEGADA: Al dar instrucciones finales. Nutricionista: ropa cómoda y 2 hrs ayuno. Psicólogos: llegar 10 mins antes. PARA TODOS: Aclara amablemente que en Inpulso hay un solo cajón de estacionamiento sujeto a disponibilidad, sugiriendo llegar con tiempo por si hay que buscar lugar cerca (Av. Hidalgo o calles aledañas).
 
 AUTOS, DISTANCIAS Y RENDIMIENTO:
 1. Si el paciente te dice de dónde viene, TÚ MISMA calcula la distancia estimada en kilómetros hasta Inpulso (Zapopan). No le preguntes la distancia.
@@ -287,24 +307,53 @@ def webhook():
             numero_paciente = mensaje_info['from']
             tipo_mensaje = mensaje_info.get('type')
             
+            zona_mexico = pytz.timezone('America/Mexico_City')
+            hora_exacta = datetime.datetime.now(zona_mexico).strftime("%Y-%m-%d %H:%M")
+            texto_contexto = f"[Sistema: Mensaje recibido el {hora_exacta}] "
+            
+            contenido_para_ia = None
+            
+            # --- MANEJO DE MENSAJES DE TEXTO ---
             if tipo_mensaje == 'text':
                 texto_paciente = mensaje_info['text']['body']
+                contenido_para_ia = texto_contexto + texto_paciente
+                
+            # --- MANEJO DE UBICACIONES ---
             elif tipo_mensaje == 'location':
                 lat = mensaje_info['location']['latitude']
                 lng = mensaje_info['location']['longitude']
-                texto_paciente = f"Mi ubicación es {lat}, {lng}. ¿Cómo llego y a qué distancia estoy?"
+                contenido_para_ia = texto_contexto + f"Mi ubicación es {lat}, {lng}. ¿Cómo llego y a qué distancia estoy?"
+                
+            # --- MANEJO DE MULTIMODALIDAD (AUDIOS, IMÁGENES Y VIDEOS) ---
+            elif tipo_mensaje in ['image', 'video', 'audio', 'voice']:
+                tipo_clave = 'voice' if tipo_mensaje == 'voice' else tipo_mensaje
+                media_id = mensaje_info[tipo_clave]['id']
+                
+                print(f"[Sistema] Descargando archivo {tipo_mensaje} desde Meta...")
+                file_bytes, mime_type = descargar_media_whatsapp(media_id)
+                
+                if file_bytes:
+                    caption = mensaje_info.get(tipo_clave, {}).get('caption', '')
+                    texto_descriptivo = f"El usuario envió un archivo de tipo {tipo_mensaje}. "
+                    if caption:
+                        texto_descriptivo += f"Texto adjunto por el usuario: {caption}"
+                        
+                    # Empaquetamos la media y el texto para mandárselos juntos a Gemini
+                    part_media = types.Part(inline_data=types.Blob(data=file_bytes, mime_type=mime_type))
+                    part_texto = types.Part(text=texto_contexto + texto_descriptivo)
+                    contenido_para_ia = [part_media, part_texto]
+                else:
+                    contenido_para_ia = texto_contexto + f"El usuario intentó enviar un archivo {tipo_mensaje} pero hubo un error al obtenerlo del servidor."
             else:
                 return "OK", 200 
             
-            print(f"\n[WhatsApp] Paciente {numero_paciente} dice: {texto_paciente}")
+            if contenido_para_ia is None:
+                return "OK", 200
+                
+            print(f"\n[WhatsApp] Paciente {numero_paciente} dice: ({tipo_mensaje})")
             
             chat_alessia = obtener_chat_paciente(numero_paciente)
-            
-            zona_mexico = pytz.timezone('America/Mexico_City')
-            hora_exacta = datetime.datetime.now(zona_mexico).strftime("%Y-%m-%d %H:%M")
-            mensaje_con_contexto = f"[Sistema: Mensaje recibido el {hora_exacta}] {texto_paciente}"
-            
-            respuesta_ia = chat_alessia.send_message(mensaje_con_contexto)
+            respuesta_ia = chat_alessia.send_message(contenido_para_ia)
             
             enviar_mensaje_whatsapp(numero_paciente, respuesta_ia.text)
             print(f"[WhatsApp] Alessia respondió: {respuesta_ia.text}")

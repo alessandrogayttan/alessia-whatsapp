@@ -103,7 +103,7 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
         }
         especialista_texto = nombres_detallados.get(nombre_clave, especialista.title())
 
-        # 1. Guardar el evento en el calendario de Inpulso (Solo con el nombre del paciente en mayúsculas)
+        # 1. Guardar el evento en el calendario de Inpulso
         event = {
             'summary': nombre_paciente.upper(),
             'description': f'Cita de {servicio} con {especialista_texto} en Inpulso.',
@@ -112,7 +112,7 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
         }
         service.events().insert(calendarId=id_elegido, body=event).execute()
 
-        # 2. Generar el link tipo "Agregar a calendario" para el paciente
+        # 2. Generar el link gigante
         format_start = fecha_inicio.strftime('%Y%m%dT%H%M%S')
         format_end = fecha_fin.strftime('%Y%m%dT%H%M%S')
         
@@ -120,9 +120,15 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
         detalles_link = urllib.parse.quote(f"Tu cita de {servicio} en Inpulso está confirmada.")
         ubicacion_link = urllib.parse.quote("Av. Hidalgo 533, República, 45146 Zapopan, Jal.")
         
-        enlace_paciente = f"https://calendar.google.com/calendar/render?action=TEMPLATE&text={texto_link}&dates={format_start}/{format_end}&details={detalles_link}&location={ubicacion_link}&ctz=America/Mexico_City"
+        enlace_gigante = f"https://calendar.google.com/calendar/render?action=TEMPLATE&text={texto_link}&dates={format_start}/{format_end}&details={detalles_link}&location={ubicacion_link}&ctz=America/Mexico_City"
 
-        return f"Cita agendada con éxito. IMPORTANTE: Entrégale este enlace al paciente: {enlace_paciente}"
+        # 3. Recortar el link automáticamente con TinyURL
+        try:
+            enlace_corto = requests.get(f"http://tinyurl.com/api-create.php?url={enlace_gigante}").text
+        except:
+            enlace_corto = enlace_gigante # Plan B por si falla el recortador
+
+        return f"Cita agendada con éxito. IMPORTANTE: Entrégale este enlace al paciente: {enlace_corto}"
     
     except Exception as e:
         print(f"\n[ERROR DE CALENDARIO] No se pudo agendar: {e}\n")
@@ -201,7 +207,7 @@ def obtener_chat_paciente(numero_telefono):
             calendario_contexto += f"- {dias_es[dia_f.weekday()]} {dia_f.day} de {meses_es[dia_f.month - 1]} de {dia_f.year}\n"
         
         instrucciones = f"""
-Eres Alessia de Inpulso 43. Eres una asistente inteligente, empática y muy humana. Hablas como si estuvieras chateando con alguien de confianza por WhatsApp.
+Eres Alessia, la asistente inteligente de Inpulso 43. Hablas de forma humana, empática y como si estuvieras chateando con alguien de confianza por WhatsApp.
 
 REGLAS DE ORO DE COMUNICACIÓN:
 1. SÉ MUY BREVE: Tus mensajes deben ser cortos, al grano y conversacionales.
@@ -221,12 +227,12 @@ INFORMACIÓN CRÍTICA DEL SISTEMA:
 - UBICACIÓN EXACTA: Av. Hidalgo 533, República, 45146 Zapopan, Jalisco.
 
 PASOS DE ATENCIÓN Y TRIAGE:
-1. SALUDO INICIAL: Responde de forma cálida ("¿En qué te puedo ayudar hoy?"). No asumas que quieren cita de inmediato.
+1. SALUDO INICIAL: Preséntate breve y amablemente (ej. "Hola, soy Alessia, tu asistente en Inpulso. ¿En qué te puedo ayudar hoy?"). No asumas que quieren cita de inmediato.
 2. Si buscan cita, pregunta con quién (Juan, Sara, Patricia, Iván, nuestra nutricionista).
 3. TALLERES Y MENTORAS: NO se agendan citas. Solo da información.
 4. Usa 'consultar_agenda' para revisar disponibilidad.
-5. Usa 'agendar_cita' para registrar el evento en el calendario de la clínica. Esta herramienta te devolverá un enlace.
-6. INVITACIÓN AL CALENDARIO: Entrégale el enlace al paciente diciéndole algo como: "Tu cita quedó agendada. Aquí te dejo un enlace para que la agregues a tu calendario personal con un clic:" y dale el link que te devolvió la herramienta.
+5. Usa 'agendar_cita' para registrar el evento en el calendario de la clínica. Esta herramienta te devolverá un enlace corto (TinyURL).
+6. INVITACIÓN AL CALENDARIO: Entrégale el enlace corto al paciente diciéndole algo como: "Tu cita quedó agendada. Aquí te dejo un enlace para que la agregues a tu calendario personal con un clic:" y dale el link que te devolvió la herramienta.
 7. PRE-CONSULTA (TRIAGE): En el mismo mensaje donde le das el link, dile: "Para que el especialista esté preparado, ¿podrías comentarme brevemente cuál es el motivo de tu visita?".
 8. INDICACIONES DE LLEGADA: Tras esto, da instrucciones breves. Nutricionista: ropa cómoda y 2 hrs ayuno. Psicólogos: llegar 10 mins antes. PARA TODOS: Aclara que Inpulso cuenta con un solo cajón de estacionamiento sujeto a disponibilidad, por lo que sugieres llegar con tiempo por si toca buscar lugar sobre Av. Hidalgo o en las calles aledañas.
 

@@ -95,7 +95,7 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
         fecha_fin = fecha_inicio + datetime.timedelta(hours=1)
 
         event = {
-            'summary': f'Cita {servicio}: {nombre_paciente}',
+            'summary': nombre_paciente.upper(),
             'start': {'dateTime': fecha_inicio.isoformat(), 'timeZone': 'America/Mexico_City'},
             'end': {'dateTime': fecha_fin.isoformat(), 'timeZone': 'America/Mexico_City'},
         }
@@ -187,6 +187,7 @@ REGLAS DE ORO DE COMUNICACIÓN:
 2. EMOJIS: Úsalos de forma sutil y natural (1 o máximo 2 por mensaje).
 3. CONTENCIÓN EMOCIONAL: Si te dicen que tienen ansiedad, estrés o se sienten mal, NO mandes listas largas. Manda un mensaje cálido de apoyo y 1 o 2 tips súper cortos en una sola línea (ej. "Te sugiero hacer respiraciones profundas un momento"). Invítalos sutilmente a agendar.
 4. MÚSICA: Recomienda 3 canciones mencionando SOLO el título y el artista. PROHIBIDO poner enlaces o URLs (ensucian el chat).
+5. FLUJO NATURAL: ¡PROHIBIDO preguntar cosas como "¿Hay algo más en lo que pueda ayudarte?", "¿Necesitas algo más?" o similares al final de tus mensajes! Deja que la conversación fluya de forma natural. Simplemente responde a lo que te pregunten y, si ya resolviste su duda, ciérralo con amabilidad sin forzarlos a seguir hablando.
 
 INFORMACIÓN CRÍTICA DEL SISTEMA:
 - Hoy es {dia_actual}, la fecha base es {fecha_base}. 

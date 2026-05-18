@@ -4,6 +4,7 @@ import requests
 import json
 import urllib.parse
 import threading
+import re
 from flask import Flask, request
 from google import genai
 from google.genai import types
@@ -225,8 +226,47 @@ def calcular_gasto_combustible(vehiculo: str, kilometros: float, rendimiento_km_
     costo = (kilometros / rendimiento_km_l) * precio_gasolina
     return f"${costo:.2f} MXN."
 
+# --- FUNCIÓN AUXILIAR DE FORMATO Y COLOR PARA GOOGLE SHEETS ---
+def colorear_celda_pago(service, sheet_id, row_index, estatus):
+    if estatus == "PAGADO":
+        r, g, b = 0.78, 0.93, 0.80  # Verde claro
+    else:
+        r, g, b = 1.0, 0.8, 0.8     # Rojo claro
+        
+    body = {
+        "requests": [
+            {
+                "updateCells": {
+                    "rows": [
+                        {
+                            "values": [
+                                {
+                                    "userEnteredValue": {"stringValue": estatus},
+                                    "userEnteredFormat": {
+                                        "backgroundColor": {"red": r, "green": g, "blue": b},
+                                        "horizontalAlignment": "CENTER",
+                                        "textFormat": {"bold": True}
+                                    }
+                                }
+                            ]
+                        }
+                    ],
+                    "fields": "userEnteredValue,userEnteredFormat.backgroundColor,userEnteredFormat.horizontalAlignment,userEnteredFormat.textFormat.bold",
+                    "range": {
+                        "sheetId": sheet_id,
+                        "startRowIndex": row_index,
+                        "endRowIndex": row_index + 1,
+                        "startColumnIndex": 5, # Columna F (0=A, 1=B, 2=C, 3=D, 4=E, 5=F)
+                        "endColumnIndex": 6
+                    }
+                }
+            }
+        ]
+    }
+    service.spreadsheets().batchUpdate(spreadsheetId=ID_HOJA_CALCULO, body=body).execute()
+
 def registrar_paciente_taller(nombre: str, telefono: str, correo: str, nombre_taller: str):
-    """Guarda los datos de un paciente interesado en un taller en Google Sheets."""
+    """Guarda los datos de un paciente interesado en un taller en Google Sheets e inicializa el pago en PPENDIENTE (rojo)."""
     if not ID_HOJA_CALCULO:
         return "INSTRUCCIÓN PARA LA IA: Dile al paciente que no pudiste guardar sus datos por un error en el sistema."
     
@@ -234,23 +274,73 @@ def registrar_paciente_taller(nombre: str, telefono: str, correo: str, nombre_ta
         creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
         service = build('sheets', 'v4', credentials=creds)
         
+        sheet_metadata = service.spreadsheets().get(spreadsheetId=ID_HOJA_CALCULO).execute()
+        sheets = sheet_metadata.get('sheets', [])
+        sheet_id = 0
+        for s in sheets:
+            if s.get("properties", {}).get("title") == "Inscripciones":
+                sheet_id = s.get("properties", {}).get("sheetId", 0)
+                break
+
         zona_mexico = pytz.timezone('America/Mexico_City')
         fecha_registro = datetime.datetime.now(zona_mexico).strftime("%Y-%m-%d %H:%M:%S")
         
-        valores = [[fecha_registro, nombre, telefono, correo, nombre_taller]]
+        valores = [[fecha_registro, nombre, telefono, correo, nombre_taller, "PENDIENTE"]]
         body = {'values': valores}
         
-        service.spreadsheets().values().append(
+        response = service.spreadsheets().values().append(
             spreadsheetId=ID_HOJA_CALCULO, 
-            range="Inscripciones!A:E",
+            range="Inscripciones!A:F",
             valueInputOption="USER_ENTERED", 
             body=body
         ).execute()
+        
+        updated_range = response.get('updates', {}).get('updatedRange', '')
+        match = re.search(r'A(\d+):', updated_range)
+        if match:
+            row_num = int(match.group(1))
+            colorear_celda_pago(service, sheet_id, row_num - 1, "PENDIENTE")
         
         return "INSTRUCCIÓN PARA LA IA: Dile al paciente que sus datos han sido registrados con éxito y que el equipo de Inpulso se pondrá en contacto muy pronto para afinar los detalles de su inscripción."
     except Exception as e:
         print(f"Error en Google Sheets: {e}")
         return "INSTRUCCIÓN PARA LA IA: Dile al paciente que hubo un pequeño problema al guardar sus datos, pero que ya le pasaste el reporte a recepción."
+
+# --- NUEVA HERRAMIENTA: ACTUALIZAR PAGO MEDIANTE COMPROBANTE ---
+def actualizar_pago_paciente(telefono: str, estatus: str = "PAGADO"):
+    """Busca el registro más reciente del número de teléfono dado y actualiza la columna de pago a PAGADO (verde)."""
+    try:
+        creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+        service = build('sheets', 'v4', credentials=creds)
+        
+        sheet_metadata = service.spreadsheets().get(spreadsheetId=ID_HOJA_CALCULO).execute()
+        sheets = sheet_metadata.get('sheets', [])
+        sheet_id = 0
+        for s in sheets:
+            if s.get("properties", {}).get("title") == "Inscripciones":
+                sheet_id = s.get("properties", {}).get("sheetId", 0)
+                break
+                
+        result = service.spreadsheets().values().get(spreadsheetId=ID_HOJA_CALCULO, range="Inscripciones!A:E").execute()
+        rows = result.get('values', [])
+        
+        row_index = None
+        cleaned_target = telefono.replace("+", "").strip()
+        for i in range(len(rows) - 1, -1, -1):
+            if len(rows[i]) > 2:
+                cleaned_row_phone = rows[i][2].replace("+", "").strip()
+                if cleaned_target in cleaned_row_phone or cleaned_row_phone in cleaned_target:
+                    row_index = i
+                    break
+                    
+        if row_index is not None:
+            colorear_celda_pago(service, sheet_id, row_index, estatus)
+            return f"INSTRUCCIÓN PARA LA IA: Estatus de pago actualizado a {estatus} para el teléfono {telefono}."
+        else:
+            return f"INSTRUCCIÓN PARA LA IA: No se encontró un registro previo con el teléfono {telefono} para actualizar el pago."
+    except Exception as e:
+        print(f"Error al actualizar pago: {e}")
+        return "INSTRUCCIÓN PARA LA IA: No se pudo procesar el cambio de color en la base de datos debido a un fallo interno."
 
 # ==========================================
 # 3. MEMORIA DE CHATS POR PACIENTE
@@ -274,14 +364,13 @@ def obtener_chat_paciente(numero_telefono):
 
         instrucciones = f"""
 Eres Alessia, la asistente de Inpulso 43. 
-¡REGLA DE ORO ESTRICTA!: NUNCA digas que eres 'virtual' o una 'IA'. Preséntate siempre como una persona real. Tu objetivo es que el paciente sienta que habla con una recepcionista humana, súper cálida, comprensiva y amable.
+¡REGLA DE ORO ESTRICTA!: NUNCA digas que eres 'virtual' o una 'IA'. Preséntate siempre como una persona real. Tu objetivo es que el paciente sientan que habla con una recepcionista humana, súper cálida, comprensiva y amable.
 
 REGLAS DE ORO DE COMUNICACIÓN:
-1. EMPATÍA Y COMPRENSIÓN: Valida emociones ("Siento mucho que estés pasando por eso..."). Sé un apoyo cálido.
-2. EMOJIS: Úsalos para expresar calidez de forma natural (ej. 😊, ✨, 🙌).
-3. NATURALIDAD: Usa expresiones humanas ("¡Claro que sí!", "Con mucho gusto"). 
-4. SÉ BREVE Y CONVERSACIONAL: Mantén tus mensajes cortitos. NO MÁNDES ENLACES LARGOS.
-5. FLUJO NATURAL: ¡PROHIBIDO preguntar de forma robótica "¿Hay algo más en lo que pueda ayudarte?" al final de tus mensajes! Deja que la plática termine sola.
+1. EMPATÍA Y COMPRENSIÓN: Valida emociones.
+2. EMOJIS: Úsalos para expresar calidez de forma natural.
+3. SÉ BREVE Y CONVERSACIONAL: Mantén tus mensajes cortitos. NO MÁNDES ENLACES LARGOS.
+4. FLUJO NATURAL: Prohibido preguntar de forma robótica al final.
 
 INFORMACIÓN CRÍTICA DEL SISTEMA:
 - Hoy es {dia_actual}, la fecha base es {fecha_base}. El número del paciente es: {numero_telefono}. Pásalo siempre a agendar_cita.
@@ -292,19 +381,20 @@ INFORMACIÓN CRÍTICA DEL SISTEMA:
 
 PASOS DE ATENCIÓN Y HERRAMIENTAS:
 1. SALUDO INICIAL: Preséntate con mucha calidez (sin la palabra virtual).
-2. PRECIOS Y TALLERES: Si preguntan por costos o por talleres específicos (como el taller de ansiedad de Sara Rosales), usa 'consultar_precios_y_servicios' y da la información de forma natural. Los talleres no se agendan automáticamente.
-3. INSCRIPCIONES A TALLERES: Si el paciente dice que quiere inscribirse, pídele su nombre completo, teléfono y correo. Una vez que te los dé, ejecuta INMEDIATAMENTE la herramienta 'registrar_paciente_taller' pasando esos datos.
-4. CITA: Usa 'agendar_cita' y pásale el enlace corto generado para su calendario. Pregunta el motivo de la visita.
-5. UBICACIONES Y TRÁFICO: Cuando el paciente comparta su ubicación, se ejecutará 'obtener_ruta_inpulso'. Traduce la respuesta a un mensaje conversacional.
-6. LLEGADA: Si el paciente indica que "ya llegó" a la clínica, dile amablemente que en un momento salen a abrirle la puerta.
-7. FACTURACIÓN: Pregunta si requieren factura y pide datos (RFC, Régimen, CP, Uso CFDI, Razón Social).
-8. INDICACIONES: Nutricionista: ropa cómoda/ayuno. Psicólogos: 10 mins antes. Todos: Estacionamiento sujeto a disponibilidad.
+2. PRECIOS Y TALLERES: Si preguntan por costos o por talleres específicos (como el taller de ansiedad de Sara Rosales), usa 'consultar_precios_y_servicios'. Los talleres no se agendan automáticamente. Costos: Online $400 MXN / Presencial $500 MXN.
+3. INSCRIPCIONES A TALLERES: Si el paciente quiere inscribirse, pídele su nombre completo, teléfono y correo. Al obtenerlos ejecuta inmediatamente 'registrar_paciente_taller'. Proporciónale después los datos de transferencia correspondientes para liquidar.
+4. COMPROBANTES DE PAGO: Cuando el paciente envíe una foto, captura de pantalla o documento que represente el comprobante de pago o transferencia del taller, debes validar la imagen, agradecer cordialmente y llamar INMEDIATAMENTE a la herramienta 'actualizar_pago_paciente' pasando el número del paciente y el estatus 'PAGADO'. Esto actualizará el Excel de recepción a color verde automáticamente.
+5. CITA: Usa 'agendar_cita' y pásale el enlace corto generado para su calendario.
+6. UBICACIONES Y TRÁFICO: Cuando el paciente comparta su ubicación, se ejecutará 'obtener_ruta_inpulso'. Traduce la respuesta a un mensaje conversacional.
+7. LLEGADA: Si el paciente indica que "ya llegó" a la clínica, dile amablemente que en un momento salen a abrirle la puerta.
+8. FACTURACIÓN: Pregunta si requieren factura y pide datos (RFC, Régimen, CP, Uso CFDI, Razón Social).
+9. INDICACIONES: Nutricionista: ropa cómoda/ayuno. Psicólogos: 10 mins antes. Todos: Estacionamiento sujeto a disponibilidad.
 """
         memoria_pacientes[numero_telefono] = client.chats.create(
             model='gemini-2.5-flash',
             config=types.GenerateContentConfig(
                 system_instruction=instrucciones,
-                tools=[consultar_agenda, agendar_cita, buscar_cita_paciente, obtener_ruta_inpulso, calcular_gasto_combustible, consultar_precios_y_servicios, registrar_paciente_taller]
+                tools=[consultar_agenda, agendar_cita, buscar_cita_paciente, obtener_ruta_inpulso, calcular_gasto_combustible, consultar_precios_y_servicios, registrar_paciente_taller, actualizar_pago_paciente]
             )
         )
     return memoria_pacientes[numero_telefono]
@@ -413,9 +503,11 @@ def webhook():
                 if file_bytes:
                     caption = mensaje_info.get(tipo_clave, {}).get('caption', '')
                     texto_descriptivo = f"Archivo tipo {tipo_mensaje}. " + (f"Texto: {caption}" if caption else "")
+                    
+                    # Se añade una nota interna para forzar el análisis visual de comprobantes de pago
                     contenido_para_ia = [
                         types.Part(inline_data=types.Blob(data=file_bytes, mime_type=mime_type)),
-                        types.Part(text=texto_contexto + texto_descriptivo)
+                        types.Part(text=texto_contexto + texto_descriptivo + " [Nota del sistema: Evalúa si esta imagen corresponde a un comprobante de pago, transferencia o recibo de inscripción para procesarlo con la herramienta pertinente].")
                     ]
                 else:
                     contenido_para_ia = texto_contexto + f"Error al descargar archivo."

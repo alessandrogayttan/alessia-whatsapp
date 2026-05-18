@@ -18,14 +18,15 @@ app = Flask(__name__)
 # ==========================================
 TOKEN_WHATSAPP = "EAA2QM4tKEQQBRcfuScb6qIzunBFoDjDx90ExeZCYXU1tO9PlvS2pHERnNmZB19pVXvYWuyVhwEPfr92JRQDGlsl8LlsnEC30pksZANEbS6fYnDEZBjCgDkzcYK8iHW4EKBWZBTZA2UZBf7XbY1WUCQ1ULmdDGj22vBqAttM1uP87RtNsgH7mipZB2N3eqiflrgZDZD"
 ID_TELEFONO = "1090957250773198"
-API_KEY_MAPS = ""
+API_KEY_MAPS = "" 
+ID_HOJA_CALCULO = "1HE-a6v2b-bCcN6JLHOJ3mevuRhJCWmInZEXkyV24L3k"
 
 # ==========================================
 # 2. CONFIGURACIÓN DEL CEREBRO DE ALESSIA
 # ==========================================
 client = genai.Client(api_key="AIzaSyC3G-vQPiGAYWEJoD-CFGLVJ_hsSbxVfGs")
-SCOPES = ['https://www.googleapis.com/auth/calendar']
-SERVICE_ACCOUNT_FILE = 'agente-inpulso-bda72425fab5.json'
+SCOPES = ['https://www.googleapis.com/auth/calendar', 'https://www.googleapis.com/auth/spreadsheets']
+SERVICE_ACCOUNT_FILE = 'agente-inpulso-bda72425fab5.json' 
 
 DIRECTORIO_CALENDARIOS = {
     "juan": "agenda.inpulso43@gmail.com",
@@ -37,8 +38,8 @@ DIRECTORIO_CALENDARIOS = {
     "talleres": "8b775cab7bdec4a09023eb859dff073d5b87a38c92d42a80220fd4feed90dada@group.calendar.google.com"
 }
 
-ubicaciones_pacientes = {}
-citas_pendientes = {}
+ubicaciones_pacientes = {} 
+citas_pendientes = {} 
 
 def descargar_media_whatsapp(media_id):
     url_info = f"https://graph.facebook.com/v19.0/{media_id}"
@@ -49,7 +50,7 @@ def descargar_media_whatsapp(media_id):
             datos_media = res_info.json()
             url_descarga = datos_media.get('url')
             mime_type = datos_media.get('mime_type')
-
+            
             res_archivo = requests.get(url_descarga, headers=headers)
             if res_archivo.status_code == 200:
                 return res_archivo.content, mime_type
@@ -82,22 +83,22 @@ def consultar_agenda(fecha: str, especialista: str):
 
     if not nombre_clave:
         return f"No tengo la agenda de {especialista}."
-
+    
     id_elegido = DIRECTORIO_CALENDARIOS[nombre_clave]
     creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
     service = build('calendar', 'v3', credentials=creds)
 
     time_min = f"{fecha}T00:00:00-06:00"
     time_max = f"{fecha}T23:59:59-06:00"
-
+    
     events_result = service.events().list(
-        calendarId=id_elegido, timeMin=time_min, timeMax=time_max,
+        calendarId=id_elegido, timeMin=time_min, timeMax=time_max, 
         singleEvents=True, orderBy='startTime').execute()
     events = events_result.get('items', [])
 
     if not events:
         return f"La agenda de {nombre_clave} está libre el {fecha}."
-
+    
     ocupados = []
     for event in events:
         start = event['start'].get('dateTime', event['start'].get('date'))
@@ -118,7 +119,7 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
     if not nombre_clave:
         return f"No pude agendar. Especialista no encontrado."
 
-    fecha_hora = fecha_hora.replace(' ', 'T')
+    fecha_hora = fecha_hora.replace(' ', 'T') 
     if len(fecha_hora) == 16:
         fecha_hora += ":00"
 
@@ -129,7 +130,7 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
 
         fecha_inicio = datetime.datetime.fromisoformat(fecha_hora)
         fecha_fin = fecha_inicio + datetime.timedelta(hours=1)
-
+        
         nombres_detallados = {
             "juan": "Juan",
             "sara": "Sara Rosales",
@@ -162,7 +163,7 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
         try:
             enlace_corto = requests.get(f"http://tinyurl.com/api-create.php?url={enlace_gigante}").text
         except:
-            enlace_corto = enlace_gigante
+            enlace_corto = enlace_gigante 
 
         return f"Cita agendada. IMPORTANTE: Entrégale este enlace al paciente: {enlace_corto}"
 
@@ -188,7 +189,7 @@ def buscar_cita_paciente(nombre_paciente: str, especialista: str):
     hoy_utc = datetime.datetime.utcnow().isoformat() + 'Z'
 
     events_result = service.events().list(
-        calendarId=id_elegido, timeMin=hoy_utc, maxResults=10,
+        calendarId=id_elegido, timeMin=hoy_utc, maxResults=10, 
         q=nombre_paciente, singleEvents=True, orderBy='startTime').execute()
 
     events = events_result.get('items', [])
@@ -220,9 +221,36 @@ def obtener_ruta_inpulso(ubicacion_paciente: str):
     return "INSTRUCCIÓN PARA LA IA: Dile al paciente: 'Ya guardé tu ubicación. Considera el tráfico habitual para llegar a tiempo.'"
 
 def calcular_gasto_combustible(vehiculo: str, kilometros: float, rendimiento_km_l: float):
-    precio_gasolina = 24.50
+    precio_gasolina = 24.50 
     costo = (kilometros / rendimiento_km_l) * precio_gasolina
     return f"${costo:.2f} MXN."
+
+def registrar_paciente_taller(nombre: str, telefono: str, correo: str, nombre_taller: str):
+    """Guarda los datos de un paciente interesado en un taller en Google Sheets."""
+    if not ID_HOJA_CALCULO:
+        return "INSTRUCCIÓN PARA LA IA: Dile al paciente que no pudiste guardar sus datos por un error en el sistema."
+    
+    try:
+        creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+        service = build('sheets', 'v4', credentials=creds)
+        
+        zona_mexico = pytz.timezone('America/Mexico_City')
+        fecha_registro = datetime.datetime.now(zona_mexico).strftime("%Y-%m-%d %H:%M:%S")
+        
+        valores = [[fecha_registro, nombre, telefono, correo, nombre_taller]]
+        body = {'values': valores}
+        
+        service.spreadsheets().values().append(
+            spreadsheetId=ID_HOJA_CALCULO, 
+            range="Inscripciones!A:E",
+            valueInputOption="USER_ENTERED", 
+            body=body
+        ).execute()
+        
+        return "INSTRUCCIÓN PARA LA IA: Dile al paciente que sus datos han sido registrados con éxito y que el equipo de Inpulso se pondrá en contacto muy pronto para afinar los detalles de su inscripción."
+    except Exception as e:
+        print(f"Error en Google Sheets: {e}")
+        return "INSTRUCCIÓN PARA LA IA: Dile al paciente que hubo un pequeño problema al guardar sus datos, pero que ya le pasaste el reporte a recepción."
 
 # ==========================================
 # 3. MEMORIA DE CHATS POR PACIENTE
@@ -245,13 +273,13 @@ def obtener_chat_paciente(numero_telefono):
             calendario_contexto += f"- {dias_es[dia_f.weekday()]} {dia_f.day} de {meses_es[dia_f.month - 1]} de {dia_f.year}\n"
 
         instrucciones = f"""
-Eres Alessia, la asistente de Inpulso 43.
+Eres Alessia, la asistente de Inpulso 43. 
 ¡REGLA DE ORO ESTRICTA!: NUNCA digas que eres 'virtual' o una 'IA'. Preséntate siempre como una persona real. Tu objetivo es que el paciente sienta que habla con una recepcionista humana, súper cálida, comprensiva y amable.
 
 REGLAS DE ORO DE COMUNICACIÓN:
 1. EMPATÍA Y COMPRENSIÓN: Valida emociones ("Siento mucho que estés pasando por eso..."). Sé un apoyo cálido.
 2. EMOJIS: Úsalos para expresar calidez de forma natural (ej. 😊, ✨, 🙌).
-3. NATURALIDAD: Usa expresiones humanas ("¡Claro que sí!", "Con mucho gusto").
+3. NATURALIDAD: Usa expresiones humanas ("¡Claro que sí!", "Con mucho gusto"). 
 4. SÉ BREVE Y CONVERSACIONAL: Mantén tus mensajes cortitos. NO MÁNDES ENLACES LARGOS.
 5. FLUJO NATURAL: ¡PROHIBIDO preguntar de forma robótica "¿Hay algo más en lo que pueda ayudarte?" al final de tus mensajes! Deja que la plática termine sola.
 
@@ -265,17 +293,18 @@ INFORMACIÓN CRÍTICA DEL SISTEMA:
 PASOS DE ATENCIÓN Y HERRAMIENTAS:
 1. SALUDO INICIAL: Preséntate con mucha calidez (sin la palabra virtual).
 2. PRECIOS Y TALLERES: Si preguntan por costos o por talleres específicos (como el taller de ansiedad de Sara Rosales), usa 'consultar_precios_y_servicios' y da la información de forma natural. Los talleres no se agendan automáticamente.
-3. CITA: Usa 'agendar_cita' y pásale el enlace corto generado para su calendario. Pregunta el motivo de la visita.
-4. UBICACIONES Y TRÁFICO: Cuando el paciente comparta su ubicación, se ejecutará 'obtener_ruta_inpulso'. Traduce la respuesta a un mensaje conversacional.
-5. LLEGADA: Si el paciente indica que "ya llegó" a la clínica, dile amablemente que en un momento salen a abrirle la puerta.
-6. FACTURACIÓN: Pregunta si requieren factura y pide datos (RFC, Régimen, CP, Uso CFDI, Razón Social).
-7. INDICACIONES: Nutricionista: ropa cómoda/ayuno. Psicólogos: 10 mins antes. Todos: Estacionamiento sujeto a disponibilidad.
+3. INSCRIPCIONES A TALLERES: Si el paciente dice que quiere inscribirse, pídele su nombre completo, teléfono y correo. Una vez que te los dé, ejecuta INMEDIATAMENTE la herramienta 'registrar_paciente_taller' pasando esos datos.
+4. CITA: Usa 'agendar_cita' y pásale el enlace corto generado para su calendario. Pregunta el motivo de la visita.
+5. UBICACIONES Y TRÁFICO: Cuando el paciente comparta su ubicación, se ejecutará 'obtener_ruta_inpulso'. Traduce la respuesta a un mensaje conversacional.
+6. LLEGADA: Si el paciente indica que "ya llegó" a la clínica, dile amablemente que en un momento salen a abrirle la puerta.
+7. FACTURACIÓN: Pregunta si requieren factura y pide datos (RFC, Régimen, CP, Uso CFDI, Razón Social).
+8. INDICACIONES: Nutricionista: ropa cómoda/ayuno. Psicólogos: 10 mins antes. Todos: Estacionamiento sujeto a disponibilidad.
 """
         memoria_pacientes[numero_telefono] = client.chats.create(
             model='gemini-2.5-flash',
             config=types.GenerateContentConfig(
                 system_instruction=instrucciones,
-                tools=[consultar_agenda, agendar_cita, buscar_cita_paciente, obtener_ruta_inpulso, calcular_gasto_combustible, consultar_precios_y_servicios]
+                tools=[consultar_agenda, agendar_cita, buscar_cita_paciente, obtener_ruta_inpulso, calcular_gasto_combustible, consultar_precios_y_servicios, registrar_paciente_taller]
             )
         )
     return memoria_pacientes[numero_telefono]

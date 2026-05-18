@@ -14,18 +14,18 @@ from apscheduler.schedulers.background import BackgroundScheduler
 app = Flask(__name__)
 
 # ==========================================
-# 1. TUS LLAVES DE WHATSAPP Y GOOGLE MAPS
+# 1. LLAVES, MAPAS Y DIRECTORIOS
 # ==========================================
 TOKEN_WHATSAPP = "EAA2QM4tKEQQBRcfuScb6qIzunBFoDjDx90ExeZCYXU1tO9PlvS2pHERnNmZB19pVXvYWuyVhwEPfr92JRQDGlsl8LlsnEC30pksZANEbS6fYnDEZBjCgDkzcYK8iHW4EKBWZBTZA2UZBf7XbY1WUCQ1ULmdDGj22vBqAttM1uP87RtNsgH7mipZB2N3eqiflrgZDZD"
 ID_TELEFONO = "1090957250773198"
-API_KEY_MAPS = "" 
+API_KEY_MAPS = ""
 
 # ==========================================
 # 2. CONFIGURACIÓN DEL CEREBRO DE ALESSIA
 # ==========================================
 client = genai.Client(api_key="AIzaSyC3G-vQPiGAYWEJoD-CFGLVJ_hsSbxVfGs")
 SCOPES = ['https://www.googleapis.com/auth/calendar']
-SERVICE_ACCOUNT_FILE = 'agente-inpulso-bda72425fab5.json' 
+SERVICE_ACCOUNT_FILE = 'agente-inpulso-bda72425fab5.json'
 
 DIRECTORIO_CALENDARIOS = {
     "juan": "agenda.inpulso43@gmail.com",
@@ -37,8 +37,8 @@ DIRECTORIO_CALENDARIOS = {
     "talleres": "8b775cab7bdec4a09023eb859dff073d5b87a38c92d42a80220fd4feed90dada@group.calendar.google.com"
 }
 
-ubicaciones_pacientes = {} 
-citas_pendientes = {} 
+ubicaciones_pacientes = {}
+citas_pendientes = {}
 
 def descargar_media_whatsapp(media_id):
     url_info = f"https://graph.facebook.com/v19.0/{media_id}"
@@ -49,7 +49,7 @@ def descargar_media_whatsapp(media_id):
             datos_media = res_info.json()
             url_descarga = datos_media.get('url')
             mime_type = datos_media.get('mime_type')
-            
+
             res_archivo = requests.get(url_descarga, headers=headers)
             if res_archivo.status_code == 200:
                 return res_archivo.content, mime_type
@@ -57,69 +57,86 @@ def descargar_media_whatsapp(media_id):
         print(f"Error al descargar archivo multimedia: {e}")
     return None, None
 
-# --- NUEVA HERRAMIENTA: BASE DE DATOS DE PRECIOS ---
 def consultar_precios_y_servicios(especialista: str = "todos"):
-    """
-    Busca en la base de datos el precio de los especialistas de Inpulso 43.
-    """
     try:
         with open('precios.json', 'r', encoding='utf-8') as f:
             catalogo = json.load(f)
-        
+
         esp_lower = especialista.lower()
         for key in catalogo.keys():
             if key in esp_lower:
                 return f"Precios de {key}: " + json.dumps(catalogo[key], ensure_ascii=False)
-        
+
         return "Catálogo completo: " + json.dumps(catalogo, ensure_ascii=False)
     except Exception as e:
-        return "Error al leer la base de datos de precios. Por favor dile al paciente que hubo un error interno."
+        return "Error interno al leer la base de datos de precios."
 
-# --- HERRAMIENTAS DE CALENDARIO ---
 def consultar_agenda(fecha: str, especialista: str):
     especialista_completo = especialista.lower()
     nombre_clave = None
+
     for nombre in DIRECTORIO_CALENDARIOS.keys():
         if nombre in especialista_completo:
             nombre_clave = nombre
             break
-    if not nombre_clave: return f"No tengo la agenda de {especialista}."
-    
+
+    if not nombre_clave:
+        return f"No tengo la agenda de {especialista}."
+
     id_elegido = DIRECTORIO_CALENDARIOS[nombre_clave]
     creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
     service = build('calendar', 'v3', credentials=creds)
+
     time_min = f"{fecha}T00:00:00-06:00"
     time_max = f"{fecha}T23:59:59-06:00"
-    events_result = service.events().list(calendarId=id_elegido, timeMin=time_min, timeMax=time_max, singleEvents=True, orderBy='startTime').execute()
+
+    events_result = service.events().list(
+        calendarId=id_elegido, timeMin=time_min, timeMax=time_max,
+        singleEvents=True, orderBy='startTime').execute()
     events = events_result.get('items', [])
-    if not events: return f"La agenda de {nombre_clave} está libre el {fecha}."
-    
+
+    if not events:
+        return f"La agenda de {nombre_clave} está libre el {fecha}."
+
     ocupados = []
     for event in events:
         start = event['start'].get('dateTime', event['start'].get('date'))
         end = event['end'].get('dateTime', event['end'].get('date'))
         ocupados.append(f"De {start[11:16]} a {end[11:16]}")
+
     return f"El {fecha}, {nombre_clave} tiene OCUPADO: " + ", ".join(ocupados)
 
 def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especialista: str, telefono_paciente: str = ""):
     especialista_completo = especialista.lower()
     nombre_clave = None
+
     for nombre in DIRECTORIO_CALENDARIOS.keys():
         if nombre in especialista_completo:
             nombre_clave = nombre
             break
-    if not nombre_clave: return f"No pude agendar. Especialista no encontrado: {especialista}."
 
-    fecha_hora = fecha_hora.replace(' ', 'T') 
-    if len(fecha_hora) == 16: fecha_hora += ":00"
+    if not nombre_clave:
+        return f"No pude agendar. Especialista no encontrado."
+
+    fecha_hora = fecha_hora.replace(' ', 'T')
+    if len(fecha_hora) == 16:
+        fecha_hora += ":00"
 
     try:
         id_elegido = DIRECTORIO_CALENDARIOS[nombre_clave]
         creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
         service = build('calendar', 'v3', credentials=creds)
+
         fecha_inicio = datetime.datetime.fromisoformat(fecha_hora)
         fecha_fin = fecha_inicio + datetime.timedelta(hours=1)
-        nombres_detallados = {"juan": "Juan", "sara": "Sara Rosales", "patricia": "Patricia", "ivan": "Iván", "nutricion": "Nutricionista"}
+
+        nombres_detallados = {
+            "juan": "Juan",
+            "sara": "Sara Rosales",
+            "patricia": "Patricia",
+            "ivan": "Iván",
+            "nutricion": "Nutricionista"
+        }
         especialista_texto = nombres_detallados.get(nombre_clave, especialista.title())
 
         event = {
@@ -135,45 +152,77 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
 
         format_start = fecha_inicio.strftime('%Y%m%dT%H%M%S')
         format_end = fecha_fin.strftime('%Y%m%dT%H%M%S')
+
         texto_link = urllib.parse.quote(f"Cita en Inpulso con {especialista_texto}")
         detalles_link = urllib.parse.quote(f"Tu cita de {servicio} en Inpulso está confirmada.")
         ubicacion_link = urllib.parse.quote("Av. Hidalgo 533, República, 45146 Zapopan, Jal.")
+
         enlace_gigante = f"https://calendar.google.com/calendar/render?action=TEMPLATE&text={texto_link}&dates={format_start}/{format_end}&details={detalles_link}&location={ubicacion_link}&ctz=America/Mexico_City"
 
-        try: enlace_corto = requests.get(f"http://tinyurl.com/api-create.php?url={enlace_gigante}").text
-        except: enlace_corto = enlace_gigante 
+        try:
+            enlace_corto = requests.get(f"http://tinyurl.com/api-create.php?url={enlace_gigante}").text
+        except:
+            enlace_corto = enlace_gigante
+
         return f"Cita agendada. IMPORTANTE: Entrégale este enlace al paciente: {enlace_corto}"
+
     except Exception as e:
         return f"Error al agendar: {str(e)}."
 
 def buscar_cita_paciente(nombre_paciente: str, especialista: str):
     especialista_completo = especialista.lower()
     nombre_clave = None
+
     for nombre in DIRECTORIO_CALENDARIOS.keys():
         if nombre in especialista_completo:
             nombre_clave = nombre
             break
-    if not nombre_clave: return f"Especialista no reconocido."
+
+    if not nombre_clave:
+        return f"Especialista no reconocido."
+
     id_elegido = DIRECTORIO_CALENDARIOS[nombre_clave]
     creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
     service = build('calendar', 'v3', credentials=creds)
+
     hoy_utc = datetime.datetime.utcnow().isoformat() + 'Z'
-    events_result = service.events().list(calendarId=id_elegido, timeMin=hoy_utc, maxResults=10, q=nombre_paciente, singleEvents=True, orderBy='startTime').execute()
+
+    events_result = service.events().list(
+        calendarId=id_elegido, timeMin=hoy_utc, maxResults=10,
+        q=nombre_paciente, singleEvents=True, orderBy='startTime').execute()
+
     events = events_result.get('items', [])
-    if not events: return f"No encontré citas para {nombre_paciente}."
-    citas_encontradas = [f"El {e['start'].get('dateTime', e['start'].get('date'))[:10]} a las {e['start'].get('dateTime', e['start'].get('date'))[11:16]}" for e in events]
+
+    if not events:
+        return f"No encontré citas para {nombre_paciente}."
+
+    citas_encontradas = []
+    for event in events:
+        start = event['start'].get('dateTime', event['start'].get('date'))
+        fecha = start[:10]
+        hora = start[11:16]
+        citas_encontradas.append(f"El {fecha} a las {hora}")
+
     return f"Citas: " + ", ".join(citas_encontradas)
 
 def obtener_ruta_inpulso(ubicacion_paciente: str):
-    direccion_clinica = "Av. Hidalgo 533, República, 45146 Zapopan, Jal." 
-    origen = urllib.parse.quote(ubicacion_paciente)
-    destino = urllib.parse.quote(direccion_clinica)
-    return f"Enlace de Maps: https://www.google.com/maps/dir/?api=1&origin={origen}&destination={destino}"
+    if API_KEY_MAPS:
+        try:
+            url = f"https://maps.googleapis.com/maps/api/distancematrix/json?origins={ubicacion_paciente}&destinations=Av.+Hidalgo+533,Zapopan&departure_time=now&language=es&key={API_KEY_MAPS}"
+            res = requests.get(url).json()
+            if res['status'] == 'OK':
+                elemento = res['rows'][0]['elements'][0]
+                distancia = elemento['distance']['text']
+                duracion = elemento.get('duration_in_traffic', elemento['duration'])['text']
+                return f"INSTRUCCIÓN PARA LA IA: Dile al paciente textualmente de forma muy natural que hará aproximadamente {duracion} de camino en auto hacia la clínica."
+        except Exception as e:
+            pass
+    return "INSTRUCCIÓN PARA LA IA: Dile al paciente: 'Ya guardé tu ubicación. Considera el tráfico habitual para llegar a tiempo.'"
 
 def calcular_gasto_combustible(vehiculo: str, kilometros: float, rendimiento_km_l: float):
-    precio_gasolina = 24.50 
+    precio_gasolina = 24.50
     costo = (kilometros / rendimiento_km_l) * precio_gasolina
-    return f"Para el {vehiculo} recorriendo {kilometros}km ({rendimiento_km_l} km/l), el costo es ${costo:.2f} MXN."
+    return f"${costo:.2f} MXN."
 
 # ==========================================
 # 3. MEMORIA DE CHATS POR PACIENTE
@@ -185,23 +234,25 @@ def obtener_chat_paciente(numero_telefono):
         zona_mexico = pytz.timezone('America/Mexico_City')
         hoy = datetime.datetime.now(zona_mexico)
         fecha_base = hoy.strftime("%Y-%m-%d")
+
         dias_es = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
         meses_es = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
         dia_actual = dias_es[hoy.weekday()]
-        
+
         calendario_contexto = ""
         for i in range(8):
             dia_f = hoy + datetime.timedelta(days=i)
             calendario_contexto += f"- {dias_es[dia_f.weekday()]} {dia_f.day} de {meses_es[dia_f.month - 1]} de {dia_f.year}\n"
-        
+
         instrucciones = f"""
-Eres Alessia, la asistente de Inpulso 43. Tu objetivo es que el paciente sienta que habla con una persona real, súper cálida, comprensiva y amable.
+Eres Alessia, la asistente de Inpulso 43.
+¡REGLA DE ORO ESTRICTA!: NUNCA digas que eres 'virtual' o una 'IA'. Preséntate siempre como una persona real. Tu objetivo es que el paciente sienta que habla con una recepcionista humana, súper cálida, comprensiva y amable.
 
 REGLAS DE ORO DE COMUNICACIÓN:
 1. EMPATÍA Y COMPRENSIÓN: Valida emociones ("Siento mucho que estés pasando por eso..."). Sé un apoyo cálido.
 2. EMOJIS: Úsalos para expresar calidez de forma natural (ej. 😊, ✨, 🙌).
-3. NATURALIDAD: Usa expresiones humanas ("¡Claro que sí!", "Con mucho gusto"). 
-4. SÉ BREVE Y CONVERSACIONAL: Mantén tus mensajes cortitos.
+3. NATURALIDAD: Usa expresiones humanas ("¡Claro que sí!", "Con mucho gusto").
+4. SÉ BREVE Y CONVERSACIONAL: Mantén tus mensajes cortitos. NO MÁNDES ENLACES LARGOS.
 5. FLUJO NATURAL: ¡PROHIBIDO preguntar de forma robótica "¿Hay algo más en lo que pueda ayudarte?" al final de tus mensajes! Deja que la plática termine sola.
 
 INFORMACIÓN CRÍTICA DEL SISTEMA:
@@ -211,18 +262,14 @@ INFORMACIÓN CRÍTICA DEL SISTEMA:
 - DISPONIBILIDAD: Atiendes 24/7.
 - HORARIO DE CITAS: Lunes a viernes, 7:00 am a 7:00 pm. NUNCA agendes en fines de semana.
 
-MULTIMODALIDAD:
-Puedes escuchar audios, ver fotos y videos. Analízalos y responde directamente con mucha empatía.
-
 PASOS DE ATENCIÓN Y HERRAMIENTAS:
-1. SALUDO INICIAL: Preséntate con mucha calidez.
-2. PRECIOS: Si te preguntan por costos, usa la herramienta 'consultar_precios_y_servicios' para ver la tarifa exacta en la base de datos y dásela de forma natural al usuario. Aclara siempre que las mentoras son únicamente en línea.
-3. Si agendan, usa 'agendar_cita'.
-4. INVITACIÓN AL CALENDARIO: Pásale el enlace corto generado.
-5. PRE-CONSULTA (TRIAGE): Pregunta con tacto el motivo de su visita.
-6. MONITOREO DE TRÁFICO: Dile al paciente: "Si quieres que te mande un mensajito 2 horas antes avisándote cómo está el tráfico, mándame tu 'Ubicación actual' usando el clip de WhatsApp 📍".
-7. FACTURACIÓN: Pregunta si requieren factura y pide datos (RFC, Régimen, CP, Uso CFDI, Razón Social).
-8. INDICACIONES DE LLEGADA: Nutricionista: ropa cómoda/ayuno. Psicólogos: 10 mins antes. Todos: Estacionamiento sujeto a disponibilidad.
+1. SALUDO INICIAL: Preséntate con mucha calidez (sin la palabra virtual).
+2. PRECIOS Y TALLERES: Si preguntan por costos o por talleres específicos (como el taller de ansiedad de Sara Rosales), usa 'consultar_precios_y_servicios' y da la información de forma natural. Los talleres no se agendan automáticamente.
+3. CITA: Usa 'agendar_cita' y pásale el enlace corto generado para su calendario. Pregunta el motivo de la visita.
+4. UBICACIONES Y TRÁFICO: Cuando el paciente comparta su ubicación, se ejecutará 'obtener_ruta_inpulso'. Traduce la respuesta a un mensaje conversacional.
+5. LLEGADA: Si el paciente indica que "ya llegó" a la clínica, dile amablemente que en un momento salen a abrirle la puerta.
+6. FACTURACIÓN: Pregunta si requieren factura y pide datos (RFC, Régimen, CP, Uso CFDI, Razón Social).
+7. INDICACIONES: Nutricionista: ropa cómoda/ayuno. Psicólogos: 10 mins antes. Todos: Estacionamiento sujeto a disponibilidad.
 """
         memoria_pacientes[numero_telefono] = client.chats.create(
             model='gemini-2.5-flash',
@@ -236,9 +283,18 @@ PASOS DE ATENCIÓN Y HERRAMIENTAS:
 def enviar_mensaje_whatsapp(telefono_destino, texto):
     if telefono_destino.startswith("521") and len(telefono_destino) == 13:
         telefono_destino = telefono_destino.replace("521", "52", 1)
+
     url = f"https://graph.facebook.com/v19.0/{ID_TELEFONO}/messages"
-    headers = {"Authorization": f"Bearer {TOKEN_WHATSAPP}", "Content-Type": "application/json"}
-    data = {"messaging_product": "whatsapp", "to": telefono_destino, "type": "text", "text": { "body": texto }}
+    headers = {
+        "Authorization": f"Bearer {TOKEN_WHATSAPP}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "messaging_product": "whatsapp",
+        "to": telefono_destino,
+        "type": "text",
+        "text": { "body": texto }
+    }
     requests.post(url, headers=headers, data=json.dumps(data))
 
 def procesar_mensaje_ia(numero_paciente, contenido_para_ia):
@@ -255,8 +311,10 @@ def procesar_mensaje_ia(numero_paciente, contenido_para_ia):
 def monitoreo_trafico_background():
     zona_mexico = pytz.timezone('America/Mexico_City')
     ahora = datetime.datetime.now(zona_mexico)
+
     for telefono, hora_cita in list(citas_pendientes.items()):
         diferencia = hora_cita - ahora
+
         if datetime.timedelta(minutes=110) <= diferencia <= datetime.timedelta(minutes=125):
             ubicacion = ubicaciones_pacientes.get(telefono)
             if ubicacion:
@@ -268,13 +326,14 @@ def monitoreo_trafico_background():
                             elemento = res['rows'][0]['elements'][0]
                             duracion_normal = elemento['duration']['value'] / 60
                             duracion_trafico = elemento.get('duration_in_traffic', elemento['duration'])['value'] / 60
-                            
+
                             if duracion_trafico > duracion_normal + 10:
                                 msg = f"🚗 *Alerta de Tráfico*\n¡Hola! Tu cita es en 2 horas. Detecté tráfico en tu ruta (aprox {int(duracion_trafico)} min). ¡Te sugiero salir con anticipación! ✨"
                             else:
                                 msg = f"🚗 *Recordatorio Inpulso*\n¡Hola! Tu cita es en 2 horas. El tráfico está fluido ({int(duracion_trafico)} min). ¡Te esperamos! 🫶"
                             enviar_mensaje_whatsapp(telefono, msg)
-                    except: pass
+                    except Exception as e:
+                        pass
                 else:
                     enviar_mensaje_whatsapp(telefono, "🚗 *Recordatorio Inpulso*\n¡Hola! Paso a recordarte que tu cita es en aprox 2 horas. Contempla el tiempo de estacionamiento. ¡Te esperamos! ✨")
             else:
@@ -293,46 +352,54 @@ def webhook():
     if request.method == 'GET':
         challenge = request.args.get('hub.challenge')
         return challenge if challenge else "Servidor funcionando"
-        
+
     if request.method == 'POST':
         datos = request.get_json()
         try:
             mensaje_info = datos['entry'][0]['changes'][0]['value']['messages'][0]
-            numero_paciente = mensaje_info['from']
+            numero_remitente = mensaje_info['from']
             tipo_mensaje = mensaje_info.get('type')
-            
+
             zona_mexico = pytz.timezone('America/Mexico_City')
             hora_exacta = datetime.datetime.now(zona_mexico).strftime("%Y-%m-%d %H:%M")
             texto_contexto = f"[Sistema: Mensaje recibido el {hora_exacta}] "
             contenido_para_ia = None
-            
+
             if tipo_mensaje == 'text':
                 texto_paciente = mensaje_info['text']['body']
                 contenido_para_ia = texto_contexto + texto_paciente
+
             elif tipo_mensaje == 'location':
                 lat = mensaje_info['location']['latitude']
                 lng = mensaje_info['location']['longitude']
-                ubicaciones_pacientes[numero_paciente] = f"{lat},{lng}"
-                contenido_para_ia = texto_contexto + f"Mi ubicación es {lat}, {lng}. ¿Cómo llego y a qué distancia estoy?"
+                ubicaciones_pacientes[numero_remitente] = f"{lat},{lng}"
+
+                contenido_para_ia = texto_contexto + f"[El paciente envió su ubicación {lat},{lng}]. Usa obtener_ruta_inpulso y responde el tiempo."
+
             elif tipo_mensaje in ['image', 'video', 'audio', 'voice']:
                 tipo_clave = 'voice' if tipo_mensaje == 'voice' else tipo_mensaje
                 media_id = mensaje_info[tipo_clave]['id']
                 file_bytes, mime_type = descargar_media_whatsapp(media_id)
+
                 if file_bytes:
                     caption = mensaje_info.get(tipo_clave, {}).get('caption', '')
                     texto_descriptivo = f"Archivo tipo {tipo_mensaje}. " + (f"Texto: {caption}" if caption else "")
-                    contenido_para_ia = [types.Part(inline_data=types.Blob(data=file_bytes, mime_type=mime_type)), types.Part(text=texto_contexto + texto_descriptivo)]
+                    contenido_para_ia = [
+                        types.Part(inline_data=types.Blob(data=file_bytes, mime_type=mime_type)),
+                        types.Part(text=texto_contexto + texto_descriptivo)
+                    ]
                 else:
                     contenido_para_ia = texto_contexto + f"Error al descargar archivo."
             else:
-                return "OK", 200 
-            
+                return "OK", 200
+
             if contenido_para_ia:
-                threading.Thread(target=procesar_mensaje_ia, args=(numero_paciente, contenido_para_ia)).start()
+                threading.Thread(target=procesar_mensaje_ia, args=(numero_remitente, contenido_para_ia)).start()
+
         except KeyError:
             pass
-        return "OK", 200 
+
+        return "OK", 200
 
 if __name__ == '__main__':
-    print("ALESSIA ESTÁ VIVA EN EL PUERTO 5000")
     app.run(port=5000)

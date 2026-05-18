@@ -2,7 +2,22 @@
   "sara": {
     "individual": "$800",
     "pareja": "$900",
-    "familiar": "$1200"
+    "familiar": "$1200",
+    "taller_ansiedad": {
+      "nombre": "El cuerpo que aprendió a sobrevivir: la ansiedad después del control",
+      "fechas": "Lunes 1 de junio y lunes 8 de junio (Consta de dos sesiones)",
+      "horario": "6:00 PM",
+      "modalidad": "Presencial en Inpulso 43 y online",
+      "costos": "Online $400 MXN / Presencial $500 MXN",
+      "cupo": "Cupo limitado",
+      "temario": [
+        "Ansiedad: ¿síntoma o problema?",
+        "Origen profundo de la ansiedad",
+        "La ansiedad en tu cuerpo y en tu mente",
+        "Errores para afrontar la realidad",
+        "Regulación emocional"
+      ]
+    }
   },
   "paty": {
     "individual": "$800",
@@ -29,5 +44,20 @@
   },
   "mentoras": {
     "nota_importante": "Los servicios con las mentoras son ÚNICAMENTE en línea."
+  },
+  "taller": {
+    "nombre": "El cuerpo que aprendió a sobrevivir: la ansiedad después del control (Impartido por Sara Rosales)",
+    "fechas": "Lunes 1 de junio y lunes 8 de junio (Consta de dos sesiones)",
+    "horario": "6:00 PM",
+    "modalidad": "Presencial en Inpulso 43 y online",
+    "costos": "Online $400 MXN / Presencial $500 MXN",
+    "cupo": "Cupo limitado",
+    "temario": [
+      "Ansiedad: ¿síntoma o problema?",
+      "Origen profundo de la ansiedad",
+      "La ansiedad en tu cuerpo y en tu mente",
+      "Errores para afrontar la realidad",
+      "Regulación emocional"
+    ]
   }
 }

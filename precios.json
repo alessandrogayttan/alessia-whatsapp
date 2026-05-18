@@ -1,0 +1,33 @@
+{
+  "sara": {
+    "individual": "$800",
+    "pareja": "$900",
+    "familiar": "$1200"
+  },
+  "paty": {
+    "individual": "$800",
+    "pareja": "$900",
+    "familiar": "$1200"
+  },
+  "patricia": {
+    "individual": "$800",
+    "pareja": "$900",
+    "familiar": "$1200"
+  },
+  "ivan": {
+    "individual": "$800",
+    "pareja": "$900",
+    "familiar": "$1200"
+  },
+  "juan": {
+    "individual": "$1000",
+    "pareja": "$1100",
+    "familiar": "$1300"
+  },
+  "nutricionista": {
+    "general": "$450"
+  },
+  "mentoras": {
+    "nota_importante": "Los servicios con las mentoras son ÚNICAMENTE en línea."
+  }
+}

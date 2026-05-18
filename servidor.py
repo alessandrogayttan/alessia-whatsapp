@@ -3,6 +3,7 @@ import pytz
 import requests
 import json
 import urllib.parse
+import threading
 from flask import Flask, request
 from google import genai
 from google.genai import types
@@ -290,6 +291,16 @@ def enviar_mensaje_whatsapp(telefono_destino, texto):
     if respuesta.status_code != 200:
         print(f"\nERROR DE META AL ENVIAR: {respuesta.text}")
 
+# --- PROCESAMIENTO EN SEGUNDO PLANO ---
+def procesar_mensaje_ia(numero_paciente, contenido_para_ia):
+    try:
+        chat_alessia = obtener_chat_paciente(numero_paciente)
+        respuesta_ia = chat_alessia.send_message(contenido_para_ia)
+        enviar_mensaje_whatsapp(numero_paciente, respuesta_ia.text)
+        print(f"[WhatsApp] Alessia respondió al {numero_paciente}: {respuesta_ia.text}")
+    except Exception as e:
+        print(f"[ERROR] Hubo un problema al procesar el mensaje con Gemini: {str(e)}")
+
 # ==========================================
 # 4. EL PORTERO (RECIBE Y CONTESTA)
 # ==========================================
@@ -313,18 +324,15 @@ def webhook():
             
             contenido_para_ia = None
             
-            # --- MANEJO DE MENSAJES DE TEXTO ---
             if tipo_mensaje == 'text':
                 texto_paciente = mensaje_info['text']['body']
                 contenido_para_ia = texto_contexto + texto_paciente
                 
-            # --- MANEJO DE UBICACIONES ---
             elif tipo_mensaje == 'location':
                 lat = mensaje_info['location']['latitude']
                 lng = mensaje_info['location']['longitude']
                 contenido_para_ia = texto_contexto + f"Mi ubicación es {lat}, {lng}. ¿Cómo llego y a qué distancia estoy?"
                 
-            # --- MANEJO DE MULTIMODALIDAD (AUDIOS, IMÁGENES Y VIDEOS) ---
             elif tipo_mensaje in ['image', 'video', 'audio', 'voice']:
                 tipo_clave = 'voice' if tipo_mensaje == 'voice' else tipo_mensaje
                 media_id = mensaje_info[tipo_clave]['id']
@@ -338,7 +346,6 @@ def webhook():
                     if caption:
                         texto_descriptivo += f"Texto adjunto por el usuario: {caption}"
                         
-                    # Empaquetamos la media y el texto para mandárselos juntos a Gemini
                     part_media = types.Part(inline_data=types.Blob(data=file_bytes, mime_type=mime_type))
                     part_texto = types.Part(text=texto_contexto + texto_descriptivo)
                     contenido_para_ia = [part_media, part_texto]
@@ -350,18 +357,16 @@ def webhook():
             if contenido_para_ia is None:
                 return "OK", 200
                 
-            print(f"\n[WhatsApp] Paciente {numero_paciente} dice: ({tipo_mensaje})")
+            print(f"\n[WhatsApp] Entró mensaje de {numero_paciente} ({tipo_mensaje}). Procesando en segundo plano...")
             
-            chat_alessia = obtener_chat_paciente(numero_paciente)
-            respuesta_ia = chat_alessia.send_message(contenido_para_ia)
-            
-            enviar_mensaje_whatsapp(numero_paciente, respuesta_ia.text)
-            print(f"[WhatsApp] Alessia respondió: {respuesta_ia.text}")
+            # Ejecutar a Alessia en un hilo separado
+            hilo = threading.Thread(target=procesar_mensaje_ia, args=(numero_paciente, contenido_para_ia))
+            hilo.start()
             
         except KeyError:
             pass
             
-        return "OK", 200
+        return "OK", 200 # <-- Aquí respondemos instantáneamente a Meta
 
 if __name__ == '__main__':
     print("ALESSIA ESTÁ VIVA Y ESCUCHANDO WHATSAPP EN EL PUERTO 5000")

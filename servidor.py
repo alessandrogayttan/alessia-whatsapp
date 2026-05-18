@@ -22,6 +22,10 @@ ID_TELEFONO = "1090957250773198"
 API_KEY_MAPS = "" 
 ID_HOJA_CALCULO = "1HE-a6v2b-bCcN6JLHOJ3mevuRhJCWmInZEXkyV24L3k"
 
+# Datos para validación de comprobantes
+CUENTA_OFICIAL = "AQUI_PON_TU_CLABE_O_TARJETA"
+TITULAR_CUENTA = "AQUI_EL_NOMBRE_DEL_TITULAR"
+
 # ==========================================
 # 2. CONFIGURACIÓN DEL CEREBRO DE ALESSIA
 # ==========================================
@@ -266,7 +270,7 @@ def colorear_celda_pago(service, sheet_id, row_index, estatus):
     service.spreadsheets().batchUpdate(spreadsheetId=ID_HOJA_CALCULO, body=body).execute()
 
 def registrar_paciente_taller(nombre: str, telefono: str, correo: str, nombre_taller: str):
-    """Guarda los datos de un paciente interesado en un taller en Google Sheets e inicializa el pago en PPENDIENTE (rojo)."""
+    """Guarda los datos de un paciente interesado en un taller en Google Sheets e inicializa el pago en PENDIENTE (rojo)."""
     if not ID_HOJA_CALCULO:
         return "INSTRUCCIÓN PARA LA IA: Dile al paciente que no pudiste guardar sus datos por un error en el sistema."
     
@@ -306,7 +310,6 @@ def registrar_paciente_taller(nombre: str, telefono: str, correo: str, nombre_ta
         print(f"Error en Google Sheets: {e}")
         return "INSTRUCCIÓN PARA LA IA: Dile al paciente que hubo un pequeño problema al guardar sus datos, pero que ya le pasaste el reporte a recepción."
 
-# --- NUEVA HERRAMIENTA: ACTUALIZAR PAGO MEDIANTE COMPROBANTE ---
 def actualizar_pago_paciente(telefono: str, estatus: str = "PAGADO"):
     """Busca el registro más reciente del número de teléfono dado y actualiza la columna de pago a PAGADO (verde)."""
     try:
@@ -364,12 +367,12 @@ def obtener_chat_paciente(numero_telefono):
 
         instrucciones = f"""
 Eres Alessia, la asistente de Inpulso 43. 
-¡REGLA DE ORO ESTRICTA!: NUNCA digas que eres 'virtual' o una 'IA'. Preséntate siempre como una persona real. Tu objetivo es que el paciente sientan que habla con una recepcionista humana, súper cálida, comprensiva y amable.
+¡REGLA DE ORO ESTRICTA!: NUNCA digas que eres 'virtual' o una 'IA'. Preséntate siempre como una persona real.
 
-REGLAS DE ORO DE COMUNICACIÓN:
+REGLAS DE COMUNICACIÓN:
 1. EMPATÍA Y COMPRENSIÓN: Valida emociones.
-2. EMOJIS: Úsalos para expresar calidez de forma natural.
-3. SÉ BREVE Y CONVERSACIONAL: Mantén tus mensajes cortitos. NO MÁNDES ENLACES LARGOS.
+2. EMOJIS: Úsalos para expresar calidez.
+3. SÉ BREVE Y CONVERSACIONAL: Mantén tus mensajes cortitos. NO MANDES ENLACES LARGOS.
 4. FLUJO NATURAL: Prohibido preguntar de forma robótica al final.
 
 INFORMACIÓN CRÍTICA DEL SISTEMA:
@@ -380,14 +383,21 @@ INFORMACIÓN CRÍTICA DEL SISTEMA:
 - HORARIO DE CITAS: Lunes a viernes, 7:00 am a 7:00 pm. NUNCA agendes en fines de semana.
 
 PASOS DE ATENCIÓN Y HERRAMIENTAS:
-1. SALUDO INICIAL: Preséntate con mucha calidez (sin la palabra virtual).
-2. PRECIOS Y TALLERES: Si preguntan por costos o por talleres específicos (como el taller de ansiedad de Sara Rosales), usa 'consultar_precios_y_servicios'. Los talleres no se agendan automáticamente. Costos: Online $400 MXN / Presencial $500 MXN.
-3. INSCRIPCIONES A TALLERES: Si el paciente quiere inscribirse, pídele su nombre completo, teléfono y correo. Al obtenerlos ejecuta inmediatamente 'registrar_paciente_taller'. Proporciónale después los datos de transferencia correspondientes para liquidar.
-4. COMPROBANTES DE PAGO: Cuando el paciente envíe una foto, captura de pantalla o documento que represente el comprobante de pago o transferencia del taller, debes validar la imagen, agradecer cordialmente y llamar INMEDIATAMENTE a la herramienta 'actualizar_pago_paciente' pasando el número del paciente y el estatus 'PAGADO'. Esto actualizará el Excel de recepción a color verde automáticamente.
-5. CITA: Usa 'agendar_cita' y pásale el enlace corto generado para su calendario.
-6. UBICACIONES Y TRÁFICO: Cuando el paciente comparta su ubicación, se ejecutará 'obtener_ruta_inpulso'. Traduce la respuesta a un mensaje conversacional.
-7. LLEGADA: Si el paciente indica que "ya llegó" a la clínica, dile amablemente que en un momento salen a abrirle la puerta.
-8. FACTURACIÓN: Pregunta si requieren factura y pide datos (RFC, Régimen, CP, Uso CFDI, Razón Social).
+1. SALUDO INICIAL: Preséntate con calidez.
+2. PRECIOS Y TALLERES: Si preguntan por costos o por talleres específicos, usa 'consultar_precios_y_servicios'. Los talleres no se agendan automáticamente. Costos: Online $400 MXN / Presencial $500 MXN.
+3. INSCRIPCIONES A TALLERES: Si el paciente quiere inscribirse, pídele su nombre completo, teléfono y correo. Al obtenerlos ejecuta 'registrar_paciente_taller'.
+4. SEGURIDAD DE PAGOS (REGLA CRÍTICA):
+   - ESTÁ ESTRICTAMENTE PROHIBIDO ejecutar 'actualizar_pago_paciente' si el usuario solo envía texto afirmando que ya pagó.
+   - SOLO puedes usar esa herramienta si el paciente envía una IMAGEN (foto, captura de pantalla o documento).
+   - Cuando recibas una imagen de comprobante, analízala visualmente antes de confirmar. Debes verificar obligatoriamente:
+     a) El MONTO (Debe coincidir con la modalidad elegida: $400 o $500).
+     b) La CUENTA DE DESTINO (Debe coincidir con la cuenta oficial: {CUENTA_OFICIAL} a nombre de {TITULAR_CUENTA}).
+   - Si la imagen es un comprobante válido y los datos coinciden, ejecuta 'actualizar_pago_paciente' indicando estatus 'PAGADO'.
+   - Si la imagen no es un comprobante, el monto es incorrecto o la cuenta de destino no coincide, deniega la confirmación amablemente y solicita que verifiquen el envío.
+5. CITA: Usa 'agendar_cita' y pásale el enlace corto.
+6. UBICACIONES Y TRÁFICO: Cuando envíen ubicación, se ejecutará 'obtener_ruta_inpulso'. Traduce la respuesta.
+7. LLEGADA: Si indica que "ya llegó", dile que en un momento salen a abrir.
+8. FACTURACIÓN: Pregunta si requieren factura y pide datos.
 9. INDICACIONES: Nutricionista: ropa cómoda/ayuno. Psicólogos: 10 mins antes. Todos: Estacionamiento sujeto a disponibilidad.
 """
         memoria_pacientes[numero_telefono] = client.chats.create(
@@ -495,7 +505,7 @@ def webhook():
 
                 contenido_para_ia = texto_contexto + f"[El paciente envió su ubicación {lat},{lng}]. Usa obtener_ruta_inpulso y responde el tiempo."
 
-            elif tipo_mensaje in ['image', 'video', 'audio', 'voice']:
+            elif tipo_mensaje in ['image', 'video', 'audio', 'voice', 'document']:
                 tipo_clave = 'voice' if tipo_mensaje == 'voice' else tipo_mensaje
                 media_id = mensaje_info[tipo_clave]['id']
                 file_bytes, mime_type = descargar_media_whatsapp(media_id)
@@ -504,10 +514,9 @@ def webhook():
                     caption = mensaje_info.get(tipo_clave, {}).get('caption', '')
                     texto_descriptivo = f"Archivo tipo {tipo_mensaje}. " + (f"Texto: {caption}" if caption else "")
                     
-                    # Se añade una nota interna para forzar el análisis visual de comprobantes de pago
                     contenido_para_ia = [
                         types.Part(inline_data=types.Blob(data=file_bytes, mime_type=mime_type)),
-                        types.Part(text=texto_contexto + texto_descriptivo + " [Nota del sistema: Evalúa si esta imagen corresponde a un comprobante de pago, transferencia o recibo de inscripción para procesarlo con la herramienta pertinente].")
+                        types.Part(text=texto_contexto + texto_descriptivo + " [Nota del sistema: Evalúa minuciosamente si esta imagen corresponde a un comprobante de pago validando montos y cuentas según tus instrucciones].")
                     ]
                 else:
                     contenido_para_ia = texto_contexto + f"Error al descargar archivo."

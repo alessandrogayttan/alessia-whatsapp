@@ -24,16 +24,16 @@ ID_HOJA_CALCULO = "1HE-a6v2b-bCcN6JLHOJ3mevuRhJCWmInZEXkyV24L3k"
 
 # Datos de cuentas oficiales para validación
 CUENTAS_OFICIALES = {
-    "SANTANDER": {
-        "cuenta": "60604104279",
-        "clabe": "014320606041042790",
-        "titular": "Sara Verónica Rosales Delgado",
+    "BANORTE": {
+        "tarjeta": "4189 1430 7739 9932",
+        "clabe": "072320003548248000",
+        "titular": "Verónica Esmeralda Delgado Andalón",
         "factura": False
     },
     "BANAMEX": {
-        "cuenta": "70197775956",
-        "clabe": "002320701977759567",
-        "titular": "Inpulso 43 SC",
+        "cuenta": "7009 28855 16",
+        "clabe": "002320700928855166",
+        "titular": "Inpulso 43",
         "factura": True
     }
 }
@@ -57,6 +57,7 @@ DIRECTORIO_CALENDARIOS = {
 
 ubicaciones_pacientes = {} 
 citas_pendientes = {} 
+mensajes_procesados = [] # Memoria de tickets para evitar mensajes duplicados de Meta
 
 def descargar_media_whatsapp(media_id):
     url_info = f"https://graph.facebook.com/v19.0/{media_id}"
@@ -374,8 +375,8 @@ REGLAS DE COMUNICACIÓN:
 3. CIERRE NATURAL (REGLA CRÍTICA): ESTÁ ABSOLUTAMENTE PROHIBIDO usar frases de cierre como "¿Hay algo más en lo que pueda ayudarte?", "¿Puedo asistirte en algo más?", o cualquier variación robótica similar. Termina tu mensaje de forma natural, sin hacer preguntas de servicio al final.
 
 INFORMACIÓN DE CUENTAS BANCARIAS:
-- Si el paciente NO requiere factura, proporciónale la cuenta de SANTANDER: Cuenta 60604104279, CLABE 014320606041042790 a nombre de Sara Verónica Rosales Delgado.
-- Si el paciente REQUIERE factura, indícale de forma muy clara que la ÚNICA cuenta autorizada es BANAMEX: Cuenta 70197775956, CLABE 002320701977759567 a nombre de Inpulso 43 SC.
+- Si el paciente NO requiere factura, proporciónale la cuenta de BANORTE: Tarjeta 4189 1430 7739 9932, CLABE 072320003548248000 a nombre de Verónica Esmeralda Delgado Andalón.
+- Si el paciente REQUIERE factura, indícale de forma muy clara que la ÚNICA cuenta autorizada es BANAMEX: Cuenta 7009 28855 16, CLABE 002320700928855166 a nombre de Inpulso 43.
 - REGLA DE TRANSFERENCIA: Recuérdale siempre al paciente que en el concepto de la transferencia debe colocar obligatoriamente su NOMBRE COMPLETO.
 
 INFORMACIÓN CRÍTICA DEL SISTEMA:
@@ -390,7 +391,7 @@ PASOS DE ATENCIÓN Y HERRAMIENTAS:
 3. SEGURIDAD DE PAGOS (REGLA CRÍTICA):
    - PROHIBIDO ejecutar 'actualizar_pago_paciente' si el usuario solo envía texto.
    - SOLO usa la herramienta si el paciente envía una IMAGEN del comprobante.
-   - Valida en la imagen: Que el monto coincida con el servicio solicitado y que el destino sea alguna de nuestras dos cuentas oficiales (Santander: 60604104279 / Banamex: 70197775956).
+   - Valida en la imagen: Que el monto coincida con el servicio solicitado y que el destino sea alguna de nuestras dos cuentas oficiales (Banorte o Banamex).
 4. CITA: Usa 'agendar_cita' y pásale el enlace corto.
 5. UBICACIONES Y TRÁFICO: Cuando envíen ubicación, se ejecutará 'obtener_ruta_inpulso'.
 6. LLEGADA: Si indica que "ya llegó", dile que en un momento salen a abrir.
@@ -498,6 +499,17 @@ def webhook():
         datos = request.get_json()
         try:
             mensaje_info = datos['entry'][0]['changes'][0]['value']['messages'][0]
+            mensaje_id = mensaje_info['id']
+            
+            # FILTRO ANTIDUPLICADOS: Ignora reintentos de Meta
+            if mensaje_id in mensajes_procesados:
+                return "OK", 200
+            
+            mensajes_procesados.append(mensaje_id)
+            # Mantiene la lista ligera (solo guarda los últimos 500)
+            if len(mensajes_procesados) > 500:
+                mensajes_procesados.pop(0)
+
             numero_remitente = mensaje_info['from']
             tipo_mensaje = mensaje_info.get('type')
             

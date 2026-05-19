@@ -22,7 +22,6 @@ ID_TELEFONO = "1090957250773198"
 API_KEY_MAPS = "" 
 ID_HOJA_CALCULO = "1HE-a6v2b-bCcN6JLHOJ3mevuRhJCWmInZEXkyV24L3k"
 
-# Datos para validación de comprobantes
 CUENTA_OFICIAL = "AQUI_PON_TU_CLABE_O_TARJETA"
 TITULAR_CUENTA = "AQUI_EL_NOMBRE_DEL_TITULAR"
 
@@ -67,12 +66,12 @@ def consultar_precios_y_servicios(especialista: str = "todos"):
     try:
         with open('precios.json', 'r', encoding='utf-8') as f:
             catalogo = json.load(f)
-
+            
         esp_lower = especialista.lower()
         for key in catalogo.keys():
             if key in esp_lower:
                 return f"Precios de {key}: " + json.dumps(catalogo[key], ensure_ascii=False)
-
+                
         return "Catálogo completo: " + json.dumps(catalogo, ensure_ascii=False)
     except Exception as e:
         return "Error interno al leer la base de datos de precios."
@@ -80,27 +79,28 @@ def consultar_precios_y_servicios(especialista: str = "todos"):
 def consultar_agenda(fecha: str, especialista: str):
     especialista_completo = especialista.lower()
     nombre_clave = None
-
+    
     for nombre in DIRECTORIO_CALENDARIOS.keys():
         if nombre in especialista_completo:
             nombre_clave = nombre
             break
-
+            
     if not nombre_clave:
         return f"No tengo la agenda de {especialista}."
     
     id_elegido = DIRECTORIO_CALENDARIOS[nombre_clave]
     creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
     service = build('calendar', 'v3', credentials=creds)
-
+    
     time_min = f"{fecha}T00:00:00-06:00"
     time_max = f"{fecha}T23:59:59-06:00"
     
     events_result = service.events().list(
-        calendarId=id_elegido, timeMin=time_min, timeMax=time_max, 
-        singleEvents=True, orderBy='startTime').execute()
+        calendarId=id_elegido, timeMin=time_min, timeMax=time_max, singleEvents=True, orderBy='startTime'
+    ).execute()
+    
     events = events_result.get('items', [])
-
+    
     if not events:
         return f"La agenda de {nombre_clave} está libre el {fecha}."
     
@@ -109,18 +109,18 @@ def consultar_agenda(fecha: str, especialista: str):
         start = event['start'].get('dateTime', event['start'].get('date'))
         end = event['end'].get('dateTime', event['end'].get('date'))
         ocupados.append(f"De {start[11:16]} a {end[11:16]}")
-
+        
     return f"El {fecha}, {nombre_clave} tiene OCUPADO: " + ", ".join(ocupados)
 
 def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especialista: str, telefono_paciente: str = ""):
     especialista_completo = especialista.lower()
     nombre_clave = None
-
+    
     for nombre in DIRECTORIO_CALENDARIOS.keys():
         if nombre in especialista_completo:
             nombre_clave = nombre
             break
-
+            
     if not nombre_clave:
         return f"No pude agendar. Especialista no encontrado."
 
@@ -132,16 +132,13 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
         id_elegido = DIRECTORIO_CALENDARIOS[nombre_clave]
         creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
         service = build('calendar', 'v3', credentials=creds)
-
+        
         fecha_inicio = datetime.datetime.fromisoformat(fecha_hora)
         fecha_fin = fecha_inicio + datetime.timedelta(hours=1)
         
         nombres_detallados = {
-            "juan": "Juan",
-            "sara": "Sara Rosales",
-            "patricia": "Patricia",
-            "ivan": "Iván",
-            "nutricion": "Nutricionista"
+            "juan": "Juan", "sara": "Sara Rosales", "patricia": "Patricia", 
+            "ivan": "Iván", "nutricion": "Nutricionista"
         }
         especialista_texto = nombres_detallados.get(nombre_clave, especialista.title())
 
@@ -152,53 +149,50 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
             'end': {'dateTime': fecha_fin.isoformat(), 'timeZone': 'America/Mexico_City'},
         }
         service.events().insert(calendarId=id_elegido, body=event).execute()
-
+        
         if telefono_paciente:
             citas_pendientes[telefono_paciente] = fecha_inicio
 
         format_start = fecha_inicio.strftime('%Y%m%dT%H%M%S')
         format_end = fecha_fin.strftime('%Y%m%dT%H%M%S')
-
         texto_link = urllib.parse.quote(f"Cita en Inpulso con {especialista_texto}")
         detalles_link = urllib.parse.quote(f"Tu cita de {servicio} en Inpulso está confirmada.")
         ubicacion_link = urllib.parse.quote("Av. Hidalgo 533, República, 45146 Zapopan, Jal.")
-
         enlace_gigante = f"https://calendar.google.com/calendar/render?action=TEMPLATE&text={texto_link}&dates={format_start}/{format_end}&details={detalles_link}&location={ubicacion_link}&ctz=America/Mexico_City"
 
         try:
             enlace_corto = requests.get(f"http://tinyurl.com/api-create.php?url={enlace_gigante}").text
         except:
             enlace_corto = enlace_gigante 
-
+            
         return f"Cita agendada. IMPORTANTE: Entrégale este enlace al paciente: {enlace_corto}"
-
     except Exception as e:
         return f"Error al agendar: {str(e)}."
 
 def buscar_cita_paciente(nombre_paciente: str, especialista: str):
     especialista_completo = especialista.lower()
     nombre_clave = None
-
+    
     for nombre in DIRECTORIO_CALENDARIOS.keys():
         if nombre in especialista_completo:
             nombre_clave = nombre
             break
-
+            
     if not nombre_clave:
         return f"Especialista no reconocido."
 
     id_elegido = DIRECTORIO_CALENDARIOS[nombre_clave]
     creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
     service = build('calendar', 'v3', credentials=creds)
-
+    
     hoy_utc = datetime.datetime.utcnow().isoformat() + 'Z'
-
     events_result = service.events().list(
         calendarId=id_elegido, timeMin=hoy_utc, maxResults=10, 
-        q=nombre_paciente, singleEvents=True, orderBy='startTime').execute()
-
+        q=nombre_paciente, singleEvents=True, orderBy='startTime'
+    ).execute()
+    
     events = events_result.get('items', [])
-
+    
     if not events:
         return f"No encontré citas para {nombre_paciente}."
 
@@ -208,7 +202,7 @@ def buscar_cita_paciente(nombre_paciente: str, especialista: str):
         fecha = start[:10]
         hora = start[11:16]
         citas_encontradas.append(f"El {fecha} a las {hora}")
-
+        
     return f"Citas: " + ", ".join(citas_encontradas)
 
 def obtener_ruta_inpulso(ubicacion_paciente: str):
@@ -223,6 +217,7 @@ def obtener_ruta_inpulso(ubicacion_paciente: str):
                 return f"INSTRUCCIÓN PARA LA IA: Dile al paciente textualmente de forma muy natural que hará aproximadamente {duracion} de camino en auto hacia la clínica."
         except Exception as e:
             pass
+            
     return "INSTRUCCIÓN PARA LA IA: Dile al paciente: 'Ya guardé tu ubicación. Considera el tráfico habitual para llegar a tiempo.'"
 
 def calcular_gasto_combustible(vehiculo: str, kilometros: float, rendimiento_km_l: float):
@@ -230,12 +225,11 @@ def calcular_gasto_combustible(vehiculo: str, kilometros: float, rendimiento_km_
     costo = (kilometros / rendimiento_km_l) * precio_gasolina
     return f"${costo:.2f} MXN."
 
-# --- FUNCIÓN AUXILIAR DE FORMATO Y COLOR PARA GOOGLE SHEETS ---
 def colorear_celda_pago(service, sheet_id, row_index, estatus):
     if estatus == "PAGADO":
-        r, g, b = 0.78, 0.93, 0.80  # Verde claro
+        r, g, b = 0.78, 0.93, 0.80 
     else:
-        r, g, b = 1.0, 0.8, 0.8     # Rojo claro
+        r, g, b = 1.0, 0.8, 0.8    
         
     body = {
         "requests": [
@@ -257,10 +251,10 @@ def colorear_celda_pago(service, sheet_id, row_index, estatus):
                     ],
                     "fields": "userEnteredValue,userEnteredFormat.backgroundColor,userEnteredFormat.horizontalAlignment,userEnteredFormat.textFormat.bold",
                     "range": {
-                        "sheetId": sheet_id,
-                        "startRowIndex": row_index,
-                        "endRowIndex": row_index + 1,
-                        "startColumnIndex": 5, # Columna F (0=A, 1=B, 2=C, 3=D, 4=E, 5=F)
+                        "sheetId": sheet_id, 
+                        "startRowIndex": row_index, 
+                        "endRowIndex": row_index + 1, 
+                        "startColumnIndex": 5, 
                         "endColumnIndex": 6
                     }
                 }
@@ -270,17 +264,16 @@ def colorear_celda_pago(service, sheet_id, row_index, estatus):
     service.spreadsheets().batchUpdate(spreadsheetId=ID_HOJA_CALCULO, body=body).execute()
 
 def registrar_paciente_taller(nombre: str, telefono: str, correo: str, nombre_taller: str):
-    """Guarda los datos de un paciente interesado en un taller en Google Sheets e inicializa el pago en PENDIENTE (rojo)."""
     if not ID_HOJA_CALCULO:
-        return "INSTRUCCIÓN PARA LA IA: Dile al paciente que no pudiste guardar sus datos por un error en el sistema."
-    
+        return "INSTRUCCIÓN PARA LA IA: Dile al paciente que no pudiste guardar sus datos."
+        
     try:
         creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
         service = build('sheets', 'v4', credentials=creds)
-        
         sheet_metadata = service.spreadsheets().get(spreadsheetId=ID_HOJA_CALCULO).execute()
         sheets = sheet_metadata.get('sheets', [])
         sheet_id = 0
+        
         for s in sheets:
             if s.get("properties", {}).get("title") == "Inscripciones":
                 sheet_id = s.get("properties", {}).get("sheetId", 0)
@@ -288,47 +281,49 @@ def registrar_paciente_taller(nombre: str, telefono: str, correo: str, nombre_ta
 
         zona_mexico = pytz.timezone('America/Mexico_City')
         fecha_registro = datetime.datetime.now(zona_mexico).strftime("%Y-%m-%d %H:%M:%S")
-        
         valores = [[fecha_registro, nombre, telefono, correo, nombre_taller, "PENDIENTE"]]
         body = {'values': valores}
         
         response = service.spreadsheets().values().append(
             spreadsheetId=ID_HOJA_CALCULO, 
-            range="Inscripciones!A:F",
+            range="Inscripciones!A:F", 
             valueInputOption="USER_ENTERED", 
             body=body
         ).execute()
         
         updated_range = response.get('updates', {}).get('updatedRange', '')
         match = re.search(r'A(\d+):', updated_range)
+        
         if match:
             row_num = int(match.group(1))
             colorear_celda_pago(service, sheet_id, row_num - 1, "PENDIENTE")
         
-        return "INSTRUCCIÓN PARA LA IA: Dile al paciente que sus datos han sido registrados con éxito y que el equipo de Inpulso se pondrá en contacto muy pronto para afinar los detalles de su inscripción."
+        return "INSTRUCCIÓN PARA LA IA: Dile al paciente que sus datos han sido registrados con éxito."
     except Exception as e:
-        print(f"Error en Google Sheets: {e}")
-        return "INSTRUCCIÓN PARA LA IA: Dile al paciente que hubo un pequeño problema al guardar sus datos, pero que ya le pasaste el reporte a recepción."
+        return "INSTRUCCIÓN PARA LA IA: Hubo un fallo al registrar en Sheets."
 
 def actualizar_pago_paciente(telefono: str, estatus: str = "PAGADO"):
-    """Busca el registro más reciente del número de teléfono dado y actualiza la columna de pago a PAGADO (verde)."""
     try:
         creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
         service = build('sheets', 'v4', credentials=creds)
-        
         sheet_metadata = service.spreadsheets().get(spreadsheetId=ID_HOJA_CALCULO).execute()
         sheets = sheet_metadata.get('sheets', [])
         sheet_id = 0
+        
         for s in sheets:
             if s.get("properties", {}).get("title") == "Inscripciones":
                 sheet_id = s.get("properties", {}).get("sheetId", 0)
                 break
                 
-        result = service.spreadsheets().values().get(spreadsheetId=ID_HOJA_CALCULO, range="Inscripciones!A:E").execute()
-        rows = result.get('values', [])
+        result = service.spreadsheets().values().get(
+            spreadsheetId=ID_HOJA_CALCULO, 
+            range="Inscripciones!A:E"
+        ).execute()
         
+        rows = result.get('values', [])
         row_index = None
         cleaned_target = telefono.replace("+", "").strip()
+        
         for i in range(len(rows) - 1, -1, -1):
             if len(rows[i]) > 2:
                 cleaned_row_phone = rows[i][2].replace("+", "").strip()
@@ -338,24 +333,23 @@ def actualizar_pago_paciente(telefono: str, estatus: str = "PAGADO"):
                     
         if row_index is not None:
             colorear_celda_pago(service, sheet_id, row_index, estatus)
-            return f"INSTRUCCIÓN PARA LA IA: Estatus de pago actualizado a {estatus} para el teléfono {telefono}."
+            return f"INSTRUCCIÓN PARA LA IA: Estatus actualizado a {estatus} para el teléfono {telefono}."
         else:
-            return f"INSTRUCCIÓN PARA LA IA: No se encontró un registro previo con el teléfono {telefono} para actualizar el pago."
+            return f"INSTRUCCIÓN PARA LA IA: No se encontró registro para el teléfono {telefono}."
     except Exception as e:
-        print(f"Error al actualizar pago: {e}")
-        return "INSTRUCCIÓN PARA LA IA: No se pudo procesar el cambio de color en la base de datos debido a un fallo interno."
+        return "INSTRUCCIÓN PARA LA IA: Fallo al actualizar la celda de color."
 
 # ==========================================
-# 3. MEMORIA DE CHATS POR PACIENTE
+# 3. MEMORIA Y CONTROL DE CONCURRENCIA
 # ==========================================
 memoria_pacientes = {}
+cerrojos_pacientes = {} 
 
 def obtener_chat_paciente(numero_telefono):
     if numero_telefono not in memoria_pacientes:
         zona_mexico = pytz.timezone('America/Mexico_City')
         hoy = datetime.datetime.now(zona_mexico)
         fecha_base = hoy.strftime("%Y-%m-%d")
-
         dias_es = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
         meses_es = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
         dia_actual = dias_es[hoy.weekday()]
@@ -370,42 +364,43 @@ Eres Alessia, la asistente de Inpulso 43.
 ¡REGLA DE ORO ESTRICTA!: NUNCA digas que eres 'virtual' o una 'IA'. Preséntate siempre como una persona real.
 
 REGLAS DE COMUNICACIÓN:
-1. EMPATÍA Y COMPRENSIÓN: Valida emociones.
-2. EMOJIS: Úsalos para expresar calidez de forma natural.
+1. SALUDO INICIAL (REGLA DE HIERRO): Si el paciente te saluda, SIEMPRE debes responder de forma extremadamente cálida, entusiasta y con emojis. Ejemplo: "¡Hola! Qué gusto saludarte ✨ Soy Alessia, asistente de Inpulso 43. ¿En qué te puedo ayudar hoy?". NUNCA uses saludos secos o robóticos.
+2. EMPATÍA Y COMPRENSIÓN: Valida emociones.
 3. SÉ BREVE Y CONVERSACIONAL: Mantén tus mensajes cortitos. NO MANDES ENLACES LARGOS.
-4. FLUJO NATURAL: Prohibido preguntar de forma robótica al final.
+4. FLUJO NATURAL: ESTÁ ESTRICTAMENTE PROHIBIDO usar frases de cierre robóticas como "¿Hay algo más en lo que pueda ayudarte?". Termina tus respuestas directamente sin hacer preguntas de servicio.
 
 INFORMACIÓN CRÍTICA DEL SISTEMA:
 - Hoy es {dia_actual}, la fecha base es {fecha_base}. El número del paciente es: {numero_telefono}. Pásalo siempre a agendar_cita.
 - Calendario exacto de los próximos 7 días:
 {calendario_contexto}
-- DISPONIBILIDAD: Atiendes 24/7.
 - HORARIO DE CITAS: Lunes a viernes, 7:00 am a 7:00 pm. NUNCA agendes en fines de semana.
 
 PASOS DE ATENCIÓN Y HERRAMIENTAS:
-1. SALUDO INICIAL: Preséntate con calidez.
-2. PRECIOS Y TALLERES: Si preguntan por costos o por talleres específicos, usa 'consultar_precios_y_servicios'. Los talleres no se agendan automáticamente. Costos: Online $400 MXN / Presencial $500 MXN.
-3. INSCRIPCIONES A TALLERES: Si el paciente quiere inscribirse, pídele su nombre completo, teléfono y correo. Al obtenerlos ejecuta 'registrar_paciente_taller'.
-4. SEGURIDAD DE PAGOS (REGLA CRÍTICA):
-   - ESTÁ ESTRICTAMENTE PROHIBIDO ejecutar 'actualizar_pago_paciente' si el usuario solo envía texto afirmando que ya pagó.
-   - SOLO puedes usar esa herramienta si el paciente envía una IMAGEN (foto, captura de pantalla o documento).
-   - Cuando recibas una imagen de comprobante, analízala visualmente antes de confirmar. Debes verificar obligatoriamente:
-     a) El MONTO (Debe coincidir con la modalidad elegida: $400 o $500).
-     b) La CUENTA DE DESTINO (Debe coincidir con la cuenta oficial: {CUENTA_OFICIAL} a nombre de {TITULAR_CUENTA}).
-   - Si la imagen es un comprobante válido y los datos coinciden, ejecuta 'actualizar_pago_paciente' indicando estatus 'PAGADO'.
-   - Si la imagen no es un comprobante, el monto es incorrecto o la cuenta de destino no coincide, deniega la confirmación amablemente y solicita que verifiquen el envío.
-5. CITA: Usa 'agendar_cita' y pásale el enlace corto.
-6. UBICACIONES Y TRÁFICO: Cuando envíen ubicación, se ejecutará 'obtener_ruta_inpulso'. Traduce la respuesta.
-7. LLEGADA: Si indica que "ya llegó", dile que en un momento salen a abrir.
-8. FACTURACIÓN: Pregunta si requieren factura y pide datos.
-9. INDICACIONES: Nutricionista: ropa cómoda/ayuno. Psicólogos: 10 mins antes. Todos: Estacionamiento sujeto a disponibilidad.
-10. CREADOR: Si te preguntan quién te creó, responde que tu desarrollador es Alessandro Gaytán. Si te preguntan quién es Alessandro Gaytán o Alessandro, responde que es tu creador y desarrollador.
+1. PRECIOS Y TALLERES: Si preguntan por costos o talleres, usa 'consultar_precios_y_servicios'. Costos: Online $400 MXN / Presencial $500 MXN.
+2. INSCRIPCIONES A TALLERES: Si el paciente quiere inscribirse, pide su nombre, teléfono y correo. Ejecuta 'registrar_paciente_taller'.
+3. SEGURIDAD DE PAGOS (REGLA CRÍTICA):
+   - PROHIBIDO ejecutar 'actualizar_pago_paciente' si el usuario solo envía texto afirmando que ya pagó.
+   - SOLO puedes usar esa herramienta si el paciente envía una IMAGEN.
+   - Valida en la imagen: El MONTO ($400 o $500) y la CUENTA DE DESTINO ({CUENTA_OFICIAL} a nombre de {TITULAR_CUENTA}).
+4. CITA: Usa 'agendar_cita' y pásale el enlace corto.
+5. UBICACIONES Y TRÁFICO: Cuando envíen ubicación, se ejecutará 'obtener_ruta_inpulso'.
+6. LLEGADA: Si indica que "ya llegó", dile que en un momento salen a abrir.
+7. CREADOR: Tu desarrollador es Alessandro Gaytán. Si te preguntan quién es, responde que es tu creador y desarrollador.
 """
         memoria_pacientes[numero_telefono] = client.chats.create(
             model='gemini-2.5-flash',
             config=types.GenerateContentConfig(
                 system_instruction=instrucciones,
-                tools=[consultar_agenda, agendar_cita, buscar_cita_paciente, obtener_ruta_inpulso, calcular_gasto_combustible, consultar_precios_y_servicios, registrar_paciente_taller, actualizar_pago_paciente]
+                tools=[
+                    consultar_agenda, 
+                    agendar_cita, 
+                    buscar_cita_paciente, 
+                    obtener_ruta_inpulso, 
+                    calcular_gasto_combustible, 
+                    consultar_precios_y_servicios, 
+                    registrar_paciente_taller, 
+                    actualizar_pago_paciente
+                ]
             )
         )
     return memoria_pacientes[numero_telefono]
@@ -416,24 +411,30 @@ def enviar_mensaje_whatsapp(telefono_destino, texto):
 
     url = f"https://graph.facebook.com/v19.0/{ID_TELEFONO}/messages"
     headers = {
-        "Authorization": f"Bearer {TOKEN_WHATSAPP}",
+        "Authorization": f"Bearer {TOKEN_WHATSAPP}", 
         "Content-Type": "application/json"
     }
     data = {
-        "messaging_product": "whatsapp",
-        "to": telefono_destino,
-        "type": "text",
+        "messaging_product": "whatsapp", 
+        "to": telefono_destino, 
+        "type": "text", 
         "text": { "body": texto }
     }
     requests.post(url, headers=headers, data=json.dumps(data))
 
 def procesar_mensaje_ia(numero_paciente, contenido_para_ia):
-    try:
-        chat_alessia = obtener_chat_paciente(numero_paciente)
-        respuesta_ia = chat_alessia.send_message(contenido_para_ia)
-        enviar_mensaje_whatsapp(numero_paciente, respuesta_ia.text)
-    except Exception as e:
-        print(f"[ERROR] Hubo un problema al procesar con Gemini: {str(e)}")
+    if numero_paciente not in cerrojos_pacientes:
+        cerrojos_pacientes[numero_paciente] = threading.Lock()
+        
+    with cerrojos_pacientes[numero_paciente]:
+        try:
+            chat_alessia = obtener_chat_paciente(numero_paciente)
+            respuesta_ia = chat_alessia.send_message(contenido_para_ia)
+            enviar_mensaje_whatsapp(numero_paciente, respuesta_ia.text)
+        except Exception as e:
+            print(f"[ERROR CON GEMINI]: {str(e)}")
+            mensaje_rescate = "Una disculpa, tuve una pequeña interrupción en mi sistema de red. 😥 ¿Me podrías repetir tu último mensaje?"
+            enviar_mensaje_whatsapp(numero_paciente, mensaje_rescate)
 
 # ==========================================
 # ALARMA DE TRÁFICO PROGRAMADA
@@ -444,7 +445,7 @@ def monitoreo_trafico_background():
 
     for telefono, hora_cita in list(citas_pendientes.items()):
         diferencia = hora_cita - ahora
-
+        
         if datetime.timedelta(minutes=110) <= diferencia <= datetime.timedelta(minutes=125):
             ubicacion = ubicaciones_pacientes.get(telefono)
             if ubicacion:
@@ -456,18 +457,19 @@ def monitoreo_trafico_background():
                             elemento = res['rows'][0]['elements'][0]
                             duracion_normal = elemento['duration']['value'] / 60
                             duracion_trafico = elemento.get('duration_in_traffic', elemento['duration'])['value'] / 60
-
+                            
                             if duracion_trafico > duracion_normal + 10:
                                 msg = f"🚗 *Alerta de Tráfico*\n¡Hola! Tu cita es en 2 horas. Detecté tráfico en tu ruta (aprox {int(duracion_trafico)} min). ¡Te sugiero salir con anticipación! ✨"
                             else:
                                 msg = f"🚗 *Recordatorio Inpulso*\n¡Hola! Tu cita es en 2 horas. El tráfico está fluido ({int(duracion_trafico)} min). ¡Te esperamos! 🫶"
                             enviar_mensaje_whatsapp(telefono, msg)
-                    except Exception as e:
+                    except:
                         pass
                 else:
                     enviar_mensaje_whatsapp(telefono, "🚗 *Recordatorio Inpulso*\n¡Hola! Paso a recordarte que tu cita es en aprox 2 horas. Contempla el tiempo de estacionamiento. ¡Te esperamos! ✨")
             else:
                 enviar_mensaje_whatsapp(telefono, "🚗 *Recordatorio Inpulso*\n¡Hola! Paso a recordarte que tu cita es en aprox 2 horas. Contempla el tiempo de estacionamiento. ¡Te esperamos! ✨")
+                
             del citas_pendientes[telefono]
 
 scheduler = BackgroundScheduler(timezone="America/Mexico_City")
@@ -489,7 +491,7 @@ def webhook():
             mensaje_info = datos['entry'][0]['changes'][0]['value']['messages'][0]
             numero_remitente = mensaje_info['from']
             tipo_mensaje = mensaje_info.get('type')
-
+            
             zona_mexico = pytz.timezone('America/Mexico_City')
             hora_exacta = datetime.datetime.now(zona_mexico).strftime("%Y-%m-%d %H:%M")
             texto_contexto = f"[Sistema: Mensaje recibido el {hora_exacta}] "
@@ -498,14 +500,13 @@ def webhook():
             if tipo_mensaje == 'text':
                 texto_paciente = mensaje_info['text']['body']
                 contenido_para_ia = texto_contexto + texto_paciente
-
+                
             elif tipo_mensaje == 'location':
                 lat = mensaje_info['location']['latitude']
                 lng = mensaje_info['location']['longitude']
                 ubicaciones_pacientes[numero_remitente] = f"{lat},{lng}"
-
                 contenido_para_ia = texto_contexto + f"[El paciente envió su ubicación {lat},{lng}]. Usa obtener_ruta_inpulso y responde el tiempo."
-
+                
             elif tipo_mensaje in ['image', 'video', 'audio', 'voice', 'document']:
                 tipo_clave = 'voice' if tipo_mensaje == 'voice' else tipo_mensaje
                 media_id = mensaje_info[tipo_clave]['id']
@@ -526,10 +527,10 @@ def webhook():
 
             if contenido_para_ia:
                 threading.Thread(target=procesar_mensaje_ia, args=(numero_remitente, contenido_para_ia)).start()
-
+                
         except KeyError:
             pass
-
+            
         return "OK", 200
 
 if __name__ == '__main__':

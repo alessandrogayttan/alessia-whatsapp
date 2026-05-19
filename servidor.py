@@ -22,8 +22,21 @@ ID_TELEFONO = "1090957250773198"
 API_KEY_MAPS = "" 
 ID_HOJA_CALCULO = "1HE-a6v2b-bCcN6JLHOJ3mevuRhJCWmInZEXkyV24L3k"
 
-CUENTA_OFICIAL = "AQUI_PON_TU_CLABE_O_TARJETA"
-TITULAR_CUENTA = "AQUI_EL_NOMBRE_DEL_TITULAR"
+# Datos de cuentas oficiales para validación
+CUENTAS_OFICIALES = {
+    "SANTANDER": {
+        "cuenta": "60604104279",
+        "clabe": "014320606041042790",
+        "titular": "Sara Verónica Rosales Delgado",
+        "factura": False
+    },
+    "BANAMEX": {
+        "cuenta": "70197775956",
+        "clabe": "002320701977759567",
+        "titular": "Inpulso 43 SC",
+        "factura": True
+    }
+}
 
 # ==========================================
 # 2. CONFIGURACIÓN DEL CEREBRO DE ALESSIA
@@ -360,6 +373,11 @@ REGLAS DE COMUNICACIÓN:
 2. PRECISIÓN ABSOLUTA (REGLA CRÍTICA): Si el paciente pregunta por el pago, la información o los detalles de un taller o servicio ESPECÍFICO, responde ÚNICAMENTE con la información de ese taller o servicio. ESTÁ ESTRICTAMENTE PROHIBIDO arrojar o mencionar los precios de otros especialistas, nutrióloga u otros servicios que el paciente NO haya pedido.
 3. CIERRE NATURAL (REGLA CRÍTICA): ESTÁ ABSOLUTAMENTE PROHIBIDO usar frases de cierre como "¿Hay algo más en lo que pueda ayudarte?", "¿Puedo asistirte en algo más?", o cualquier variación robótica similar. Termina tu mensaje de forma natural, sin hacer preguntas de servicio al final.
 
+INFORMACIÓN DE CUENTAS BANCARIAS:
+- Si el paciente NO requiere factura, proporciónale la cuenta de SANTANDER: Cuenta 60604104279, CLABE 014320606041042790 a nombre de Sara Verónica Rosales Delgado.
+- Si el paciente REQUIERE factura, indícale de forma muy clara que la ÚNICA cuenta autorizada es BANAMEX: Cuenta 70197775956, CLABE 002320701977759567 a nombre de Inpulso 43 SC.
+- REGLA DE TRANSFERENCIA: Recuérdale siempre al paciente que en el concepto de la transferencia debe colocar obligatoriamente su NOMBRE COMPLETO.
+
 INFORMACIÓN CRÍTICA DEL SISTEMA:
 - Hoy es {dia_actual}, la fecha base es {fecha_base}. El número del paciente es: {numero_telefono}. Pásalo siempre a agendar_cita.
 - Calendario exacto de los próximos 7 días:
@@ -367,12 +385,12 @@ INFORMACIÓN CRÍTICA DEL SISTEMA:
 - HORARIO DE CITAS: Lunes a viernes, 7:00 am a 7:00 pm. NUNCA agendes en fines de semana.
 
 PASOS DE ATENCIÓN Y HERRAMIENTAS:
-1. PRECIOS Y TALLERES: Si preguntan por costos o talleres, usa 'consultar_precios_y_servicios'. Costos: Online $400 MXN / Presencial $500 MXN.
+1. PRECIOS Y TALLERES: Si preguntan por costos o talleres, usa 'consultar_precios_y_servicios'.
 2. INSCRIPCIONES A TALLERES: Si el paciente quiere inscribirse, pide su nombre, teléfono y correo. Ejecuta 'registrar_paciente_taller'.
 3. SEGURIDAD DE PAGOS (REGLA CRÍTICA):
    - PROHIBIDO ejecutar 'actualizar_pago_paciente' si el usuario solo envía texto.
-   - SOLO usa la herramienta si el paciente envía una IMAGEN.
-   - Valida en la imagen: El MONTO ($400 o $500) y la CUENTA DE DESTINO ({CUENTA_OFICIAL} a nombre de {TITULAR_CUENTA}).
+   - SOLO usa la herramienta si el paciente envía una IMAGEN del comprobante.
+   - Valida en la imagen: Que el monto coincida con el servicio solicitado y que el destino sea alguna de nuestras dos cuentas oficiales (Santander: 60604104279 / Banamex: 70197775956).
 4. CITA: Usa 'agendar_cita' y pásale el enlace corto.
 5. UBICACIONES Y TRÁFICO: Cuando envíen ubicación, se ejecutará 'obtener_ruta_inpulso'.
 6. LLEGADA: Si indica que "ya llegó", dile que en un momento salen a abrir.

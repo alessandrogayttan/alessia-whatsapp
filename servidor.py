@@ -59,7 +59,7 @@ def descargar_media_whatsapp(media_id):
             if res_archivo.status_code == 200:
                 return res_archivo.content, mime_type
     except Exception as e:
-        print(f"Error al descargar archivo multimedia: {e}")
+        print(f"[ERROR DESCARGA MEDIA]: {e}")
     return None, None
 
 def consultar_precios_y_servicios(especialista: str = "todos"):
@@ -167,7 +167,7 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
             
         return f"Cita agendada. IMPORTANTE: Entrégale este enlace al paciente: {enlace_corto}"
     except Exception as e:
-        return f"Error al agendar: {str(e)}."
+        return f"Error al agendar."
 
 def buscar_cita_paciente(nombre_paciente: str, especialista: str):
     especialista_completo = especialista.lower()
@@ -192,7 +192,6 @@ def buscar_cita_paciente(nombre_paciente: str, especialista: str):
     ).execute()
     
     events = events_result.get('items', [])
-    
     if not events:
         return f"No encontré citas para {nombre_paciente}."
 
@@ -273,7 +272,6 @@ def registrar_paciente_taller(nombre: str, telefono: str, correo: str, nombre_ta
         sheet_metadata = service.spreadsheets().get(spreadsheetId=ID_HOJA_CALCULO).execute()
         sheets = sheet_metadata.get('sheets', [])
         sheet_id = 0
-        
         for s in sheets:
             if s.get("properties", {}).get("title") == "Inscripciones":
                 sheet_id = s.get("properties", {}).get("sheetId", 0)
@@ -293,7 +291,6 @@ def registrar_paciente_taller(nombre: str, telefono: str, correo: str, nombre_ta
         
         updated_range = response.get('updates', {}).get('updatedRange', '')
         match = re.search(r'A(\d+):', updated_range)
-        
         if match:
             row_num = int(match.group(1))
             colorear_celda_pago(service, sheet_id, row_num - 1, "PENDIENTE")
@@ -309,17 +306,12 @@ def actualizar_pago_paciente(telefono: str, estatus: str = "PAGADO"):
         sheet_metadata = service.spreadsheets().get(spreadsheetId=ID_HOJA_CALCULO).execute()
         sheets = sheet_metadata.get('sheets', [])
         sheet_id = 0
-        
         for s in sheets:
             if s.get("properties", {}).get("title") == "Inscripciones":
                 sheet_id = s.get("properties", {}).get("sheetId", 0)
                 break
                 
-        result = service.spreadsheets().values().get(
-            spreadsheetId=ID_HOJA_CALCULO, 
-            range="Inscripciones!A:E"
-        ).execute()
-        
+        result = service.spreadsheets().values().get(spreadsheetId=ID_HOJA_CALCULO, range="Inscripciones!A:E").execute()
         rows = result.get('values', [])
         row_index = None
         cleaned_target = telefono.replace("+", "").strip()
@@ -364,10 +356,9 @@ Eres Alessia, la asistente de Inpulso 43.
 ¡REGLA DE ORO ESTRICTA!: NUNCA digas que eres 'virtual' o una 'IA'. Preséntate siempre como una persona real.
 
 REGLAS DE COMUNICACIÓN:
-1. SALUDO INICIAL (REGLA DE HIERRO): Si el paciente te saluda, SIEMPRE debes responder de forma extremadamente cálida, entusiasta y con emojis. Ejemplo: "¡Hola! Qué gusto saludarte ✨ Soy Alessia, asistente de Inpulso 43. ¿En qué te puedo ayudar hoy?". NUNCA uses saludos secos o robóticos.
-2. EMPATÍA Y COMPRENSIÓN: Valida emociones.
-3. SÉ BREVE Y CONVERSACIONAL: Mantén tus mensajes cortitos. NO MANDES ENLACES LARGOS.
-4. FLUJO NATURAL: ESTÁ ESTRICTAMENTE PROHIBIDO usar frases de cierre robóticas como "¿Hay algo más en lo que pueda ayudarte?". Termina tus respuestas directamente sin hacer preguntas de servicio.
+1. SALUDO INICIAL (REGLA DE HIERRO): Si el paciente te saluda, SIEMPRE debes responder de forma extremadamente cálida, entusiasta y con emojis. NUNCA uses saludos secos.
+2. PRECISIÓN ABSOLUTA (REGLA CRÍTICA): Si el paciente pregunta por el pago, la información o los detalles de un taller o servicio ESPECÍFICO, responde ÚNICAMENTE con la información de ese taller o servicio. ESTÁ ESTRICTAMENTE PROHIBIDO arrojar o mencionar los precios de otros especialistas, nutrióloga u otros servicios que el paciente NO haya pedido.
+3. CIERRE NATURAL (REGLA CRÍTICA): ESTÁ ABSOLUTAMENTE PROHIBIDO usar frases de cierre como "¿Hay algo más en lo que pueda ayudarte?", "¿Puedo asistirte en algo más?", o cualquier variación robótica similar. Termina tu mensaje de forma natural, sin hacer preguntas de servicio al final.
 
 INFORMACIÓN CRÍTICA DEL SISTEMA:
 - Hoy es {dia_actual}, la fecha base es {fecha_base}. El número del paciente es: {numero_telefono}. Pásalo siempre a agendar_cita.
@@ -379,13 +370,13 @@ PASOS DE ATENCIÓN Y HERRAMIENTAS:
 1. PRECIOS Y TALLERES: Si preguntan por costos o talleres, usa 'consultar_precios_y_servicios'. Costos: Online $400 MXN / Presencial $500 MXN.
 2. INSCRIPCIONES A TALLERES: Si el paciente quiere inscribirse, pide su nombre, teléfono y correo. Ejecuta 'registrar_paciente_taller'.
 3. SEGURIDAD DE PAGOS (REGLA CRÍTICA):
-   - PROHIBIDO ejecutar 'actualizar_pago_paciente' si el usuario solo envía texto afirmando que ya pagó.
-   - SOLO puedes usar esa herramienta si el paciente envía una IMAGEN.
+   - PROHIBIDO ejecutar 'actualizar_pago_paciente' si el usuario solo envía texto.
+   - SOLO usa la herramienta si el paciente envía una IMAGEN.
    - Valida en la imagen: El MONTO ($400 o $500) y la CUENTA DE DESTINO ({CUENTA_OFICIAL} a nombre de {TITULAR_CUENTA}).
 4. CITA: Usa 'agendar_cita' y pásale el enlace corto.
 5. UBICACIONES Y TRÁFICO: Cuando envíen ubicación, se ejecutará 'obtener_ruta_inpulso'.
 6. LLEGADA: Si indica que "ya llegó", dile que en un momento salen a abrir.
-7. CREADOR: Tu desarrollador es Alessandro Gaytán. Si te preguntan quién es, responde que es tu creador y desarrollador.
+7. CREADOR: Tu desarrollador es Alessandro Gaytán.
 """
         memoria_pacientes[numero_telefono] = client.chats.create(
             model='gemini-2.5-flash',
@@ -432,8 +423,8 @@ def procesar_mensaje_ia(numero_paciente, contenido_para_ia):
             respuesta_ia = chat_alessia.send_message(contenido_para_ia)
             enviar_mensaje_whatsapp(numero_paciente, respuesta_ia.text)
         except Exception as e:
-            print(f"[ERROR CON GEMINI]: {str(e)}")
-            mensaje_rescate = "Una disculpa, tuve una pequeña interrupción en mi sistema de red. 😥 ¿Me podrías repetir tu último mensaje?"
+            print(f"[ERROR CRÍTICO GEMINI]: {str(e)}")
+            mensaje_rescate = "Una disculpa, tuve un micro-corte en mi sistema de red. 😥 ¿Me podrías repetir tu último mensaje?"
             enviar_mensaje_whatsapp(numero_paciente, mensaje_rescate)
 
 # ==========================================

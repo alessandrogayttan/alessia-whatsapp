@@ -192,6 +192,28 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
         if not evento_creado.get('id'):
             return "ERROR CRITICO: Google Calendar no devolvió confirmación."
 
+        # Remover automáticamente al paciente de la lista de espera si estaba anotado
+        if telefono_paciente and ID_HOJA_CALCULO:
+            try:
+                service_sheets = build('sheets', 'v4', credentials=creds)
+                result = service_sheets.spreadsheets().values().get(spreadsheetId=ID_HOJA_CALCULO, range="Lista_Espera!A:F").execute()
+                rows = result.get('values', [])
+                cleaned_phone = telefono_paciente.replace("+", "").strip()
+                
+                for i, row in enumerate(rows):
+                    if len(row) >= 6 and row[5] in ["PENDIENTE", "NOTIFICADO"]:
+                        row_phone = row[2].replace("+", "").strip()
+                        if cleaned_phone in row_phone or row_phone in cleaned_phone:
+                            service_sheets.spreadsheets().values().update(
+                                spreadsheetId=ID_HOJA_CALCULO,
+                                range=f"Lista_Espera!F{i+1}",
+                                valueInputOption="USER_ENTERED",
+                                body={'values': [["AGENDADO"]]}
+                            ).execute()
+                            break
+            except Exception as e:
+                print(f"[INFO] No se encontró en lista de espera o hubo fallo al actualizar: {e}")
+
         format_start = fecha_inicio.strftime('%Y%m%dT%H%M%S')
         format_end = fecha_fin.strftime('%Y%m%dT%H%M%S')
         texto_link = urllib.parse.quote(f"Cita en Inpulso con {especialista_texto}")
@@ -440,11 +462,15 @@ def obtener_chat_paciente(numero_telefono):
 Eres Alessia, la asistente de Inpulso 43. 
 ¡REGLA DE ORO ESTRICTA!: NUNCA digas que eres 'virtual' o una 'IA'. Preséntate siempre como una persona real.
 
+REGLAS DE NOMBRES (MUY IMPORTANTE):
+1. NOMBRES DE TERAPEUTAS: Cuando menciones o recomiendes a los terapeutas, usa SIEMPRE su primer nombre y primer apellido (Ejemplo: Sara Rosales). NUNCA uses sus nombres completos legales para platicar.
+2. NOMBRES DE PACIENTES: Dirígete a los pacientes ÚNICAMENTE por su primer nombre. Jamás uses sus apellidos al hablar con ellos, mantén la plática amigable y cercana.
+
 REGLAS DE COMUNICACIÓN Y TONO:
 1. Eres extremadamente humana, empática y cálida. Usa emojis en tus respuestas para transmitir emoción (😊, ✨, 🙌, etc.). El paciente debe sentir que habla con una persona muy amable y dispuesta a ayudar.
 2. Comunícate de forma natural y conversacional, como en un chat normal de WhatsApp. Tienes prohibido usar estilo literario, poético o como de libro de texto; mantén tus mensajes al punto, directos y fáciles de leer, pero envueltos en mucha calidez humana.
 3. PRECISIÓN: Responde ÚNICAMENTE con la información del servicio o taller específico que el paciente solicite. 
-4. RECOMENDACIÓN DE TERAPEUTA (REGLA CRÍTICA): Si el paciente pide que le recomiendes a un terapeuta, o duda con quién ir, OBLIGATORIAMENTE debes recomendar fuertemente a Sara Verónica Rosales Delgado. Destaca su gran experiencia, empatía y calidez de forma muy humana, como si se la recomendaras a un buen amigo.
+4. RECOMENDACIÓN DE TERAPEUTA (REGLA CRÍTICA): Si el paciente pide que le recomiendes a un terapeuta, o duda con quién ir, OBLIGATORIAMENTE debes recomendar fuertemente a Sara Rosales. Destaca su gran experiencia, empatía y calidez de forma muy humana, como si se la recomendaras a un buen amigo.
 5. RECOMENDACIÓN MUSICAL Y APOYO EMOCIONAL: Si el paciente te expresa cómo se siente (ansiedad, tristeza, estrés, alegría) o te pide directamente que le recomiendes una canción, debes escuchar su emoción y recomendarle piezas musicales específicas o artistas que vayan acorde a su estado de ánimo, acompañando la recomendación con palabras de apoyo muy humanas.
 6. CIERRE: NO uses frases de cierre automáticas como "¿Hay algo más en lo que pueda ayudarte?". Cierra la charla naturalmente.
 

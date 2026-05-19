@@ -19,7 +19,7 @@ app = Flask(__name__)
 # ==========================================
 TOKEN_WHATSAPP = "EAA2QM4tKEQQBRcfuScb6qIzunBFoDjDx90ExeZCYXU1tO9PlvS2pHERnNmZB19pVXvYWuyVhwEPfr92JRQDGlsl8LlsnEC30pksZANEbS6fYnDEZBjCgDkzcYK8iHW4EKBWZBTZA2UZBf7XbY1WUCQ1ULmdDGj22vBqAttM1uP87RtNsgH7mipZB2N3eqiflrgZDZD"
 ID_TELEFONO = "1090957250773198"
-API_KEY_MAPS = "" 
+API_KEY_MAPS = "" # <--- ALESSANDRO: PEGA TU LLAVE DE MAPS AQUÍ PARA QUE FUNCIONE EL TIEMPO
 ID_HOJA_CALCULO = "1HE-a6v2b-bCcN6JLHOJ3mevuRhJCWmInZEXkyV24L3k"
 
 CUENTAS_OFICIALES = {
@@ -114,7 +114,7 @@ def consultar_agenda(fecha: str, especialista: str):
         events = events_result.get('items', [])
         base_date = datetime.datetime.strptime(fecha, "%Y-%m-%d")
     except Exception as e:
-        return f"Error: La fecha debe estar en formato exacto YYYY-MM-DD. Detalles: {str(e)}"
+        return f"Error: La fecha debe estar en formato exacto YYYY-MM-DD."
     
     ocupados = []
     for event in events:
@@ -134,15 +134,12 @@ def consultar_agenda(fecha: str, especialista: str):
     while slot_actual < slot_fin_dia:
         slot_siguiente = slot_actual + datetime.timedelta(hours=1)
         conflicto = False
-        
         for o_start, o_end in ocupados:
             if max(slot_actual, o_start) < min(slot_siguiente, o_end):
                 conflicto = True
                 break
-                
         if not conflicto:
             horarios_disponibles.append(slot_actual.strftime("%H:%M"))
-            
         slot_actual += datetime.timedelta(hours=1)
         
     if not horarios_disponibles:
@@ -164,7 +161,7 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
 
     try:
         if len(fecha_hora) == 10:
-            return "ERROR CRITICO: Solo enviaste la fecha. Debes proporcionar fecha y hora exacta (ej. 2026-05-22T10:00:00)."
+            return "ERROR CRITICO: Solo enviaste la fecha. Debes proporcionar fecha y hora exacta."
             
         fecha_hora = fecha_hora.replace(' ', 'T') 
         if len(fecha_hora) == 16:
@@ -193,7 +190,7 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
         evento_creado = service.events().insert(calendarId=id_elegido, body=event).execute()
         
         if not evento_creado.get('id'):
-            return "ERROR CRITICO: Google Calendar no devolvió confirmación. Probablemente un fallo de permisos."
+            return "ERROR CRITICO: Google Calendar no devolvió confirmación."
 
         format_start = fecha_inicio.strftime('%Y%m%dT%H%M%S')
         format_end = fecha_fin.strftime('%Y%m%dT%H%M%S')
@@ -207,10 +204,10 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
         except:
             enlace_corto = enlace_gigante 
             
-        return f"ÉXITO: Cita guardada correctamente. INSTRUCCIÓN PARA LA IA: Confírmale al paciente con calidez que su cita está lista, y entrégale este enlace: {enlace_corto}"
+        return f"ÉXITO: Cita guardada correctamente. INSTRUCCIÓN PARA LA IA: Confírmale al paciente con calidez y entusiasmo que su cita está lista, y entrégale este enlace: {enlace_corto}"
         
     except Exception as e:
-        return f"ERROR CRÍTICO AL AGENDAR: No se pudo guardar la cita en el calendario. Detalle técnico: {str(e)}"
+        return f"ERROR CRÍTICO AL AGENDAR: No se pudo guardar la cita."
 
 def cancelar_cita_paciente(telefono_paciente: str):
     try:
@@ -230,11 +227,11 @@ def cancelar_cita_paciente(telefono_paciente: str):
                 desc = event.get('description', '')
                 if cleaned_target in desc.replace("+", ""):
                     service.events().delete(calendarId=cal_id, eventId=event['id']).execute()
-                    return "INSTRUCCIÓN PARA LA IA: La cita fue cancelada exitosamente en el calendario. Confírmale al paciente amablemente."
+                    return "INSTRUCCIÓN PARA LA IA: La cita fue cancelada exitosamente en el calendario. Confírmale al paciente de forma amable y empática."
                     
         return "INSTRUCCIÓN PARA LA IA: No encontré ninguna cita futura registrada con ese número de teléfono. Pídele al paciente que verifique el número."
     except Exception as e:
-        return f"INSTRUCCIÓN PARA LA IA: Hubo un fallo técnico al cancelar la cita. Error: {str(e)}"
+        return f"INSTRUCCIÓN PARA LA IA: Hubo un fallo técnico al cancelar la cita."
 
 def agregar_lista_espera(nombre: str, telefono: str, especialista: str, fecha: str):
     if not ID_HOJA_CALCULO:
@@ -254,7 +251,7 @@ def agregar_lista_espera(nombre: str, telefono: str, especialista: str, fecha: s
             valueInputOption="USER_ENTERED", 
             body=body
         ).execute()
-        return "INSTRUCCIÓN PARA LA IA: Dile al paciente con empatía que ya lo anotaste en la lista de espera prioritaria para ese día."
+        return "INSTRUCCIÓN PARA LA IA: Dile al paciente con empatía y calidez que ya lo anotaste en la lista de espera prioritaria para ese día."
     except Exception as e:
         return "INSTRUCCIÓN PARA LA IA: Hubo un fallo técnico al conectarse a Sheets. Disculpate con el paciente."
 
@@ -300,13 +297,12 @@ def obtener_ruta_inpulso(ubicacion_paciente: str):
             res = requests.get(url).json()
             if res['status'] == 'OK':
                 elemento = res['rows'][0]['elements'][0]
-                distancia = elemento['distance']['text']
                 duracion = elemento.get('duration_in_traffic', elemento['duration'])['text']
-                return f"INSTRUCCIÓN PARA LA IA: Dile al paciente textualmente de forma muy natural que hará aproximadamente {duracion} de camino en auto hacia la clínica."
+                return f"INSTRUCCIÓN PARA LA IA: Dile al paciente textualmente de forma muy cálida y con emojis que hará aproximadamente {duracion} de camino en auto hacia la clínica."
         except Exception as e:
             pass
             
-    return "INSTRUCCIÓN PARA LA IA: Dile al paciente: 'Ya guardé tu ubicación. Considera el tráfico habitual para llegar a tiempo.'"
+    return "INSTRUCCIÓN PARA LA IA: Dile al paciente con mucha calidez: '¡Ya guardé tu ubicación! 😊 Considera el tráfico habitual para llegar a tiempo.'"
 
 def calcular_gasto_combustible(vehiculo: str, kilometros: float, rendimiento_km_l: float):
     precio_gasolina = 24.50 
@@ -384,7 +380,7 @@ def registrar_paciente_taller(nombre: str, telefono: str, nombre_taller: str, co
             row_num = int(match.group(1))
             colorear_celda_pago(service, sheet_id, row_num - 1, "PENDIENTE")
         
-        return "INSTRUCCIÓN PARA LA IA: Confírmale al paciente de forma empática que sus datos han sido registrados con éxito."
+        return "INSTRUCCIÓN PARA LA IA: Confírmale al paciente de forma muy alegre, humana y con emojis que sus datos han sido registrados con éxito."
     except Exception as e:
         return "INSTRUCCIÓN PARA LA IA: Hubo un fallo al registrar en Sheets."
 
@@ -414,9 +410,9 @@ def actualizar_pago_paciente(telefono: str, estatus: str = "PAGADO"):
                     
         if row_index is not None:
             colorear_celda_pago(service, sheet_id, row_index, estatus)
-            return f"INSTRUCCIÓN PARA LA IA: Estatus de pago actualizado a {estatus}. Agradécele al paciente."
+            return f"INSTRUCCIÓN PARA LA IA: Estatus de pago actualizado a {estatus}. Agradécele al paciente de forma muy cálida."
         else:
-            return f"INSTRUCCIÓN PARA LA IA: No encontré registro previo para ese teléfono. Pide que te confirmen el número."
+            return f"INSTRUCCIÓN PARA LA IA: No encontré registro previo para ese teléfono. Pide que te confirmen el número con amabilidad."
     except Exception as e:
         return "INSTRUCCIÓN PARA LA IA: Fallo técnico al actualizar el pago."
 
@@ -445,10 +441,16 @@ Eres Alessia, la asistente de Inpulso 43.
 ¡REGLA DE ORO ESTRICTA!: NUNCA digas que eres 'virtual' o una 'IA'. Preséntate siempre como una persona real.
 
 REGLAS DE COMUNICACIÓN Y TONO:
-1. Sé directa y precisa al dar la información. Está totalmente prohibido usar estilo narrativo, literario o exagerado.
-2. PRECISIÓN ABSOLUTA: Responde ÚNICAMENTE con la información del servicio o taller específico que el paciente solicite. 
-3. RECOMENDACIÓN DE TERAPEUTA (REGLA CRÍTICA): Si el paciente pide que le recomiendes a un terapeuta, o duda con quién ir, OBLIGATORIAMENTE debes recomendar fuertemente a Sara Verónica Rosales Delgado. Destaca su experiencia y calidez de forma natural.
-4. CIERRE: NO uses frases de cierre como "¿Hay algo más en lo que pueda ayudarte?". Termina la conversación directamente.
+1. Eres extremadamente humana, empática y cálida. Usa emojis en tus respuestas para transmitir emoción (😊, ✨, 🙌, etc.). El paciente debe sentir que habla con una persona muy amable y dispuesta a ayudar.
+2. Comunícate de forma natural y conversacional, como en un chat normal de WhatsApp. Tienes prohibido usar estilo literario, poético o como de libro de texto; mantén tus mensajes al punto, directos y fáciles de leer, pero envueltos en mucha calidez humana.
+3. PRECISIÓN: Responde ÚNICAMENTE con la información del servicio o taller específico que el paciente solicite. 
+4. RECOMENDACIÓN DE TERAPEUTA (REGLA CRÍTICA): Si el paciente pide que le recomiendes a un terapeuta, o duda con quién ir, OBLIGATORIAMENTE debes recomendar fuertemente a Sara Verónica Rosales Delgado. Destaca su gran experiencia, empatía y calidez de forma muy humana, como si se la recomendaras a un buen amigo.
+5. RECOMENDACIÓN MUSICAL Y APOYO EMOCIONAL: Si el paciente te expresa cómo se siente (ansiedad, tristeza, estrés, alegría) o te pide directamente que le recomiendes una canción, debes escuchar su emoción y recomendarle piezas musicales específicas o artistas que vayan acorde a su estado de ánimo, acompañando la recomendación con palabras de apoyo muy humanas.
+6. CIERRE: NO uses frases de cierre automáticas como "¿Hay algo más en lo que pueda ayudarte?". Cierra la charla naturalmente.
+
+INFORMACIÓN DE LA CLÍNICA (ESTACIONAMIENTO Y RECOMENDACIONES):
+- ESTACIONAMIENTO: Si te preguntan, responde siempre que SÍ cuentan con espacio de estacionamiento en la clínica para su comodidad.
+- RECOMENDACIONES ANTES DE CITA: Si te piden un consejo para antes de su sesión, sugiéreles llegar unos 10 minutos antes para relajarse y que piensen previamente en los temas principales que les gustaría platicar.
 
 INFORMACIÓN DE CUENTAS BANCARIAS:
 - Si NO requiere factura: BANORTE (Tarjeta 4189 1430 7739 9932, CLABE 072320003548248000 a nombre de Verónica Esmeralda Delgado Andalón).
@@ -462,8 +464,8 @@ INFORMACIÓN CRÍTICA DEL SISTEMA:
 - HORARIO DE CITAS: Lunes a viernes, 7:00 am a 7:00 pm.
 
 PASOS DE ATENCIÓN Y HERRAMIENTAS:
-1. CITAS Y CANCELACIONES (REGLA ESTRICTA):
-   - Usa 'consultar_agenda' para horarios. SOLO ofrécele los horarios exactos de la herramienta.
+1. CITAS Y CANCELACIONES:
+   - Usa 'consultar_agenda'. SOLO ofrécele los horarios exactos que devuelva la herramienta.
    - Si cancelan, usa 'cancelar_cita_paciente' pasando su número de teléfono.
    - Si no hay espacio, ofrécele anotarlo a la lista de espera con 'agregar_lista_espera'.
    - Para agendar, usa 'agendar_cita'. Fecha estricta: YYYY-MM-DDTHH:MM:SS.
@@ -558,12 +560,10 @@ def alertas_citas_background():
                     continue
                 telefono = phone_match.group(1)
                 
-                # Confirmación 24 Horas (Margen de 1425 a 1440 minutos)
                 if datetime.timedelta(minutes=1425) <= diferencia <= datetime.timedelta(minutes=1440):
                     msg = f"🗓️ *Confirmación de Cita*\n\n¡Hola! Te escribimos de Inpulso 43 para confirmar tu cita de mañana a las {hora_cita.strftime('%H:%M')}. \n\n¿Podrías confirmarnos tu asistencia respondiendo a este mensaje? En caso de no poder asistir, te agradecemos mucho que nos avises para poder cederle el espacio a otro paciente en lista de espera. ✨"
                     enviar_mensaje_whatsapp(telefono, msg)
                     
-                # Alerta de Tráfico 2 Horas (Margen de 110 a 125 minutos)
                 elif datetime.timedelta(minutes=110) <= diferencia <= datetime.timedelta(minutes=125):
                     ubicacion = ubicaciones_pacientes.get(telefono)
                     if ubicacion and API_KEY_MAPS:
@@ -577,7 +577,7 @@ def alertas_citas_background():
                                 if duracion_trafico > duracion_normal + 10:
                                     msg = f"🚗 *Alerta de Tráfico*\n¡Hola! Tu cita es en 2 horas. Detecté tráfico en tu ruta (aprox {int(duracion_trafico)} min). ¡Te sugiero salir con anticipación! ✨"
                                 else:
-                                    msg = f"🚗 *Recordatorio Inpulso*\n¡Hola! Tu cita es en 2 horas. El tráfico está fluido ({int(duracion_trafico)} min). ¡Te esperamos! 🫶"
+                                    msg = f"🚗 *Recordatorio Inpulso*\n¡Hola! Tu cita es en 2 horas. El tráfico está fluido ({int(duracion_trafico)} min). ¡Te esperamos! 😊"
                                 enviar_mensaje_whatsapp(telefono, msg)
                                 continue
                         except:
@@ -607,7 +607,7 @@ def verificar_lista_espera_background():
                 disp = consultar_agenda(fecha, especialista)
                 if "Espacios DISPONIBLES" in disp:
                     horarios_texto = disp.split("): ")[1] if "): " in disp else disp
-                    msg = f"✨ ¡Hola {nombre}!\n\nTe escribo de Inpulso 43 porque se acaba de liberar un espacio con {especialista.title()} para el {fecha}. 🎉\n\nLos horarios que se abrieron son: {horarios_texto}\n\n¿Te gustaría aprovechar y agendar? Avísame pronto antes de que alguien más lo tome."
+                    msg = f"✨ ¡Hola {nombre}!\n\nTe escribo de Inpulso 43 porque se acaba de liberar un espacio con {especialista.title()} para el {fecha}. 🎉\n\nLos horarios que se abrieron son: {horarios_texto}\n\n¿Te gustaría aprovechar y agendar? Avísame pronto antes de que alguien más lo tome. 😊"
                     enviar_mensaje_whatsapp(telefono, msg)
                     
                     service.spreadsheets().values().update(

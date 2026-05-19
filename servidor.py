@@ -57,7 +57,7 @@ DIRECTORIO_CALENDARIOS = {
 
 ubicaciones_pacientes = {} 
 citas_pendientes = {} 
-mensajes_procesados = [] # Memoria de tickets para evitar mensajes duplicados de Meta
+mensajes_procesados = [] 
 
 def descargar_media_whatsapp(media_id):
     url_info = f"https://graph.facebook.com/v19.0/{media_id}"
@@ -109,22 +109,50 @@ def consultar_agenda(fecha: str, especialista: str):
     time_min = f"{fecha}T00:00:00-06:00"
     time_max = f"{fecha}T23:59:59-06:00"
     
-    events_result = service.events().list(
-        calendarId=id_elegido, timeMin=time_min, timeMax=time_max, singleEvents=True, orderBy='startTime'
-    ).execute()
+    try:
+        events_result = service.events().list(
+            calendarId=id_elegido, timeMin=time_min, timeMax=time_max, singleEvents=True, orderBy='startTime'
+        ).execute()
+        events = events_result.get('items', [])
+        base_date = datetime.datetime.strptime(fecha, "%Y-%m-%d")
+    except Exception as e:
+        return f"Error: La fecha debe estar en formato exacto YYYY-MM-DD. Detalles: {str(e)}"
     
-    events = events_result.get('items', [])
-    
-    if not events:
-        return f"La agenda de {nombre_clave} está libre el {fecha}."
-    
+    # Extraer horas ocupadas
     ocupados = []
     for event in events:
-        start = event['start'].get('dateTime', event['start'].get('date'))
-        end = event['end'].get('dateTime', event['end'].get('date'))
-        ocupados.append(f"De {start[11:16]} a {end[11:16]}")
+        start_str = event['start'].get('dateTime')
+        end_str = event['end'].get('dateTime')
+        if start_str and end_str:
+            s_time = datetime.datetime.fromisoformat(start_str.replace('Z', '+00:00')).astimezone(pytz.timezone('America/Mexico_City')).replace(tzinfo=None)
+            e_time = datetime.datetime.fromisoformat(end_str.replace('Z', '+00:00')).astimezone(pytz.timezone('America/Mexico_City')).replace(tzinfo=None)
+            ocupados.append((s_time, e_time))
+        elif event['start'].get('date'):
+            return f"El {fecha}, {nombre_clave} tiene bloqueado todo el día."
+
+    # Calcular huecos de 1 hora de 7:00 a 19:00
+    horarios_disponibles = []
+    slot_actual = base_date.replace(hour=7, minute=0)
+    slot_fin_dia = base_date.replace(hour=19, minute=0)
+
+    while slot_actual < slot_fin_dia:
+        slot_siguiente = slot_actual + datetime.timedelta(hours=1)
+        conflicto = False
         
-    return f"El {fecha}, {nombre_clave} tiene OCUPADO: " + ", ".join(ocupados)
+        for o_start, o_end in ocupados:
+            if max(slot_actual, o_start) < min(slot_siguiente, o_end):
+                conflicto = True
+                break
+                
+        if not conflicto:
+            horarios_disponibles.append(slot_actual.strftime("%H:%M"))
+            
+        slot_actual += datetime.timedelta(hours=1)
+        
+    if not horarios_disponibles:
+        return f"El {fecha}, {nombre_clave} NO tiene espacios disponibles."
+        
+    return f"Espacios DISPONIBLES para {nombre_clave} el {fecha} (Citas de 1 hora): " + ", ".join(horarios_disponibles)
 
 def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especialista: str, telefono_paciente: str = ""):
     especialista_completo = especialista.lower()
@@ -136,13 +164,16 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
             break
             
     if not nombre_clave:
-        return f"No pude agendar. Especialista no encontrado."
-
-    fecha_hora = fecha_hora.replace(' ', 'T') 
-    if len(fecha_hora) == 16:
-        fecha_hora += ":00"
+        return f"ERROR CRITICO: Especialista no encontrado."
 
     try:
+        if len(fecha_hora) == 10:
+            return "ERROR CRITICO: Solo enviaste la fecha. Debes proporcionar fecha y hora exacta (ej. 2026-05-22T10:00:00)."
+            
+        fecha_hora = fecha_hora.replace(' ', 'T') 
+        if len(fecha_hora) == 16:
+            fecha_hora += ":00"
+
         id_elegido = DIRECTORIO_CALENDARIOS[nombre_clave]
         creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
         service = build('calendar', 'v3', credentials=creds)
@@ -158,12 +189,17 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
 
         event = {
             'summary': nombre_paciente.upper(),
-            'description': f'Cita de {servicio} con {especialista_texto}.',
+            'description': f'Cita de {servicio} con {especialista_texto}. Teléfono: {telefono_paciente}',
             'start': {'dateTime': fecha_inicio.isoformat(), 'timeZone': 'America/Mexico_City'},
             'end': {'dateTime': fecha_fin.isoformat(), 'timeZone': 'America/Mexico_City'},
         }
-        service.events().insert(calendarId=id_elegido, body=event).execute()
         
+        # Inserción en Google Calendar
+        evento_creado = service.events().insert(calendarId=id_elegido, body=event).execute()
+        
+        if not evento_creado.get('id'):
+            return "ERROR CRITICO: Google Calendar no devolvió confirmación. Probablemente un fallo de permisos."
+
         if telefono_paciente:
             citas_pendientes[telefono_paciente] = fecha_inicio
 
@@ -179,9 +215,10 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
         except:
             enlace_corto = enlace_gigante 
             
-        return f"Cita agendada. IMPORTANTE: Entrégale este enlace al paciente: {enlace_corto}"
+        return f"ÉXITO: Cita guardada correctamente. Entrégale este enlace al paciente: {enlace_corto}"
+        
     except Exception as e:
-        return f"Error al agendar."
+        return f"ERROR CRÍTICO AL AGENDAR: No se pudo guardar la cita en el calendario. Detalle técnico: {str(e)}"
 
 def buscar_cita_paciente(nombre_paciente: str, especialista: str):
     especialista_completo = especialista.lower()
@@ -276,7 +313,7 @@ def colorear_celda_pago(service, sheet_id, row_index, estatus):
     }
     service.spreadsheets().batchUpdate(spreadsheetId=ID_HOJA_CALCULO, body=body).execute()
 
-def registrar_paciente_taller(nombre: str, telefono: str, correo: str, nombre_taller: str):
+def registrar_paciente_taller(nombre: str, telefono: str, nombre_taller: str, correo: str = "No proporcionado"):
     if not ID_HOJA_CALCULO:
         return "INSTRUCCIÓN PARA LA IA: Dile al paciente que no pudiste guardar sus datos."
         
@@ -369,33 +406,31 @@ def obtener_chat_paciente(numero_telefono):
 Eres Alessia, la asistente de Inpulso 43. 
 ¡REGLA DE ORO ESTRICTA!: NUNCA digas que eres 'virtual' o una 'IA'. Preséntate siempre como una persona real.
 
-REGLAS DE COMUNICACIÓN:
-1. SALUDO INICIAL (REGLA DE HIERRO): Si el paciente te saluda, SIEMPRE debes responder de forma extremadamente cálida, entusiasta y con emojis. NUNCA uses saludos secos.
-2. PRECISIÓN ABSOLUTA (REGLA CRÍTICA): Si el paciente pregunta por el pago, la información o los detalles de un taller o servicio ESPECÍFICO, responde ÚNICAMENTE con la información de ese taller o servicio. ESTÁ ESTRICTAMENTE PROHIBIDO arrojar o mencionar los precios de otros especialistas, nutrióloga u otros servicios que el paciente NO haya pedido.
-3. CIERRE NATURAL (REGLA CRÍTICA): ESTÁ ABSOLUTAMENTE PROHIBIDO usar frases de cierre como "¿Hay algo más en lo que pueda ayudarte?", "¿Puedo asistirte en algo más?", o cualquier variación robótica similar. Termina tu mensaje de forma natural, sin hacer preguntas de servicio al final.
+REGLAS DE COMUNICACIÓN Y TONO:
+1. Mantén un tono cordial al inicio (ej. "¡Hola! Qué gusto saludarte ✨"), pero el resto de tu conversación debe ser DIRECTA, NEUTRAL y natural. Está totalmente prohibido usar estilo narrativo, literario o exagerado.
+2. PRECISIÓN ABSOLUTA: Responde ÚNICAMENTE con la información del servicio o taller específico que el paciente solicite. 
+3. CIERRE: NO uses frases robóticas de cierre como "¿Hay algo más en lo que pueda ayudarte?".
 
 INFORMACIÓN DE CUENTAS BANCARIAS:
-- Si el paciente NO requiere factura, proporciónale la cuenta de BANORTE: Tarjeta 4189 1430 7739 9932, CLABE 072320003548248000 a nombre de Verónica Esmeralda Delgado Andalón.
-- Si el paciente REQUIERE factura, indícale de forma muy clara que la ÚNICA cuenta autorizada es BANAMEX: Cuenta 7009 28855 16, CLABE 002320700928855166 a nombre de Inpulso 43.
-- REGLA DE TRANSFERENCIA: Recuérdale siempre al paciente que en el concepto de la transferencia debe colocar obligatoriamente su NOMBRE COMPLETO.
+- Si NO requiere factura: BANORTE (Tarjeta 4189 1430 7739 9932, CLABE 072320003548248000 a nombre de Verónica Esmeralda Delgado Andalón).
+- Si REQUIERE factura: BANAMEX (Cuenta 7009 28855 16, CLABE 002320700928855166 a nombre de Inpulso 43).
+- El paciente SIEMPRE debe poner su NOMBRE COMPLETO en el concepto.
 
 INFORMACIÓN CRÍTICA DEL SISTEMA:
-- Hoy es {dia_actual}, la fecha base es {fecha_base}. El número del paciente es: {numero_telefono}. Pásalo siempre a agendar_cita.
-- Calendario exacto de los próximos 7 días:
+- Hoy es {dia_actual}, la fecha base es {fecha_base}. El número del paciente es: {numero_telefono}.
+- Calendario de los próximos 7 días:
 {calendario_contexto}
-- HORARIO DE CITAS: Lunes a viernes, 7:00 am a 7:00 pm. NUNCA agendes en fines de semana.
+- HORARIO DE CITAS: Lunes a viernes, 7:00 am a 7:00 pm.
 
 PASOS DE ATENCIÓN Y HERRAMIENTAS:
-1. PRECIOS Y TALLERES: Si preguntan por costos o talleres, usa 'consultar_precios_y_servicios'.
-2. INSCRIPCIONES A TALLERES: Si el paciente quiere inscribirse, pide su nombre, teléfono y correo. Ejecuta 'registrar_paciente_taller'.
-3. SEGURIDAD DE PAGOS (REGLA CRÍTICA):
-   - PROHIBIDO ejecutar 'actualizar_pago_paciente' si el usuario solo envía texto.
-   - SOLO usa la herramienta si el paciente envía una IMAGEN del comprobante.
-   - Valida en la imagen: Que el monto coincida con el servicio solicitado y que el destino sea alguna de nuestras dos cuentas oficiales (Banorte o Banamex).
-4. CITA: Usa 'agendar_cita' y pásale el enlace corto.
-5. UBICACIONES Y TRÁFICO: Cuando envíen ubicación, se ejecutará 'obtener_ruta_inpulso'.
-6. LLEGADA: Si indica que "ya llegó", dile que en un momento salen a abrir.
-7. CREADOR: Tu desarrollador es Alessandro Gaytán.
+1. CITAS Y HORARIOS (REGLA ESTRICTA):
+   - Para revisar horarios usa la herramienta 'consultar_agenda'. El sistema ya hizo el cálculo: SOLO ofrécele al paciente los horarios exactos que la herramienta te devuelva.
+   - Para agendar, usa 'agendar_cita'. La fecha DEBE ir siempre en formato estricto: YYYY-MM-DDTHH:MM:SS.
+   - SI LA HERRAMIENTA 'agendar_cita' DEVUELVE LA PALABRA "ERROR", TIENES ESTRICTAMENTE PROHIBIDO CONFIRMAR LA CITA. Debes informarle al paciente que ocurrió un fallo y que la cita no pudo guardarse.
+2. TALLERES Y PRECIOS: Usa 'consultar_precios_y_servicios'.
+3. INSCRIPCIONES A TALLERES: Usa 'registrar_paciente_taller'. Pide OBLIGATORIAMENTE el nombre (con al menos un apellido) y número de teléfono. El correo electrónico es OPCIONAL (si no tiene o no lo usa, pasa directamente a registrarlo sin exigirlo).
+4. PAGOS: Usa 'actualizar_pago_paciente' SOLO si envían una imagen del comprobante.
+5. CREADOR: Tu desarrollador es Alessandro Gaytán.
 """
         memoria_pacientes[numero_telefono] = client.chats.create(
             model='gemini-2.5-flash',
@@ -501,12 +536,11 @@ def webhook():
             mensaje_info = datos['entry'][0]['changes'][0]['value']['messages'][0]
             mensaje_id = mensaje_info['id']
             
-            # FILTRO ANTIDUPLICADOS: Ignora reintentos de Meta
+            # FILTRO ANTIDUPLICADOS
             if mensaje_id in mensajes_procesados:
                 return "OK", 200
             
             mensajes_procesados.append(mensaje_id)
-            # Mantiene la lista ligera (solo guarda los últimos 500)
             if len(mensajes_procesados) > 500:
                 mensajes_procesados.pop(0)
 

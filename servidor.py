@@ -22,7 +22,6 @@ ID_TELEFONO = "1090957250773198"
 API_KEY_MAPS = "" 
 ID_HOJA_CALCULO = "1HE-a6v2b-bCcN6JLHOJ3mevuRhJCWmInZEXkyV24L3k"
 
-# Datos de cuentas oficiales para validación
 CUENTAS_OFICIALES = {
     "BANORTE": {
         "tarjeta": "4189 1430 7739 9932",
@@ -58,6 +57,7 @@ DIRECTORIO_CALENDARIOS = {
 ubicaciones_pacientes = {} 
 citas_pendientes = {} 
 mensajes_procesados = [] 
+lista_de_espera = [] 
 
 def descargar_media_whatsapp(media_id):
     url_info = f"https://graph.facebook.com/v19.0/{media_id}"
@@ -212,10 +212,19 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
         except:
             enlace_corto = enlace_gigante 
             
-        return f"ÉXITO: Cita guardada correctamente. INSTRUCCIÓN PARA LA IA: Confírmale al paciente con mucha calidez y entusiasmo que su cita está lista, y entrégale este enlace: {enlace_corto}"
+        return f"ÉXITO: Cita guardada correctamente. INSTRUCCIÓN PARA LA IA: Confírmale al paciente con calidez que su cita está lista, y entrégale este enlace: {enlace_corto}"
         
     except Exception as e:
         return f"ERROR CRÍTICO AL AGENDAR: No se pudo guardar la cita en el calendario. Detalle técnico: {str(e)}"
+
+def agregar_lista_espera(nombre: str, telefono: str, especialista: str, fecha: str):
+    lista_de_espera.append({
+        "nombre": nombre,
+        "telefono": telefono,
+        "especialista": especialista,
+        "fecha": fecha
+    })
+    return "INSTRUCCIÓN PARA LA IA: Dile al paciente con empatía que ya lo anotaste en la lista de espera prioritaria para ese día, y prométele que le mandarás un mensaje automáticamente si alguien cancela su cita y se libera un espacio."
 
 def buscar_cita_paciente(nombre_paciente: str, especialista: str):
     especialista_completo = especialista.lower()
@@ -261,11 +270,11 @@ def obtener_ruta_inpulso(ubicacion_paciente: str):
                 elemento = res['rows'][0]['elements'][0]
                 distancia = elemento['distance']['text']
                 duracion = elemento.get('duration_in_traffic', elemento['duration'])['text']
-                return f"INSTRUCCIÓN PARA LA IA: Dile al paciente textualmente de forma muy natural, empática y amable que hará aproximadamente {duracion} de camino en auto hacia la clínica."
+                return f"INSTRUCCIÓN PARA LA IA: Dile al paciente textualmente de forma muy natural que hará aproximadamente {duracion} de camino en auto hacia la clínica."
         except Exception as e:
             pass
             
-    return "INSTRUCCIÓN PARA LA IA: Dile al paciente con amabilidad: 'Ya guardé tu ubicación. Considera el tráfico habitual para llegar a tiempo.'"
+    return "INSTRUCCIÓN PARA LA IA: Dile al paciente: 'Ya guardé tu ubicación. Considera el tráfico habitual para llegar a tiempo.'"
 
 def calcular_gasto_combustible(vehiculo: str, kilometros: float, rendimiento_km_l: float):
     precio_gasolina = 24.50 
@@ -343,9 +352,9 @@ def registrar_paciente_taller(nombre: str, telefono: str, nombre_taller: str, co
             row_num = int(match.group(1))
             colorear_celda_pago(service, sheet_id, row_num - 1, "PENDIENTE")
         
-        return "INSTRUCCIÓN PARA LA IA: Confírmale al paciente de forma muy cálida, empática y usando emojis que sus datos han sido registrados con éxito. Celebra que se haya inscrito."
+        return "INSTRUCCIÓN PARA LA IA: Confírmale al paciente de forma empática que sus datos han sido registrados con éxito."
     except Exception as e:
-        return "INSTRUCCIÓN PARA LA IA: Hubo un fallo al registrar en Sheets. Discúlpate amablemente."
+        return "INSTRUCCIÓN PARA LA IA: Hubo un fallo al registrar en Sheets."
 
 def actualizar_pago_paciente(telefono: str, estatus: str = "PAGADO"):
     try:
@@ -373,11 +382,11 @@ def actualizar_pago_paciente(telefono: str, estatus: str = "PAGADO"):
                     
         if row_index is not None:
             colorear_celda_pago(service, sheet_id, row_index, estatus)
-            return f"INSTRUCCIÓN PARA LA IA: Estatus de pago actualizado a {estatus}. Agradécele al paciente con mucha amabilidad y entusiasmo."
+            return f"INSTRUCCIÓN PARA LA IA: Estatus de pago actualizado a {estatus}. Agradécele al paciente."
         else:
-            return f"INSTRUCCIÓN PARA LA IA: No encontré registro previo para ese teléfono. Pide amablemente que te confirmen el número con el que se registraron."
+            return f"INSTRUCCIÓN PARA LA IA: No encontré registro previo para ese teléfono. Pide que te confirmen el número."
     except Exception as e:
-        return "INSTRUCCIÓN PARA LA IA: Fallo técnico al actualizar el pago. Pide disculpas de manera cordial."
+        return "INSTRUCCIÓN PARA LA IA: Fallo técnico al actualizar el pago."
 
 # ==========================================
 # 3. MEMORIA Y CONTROL DE CONCURRENCIA
@@ -404,9 +413,10 @@ Eres Alessia, la asistente de Inpulso 43.
 ¡REGLA DE ORO ESTRICTA!: NUNCA digas que eres 'virtual' o una 'IA'. Preséntate siempre como una persona real.
 
 REGLAS DE COMUNICACIÓN Y TONO:
-1. MANTÉN UN TRATO CÁLIDO Y HUMANO: Sé directa y precisa al dar la información, pero hazlo siempre con empatía, amabilidad y utilizando emojis ocasionales. El paciente debe sentir que habla con una persona comprensiva y entusiasta.
+1. Sé directa y precisa al dar la información. Está totalmente prohibido usar estilo narrativo, literario o exagerado.
 2. PRECISIÓN ABSOLUTA: Responde ÚNICAMENTE con la información del servicio o taller específico que el paciente solicite. 
-3. CIERRE: NO uses frases robóticas de cierre como "¿Hay algo más en lo que pueda ayudarte?". Termina la conversación de forma natural.
+3. RECOMENDACIÓN DE TERAPEUTA (REGLA CRÍTICA): Si el paciente pide que le recomiendes a un terapeuta, o duda con quién ir, OBLIGATORIAMENTE debes recomendar fuertemente a Sara Verónica Rosales Delgado. Destaca su experiencia y calidez de forma natural.
+4. CIERRE: NO uses frases de cierre como "¿Hay algo más en lo que pueda ayudarte?". Termina la conversación directamente.
 
 INFORMACIÓN DE CUENTAS BANCARIAS:
 - Si NO requiere factura: BANORTE (Tarjeta 4189 1430 7739 9932, CLABE 072320003548248000 a nombre de Verónica Esmeralda Delgado Andalón).
@@ -421,11 +431,12 @@ INFORMACIÓN CRÍTICA DEL SISTEMA:
 
 PASOS DE ATENCIÓN Y HERRAMIENTAS:
 1. CITAS Y HORARIOS (REGLA ESTRICTA):
-   - Para revisar horarios usa la herramienta 'consultar_agenda'. El sistema ya hizo el cálculo: SOLO ofrécele al paciente los horarios exactos que la herramienta te devuelva.
+   - Usa 'consultar_agenda'. SOLO ofrécele al paciente los horarios exactos que la herramienta te devuelva.
+   - Si no hay espacio, ofrécele al paciente agregarlo a la lista de espera utilizando la herramienta 'agregar_lista_espera'.
    - Para agendar, usa 'agendar_cita'. La fecha DEBE ir siempre en formato estricto: YYYY-MM-DDTHH:MM:SS.
-   - SI LA HERRAMIENTA 'agendar_cita' DEVUELVE LA PALABRA "ERROR", TIENES ESTRICTAMENTE PROHIBIDO CONFIRMAR LA CITA. Debes informarle al paciente que ocurrió un fallo y que la cita no pudo guardarse.
+   - SI LA HERRAMIENTA 'agendar_cita' DEVUELVE "ERROR", TIENES ESTRICTAMENTE PROHIBIDO CONFIRMAR LA CITA.
 2. TALLERES Y PRECIOS: Usa 'consultar_precios_y_servicios'.
-3. INSCRIPCIONES A TALLERES: Usa 'registrar_paciente_taller'. Pide OBLIGATORIAMENTE el nombre (con al menos un apellido) y número de teléfono. El correo electrónico es OPCIONAL. No insistas si no te lo dan.
+3. INSCRIPCIONES A TALLERES: Usa 'registrar_paciente_taller'. Pide OBLIGATORIAMENTE el nombre (con al menos un apellido) y número de teléfono. El correo electrónico es OPCIONAL.
 4. PAGOS: Usa 'actualizar_pago_paciente' SOLO si envían una imagen del comprobante.
 5. CREADOR: Tu desarrollador es Alessandro Gaytán.
 """
@@ -441,7 +452,8 @@ PASOS DE ATENCIÓN Y HERRAMIENTAS:
                     calcular_gasto_combustible, 
                     consultar_precios_y_servicios, 
                     registrar_paciente_taller, 
-                    actualizar_pago_paciente
+                    actualizar_pago_paciente,
+                    agregar_lista_espera
                 ]
             )
         )
@@ -475,12 +487,41 @@ def procesar_mensaje_ia(numero_paciente, contenido_para_ia):
             enviar_mensaje_whatsapp(numero_paciente, respuesta_ia.text)
         except Exception as e:
             print(f"[ERROR CRÍTICO GEMINI]: {str(e)}")
-            mensaje_rescate = "Una disculpa, tuve un micro-corte en mi sistema de red. 😥 ¿Me podrías repetir tu último mensaje?"
+            mensaje_rescate = "Una disculpa, tuve un micro-corte en mi sistema de red. ¿Me podrías repetir tu último mensaje?"
             enviar_mensaje_whatsapp(numero_paciente, mensaje_rescate)
 
 # ==========================================
-# ALARMA DE TRÁFICO PROGRAMADA
+# TAREAS EN SEGUNDO PLANO (LISTA DE ESPERA, CONFIRMACIÓN Y TRÁFICO)
 # ==========================================
+def verificar_lista_espera_background():
+    try:
+        if not lista_de_espera:
+            return
+            
+        for paciente in lista_de_espera[:]:
+            disp = consultar_agenda(paciente['fecha'], paciente['especialista'])
+            
+            if "Espacios DISPONIBLES" in disp:
+                horarios_texto = disp.split("): ")[1] if "): " in disp else disp
+                msg = f"✨ ¡Hola {paciente['nombre']}!\n\nTe escribo de Inpulso 43 porque se acaba de liberar un espacio con {paciente['especialista'].title()} para el {paciente['fecha']}. 🎉\n\nLos horarios que se abrieron son: {horarios_texto}\n\n¿Te gustaría aprovechar y agendar? Avísame pronto antes de que alguien más lo tome."
+                enviar_mensaje_whatsapp(paciente['telefono'], msg)
+                
+                lista_de_espera.remove(paciente)
+    except Exception as e:
+        print(f"[ERROR EN LISTA DE ESPERA]: {e}")
+
+def confirmacion_24h_background():
+    zona_mexico = pytz.timezone('America/Mexico_City')
+    ahora = datetime.datetime.now(zona_mexico)
+
+    for telefono, hora_cita in list(citas_pendientes.items()):
+        diferencia = hora_cita - ahora
+        
+        # Verifica citas que estén a entre 23.75 y 24 horas de distancia (1425 a 1440 minutos)
+        if datetime.timedelta(minutes=1425) <= diferencia <= datetime.timedelta(minutes=1440):
+            msg = f"🗓️ *Confirmación de Cita*\n\n¡Hola! Te escribimos de Inpulso 43 para confirmar tu cita de mañana a las {hora_cita.strftime('%H:%M')}. \n\n¿Podrías confirmarnos tu asistencia respondiendo a este mensaje? En caso de no poder asistir, te agradecemos mucho que nos avises para poder cederle el espacio a otro paciente en lista de espera. ✨"
+            enviar_mensaje_whatsapp(telefono, msg)
+
 def monitoreo_trafico_background():
     zona_mexico = pytz.timezone('America/Mexico_City')
     ahora = datetime.datetime.now(zona_mexico)
@@ -512,10 +553,12 @@ def monitoreo_trafico_background():
             else:
                 enviar_mensaje_whatsapp(telefono, "🚗 *Recordatorio Inpulso*\n¡Hola! Paso a recordarte que tu cita es en aprox 2 horas. Contempla el tiempo de estacionamiento. ¡Te esperamos! ✨")
                 
-            del citas_pendientes[telefono]
+            # No borrar aquí para evitar conflictos con el monitoreo. El diccionario limpiará memoria al reiniciar.
 
 scheduler = BackgroundScheduler(timezone="America/Mexico_City")
 scheduler.add_job(func=monitoreo_trafico_background, trigger="interval", minutes=15)
+scheduler.add_job(func=verificar_lista_espera_background, trigger="interval", minutes=15)
+scheduler.add_job(func=confirmacion_24h_background, trigger="interval", minutes=15) # Tarea de confirmación cada 15 min
 scheduler.start()
 
 # ==========================================
@@ -533,7 +576,6 @@ def webhook():
             mensaje_info = datos['entry'][0]['changes'][0]['value']['messages'][0]
             mensaje_id = mensaje_info['id']
             
-            # FILTRO ANTIDUPLICADOS
             if mensaje_id in mensajes_procesados:
                 return "OK", 200
             

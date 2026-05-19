@@ -55,9 +55,7 @@ DIRECTORIO_CALENDARIOS = {
 }
 
 ubicaciones_pacientes = {} 
-citas_pendientes = {} 
 mensajes_procesados = [] 
-lista_de_espera = [] 
 
 def descargar_media_whatsapp(media_id):
     url_info = f"https://graph.facebook.com/v19.0/{media_id}"
@@ -197,9 +195,6 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
         if not evento_creado.get('id'):
             return "ERROR CRITICO: Google Calendar no devolvió confirmación. Probablemente un fallo de permisos."
 
-        if telefono_paciente:
-            citas_pendientes[telefono_paciente] = fecha_inicio
-
         format_start = fecha_inicio.strftime('%Y%m%dT%H%M%S')
         format_end = fecha_fin.strftime('%Y%m%dT%H%M%S')
         texto_link = urllib.parse.quote(f"Cita en Inpulso con {especialista_texto}")
@@ -217,14 +212,51 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
     except Exception as e:
         return f"ERROR CRÍTICO AL AGENDAR: No se pudo guardar la cita en el calendario. Detalle técnico: {str(e)}"
 
+def cancelar_cita_paciente(telefono_paciente: str):
+    try:
+        creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+        service = build('calendar', 'v3', credentials=creds)
+        
+        hoy_utc = datetime.datetime.utcnow().isoformat() + 'Z'
+        cleaned_target = telefono_paciente.replace("+", "").strip()
+        
+        for especialista, cal_id in DIRECTORIO_CALENDARIOS.items():
+            events_result = service.events().list(
+                calendarId=cal_id, timeMin=hoy_utc, maxResults=50, singleEvents=True, orderBy='startTime'
+            ).execute()
+            events = events_result.get('items', [])
+            
+            for event in events:
+                desc = event.get('description', '')
+                if cleaned_target in desc.replace("+", ""):
+                    service.events().delete(calendarId=cal_id, eventId=event['id']).execute()
+                    return "INSTRUCCIÓN PARA LA IA: La cita fue cancelada exitosamente en el calendario. Confírmale al paciente amablemente."
+                    
+        return "INSTRUCCIÓN PARA LA IA: No encontré ninguna cita futura registrada con ese número de teléfono. Pídele al paciente que verifique el número."
+    except Exception as e:
+        return f"INSTRUCCIÓN PARA LA IA: Hubo un fallo técnico al cancelar la cita. Error: {str(e)}"
+
 def agregar_lista_espera(nombre: str, telefono: str, especialista: str, fecha: str):
-    lista_de_espera.append({
-        "nombre": nombre,
-        "telefono": telefono,
-        "especialista": especialista,
-        "fecha": fecha
-    })
-    return "INSTRUCCIÓN PARA LA IA: Dile al paciente con empatía que ya lo anotaste en la lista de espera prioritaria para ese día, y prométele que le mandarás un mensaje automáticamente si alguien cancela su cita y se libera un espacio."
+    if not ID_HOJA_CALCULO:
+        return "INSTRUCCIÓN PARA LA IA: Hubo un fallo técnico. Dile al paciente que no pudiste agregarlo."
+    try:
+        creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+        service = build('sheets', 'v4', credentials=creds)
+        zona_mexico = pytz.timezone('America/Mexico_City')
+        fecha_registro = datetime.datetime.now(zona_mexico).strftime("%Y-%m-%d %H:%M:%S")
+        
+        valores = [[fecha_registro, nombre, telefono, especialista, fecha, "PENDIENTE"]]
+        body = {'values': valores}
+        
+        service.spreadsheets().values().append(
+            spreadsheetId=ID_HOJA_CALCULO, 
+            range="Lista_Espera!A:F", 
+            valueInputOption="USER_ENTERED", 
+            body=body
+        ).execute()
+        return "INSTRUCCIÓN PARA LA IA: Dile al paciente con empatía que ya lo anotaste en la lista de espera prioritaria para ese día."
+    except Exception as e:
+        return "INSTRUCCIÓN PARA LA IA: Hubo un fallo técnico al conectarse a Sheets. Disculpate con el paciente."
 
 def buscar_cita_paciente(nombre_paciente: str, especialista: str):
     especialista_completo = especialista.lower()
@@ -430,14 +462,15 @@ INFORMACIÓN CRÍTICA DEL SISTEMA:
 - HORARIO DE CITAS: Lunes a viernes, 7:00 am a 7:00 pm.
 
 PASOS DE ATENCIÓN Y HERRAMIENTAS:
-1. CITAS Y HORARIOS (REGLA ESTRICTA):
-   - Usa 'consultar_agenda'. SOLO ofrécele al paciente los horarios exactos que la herramienta te devuelva.
-   - Si no hay espacio, ofrécele al paciente agregarlo a la lista de espera utilizando la herramienta 'agregar_lista_espera'.
-   - Para agendar, usa 'agendar_cita'. La fecha DEBE ir siempre en formato estricto: YYYY-MM-DDTHH:MM:SS.
-   - SI LA HERRAMIENTA 'agendar_cita' DEVUELVE "ERROR", TIENES ESTRICTAMENTE PROHIBIDO CONFIRMAR LA CITA.
+1. CITAS Y CANCELACIONES (REGLA ESTRICTA):
+   - Usa 'consultar_agenda' para horarios. SOLO ofrécele los horarios exactos de la herramienta.
+   - Si cancelan, usa 'cancelar_cita_paciente' pasando su número de teléfono.
+   - Si no hay espacio, ofrécele anotarlo a la lista de espera con 'agregar_lista_espera'.
+   - Para agendar, usa 'agendar_cita'. Fecha estricta: YYYY-MM-DDTHH:MM:SS.
+   - SI LA HERRAMIENTA 'agendar_cita' DEVUELVE "ERROR", PROHIBIDO CONFIRMAR LA CITA.
 2. TALLERES Y PRECIOS: Usa 'consultar_precios_y_servicios'.
-3. INSCRIPCIONES A TALLERES: Usa 'registrar_paciente_taller'. Pide OBLIGATORIAMENTE el nombre (con al menos un apellido) y número de teléfono. El correo electrónico es OPCIONAL.
-4. PAGOS: Usa 'actualizar_pago_paciente' SOLO si envían una imagen del comprobante.
+3. INSCRIPCIONES A TALLERES: Usa 'registrar_paciente_taller'. Pide OBLIGATORIAMENTE el nombre y número. Correo es OPCIONAL.
+4. PAGOS: Usa 'actualizar_pago_paciente' SOLO si envían imagen del comprobante.
 5. CREADOR: Tu desarrollador es Alessandro Gaytán.
 """
         memoria_pacientes[numero_telefono] = client.chats.create(
@@ -447,6 +480,7 @@ PASOS DE ATENCIÓN Y HERRAMIENTAS:
                 tools=[
                     consultar_agenda, 
                     agendar_cita, 
+                    cancelar_cita_paciente,
                     buscar_cita_paciente, 
                     obtener_ruta_inpulso, 
                     calcular_gasto_combustible, 
@@ -491,74 +525,103 @@ def procesar_mensaje_ia(numero_paciente, contenido_para_ia):
             enviar_mensaje_whatsapp(numero_paciente, mensaje_rescate)
 
 # ==========================================
-# TAREAS EN SEGUNDO PLANO (LISTA DE ESPERA, CONFIRMACIÓN Y TRÁFICO)
+# TAREAS EN SEGUNDO PLANO (ALERTA DE CITAS Y LISTA ESPERA)
 # ==========================================
+def alertas_citas_background():
+    zona_mexico = pytz.timezone('America/Mexico_City')
+    ahora = datetime.datetime.now(zona_mexico)
+    
+    try:
+        creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+        service = build('calendar', 'v3', credentials=creds)
+        
+        time_min = ahora.isoformat()
+        time_max = (ahora + datetime.timedelta(hours=25)).isoformat()
+        
+        for especialista, cal_id in DIRECTORIO_CALENDARIOS.items():
+            events_result = service.events().list(
+                calendarId=cal_id, timeMin=time_min, timeMax=time_max, singleEvents=True, orderBy='startTime'
+            ).execute()
+            events = events_result.get('items', [])
+            
+            for event in events:
+                start_str = event['start'].get('dateTime')
+                if not start_str: 
+                    continue
+                
+                hora_cita = datetime.datetime.fromisoformat(start_str.replace('Z', '+00:00')).astimezone(zona_mexico).replace(tzinfo=None)
+                diferencia = hora_cita - ahora
+                
+                desc = event.get('description', '')
+                phone_match = re.search(r'Teléfono:\s*(\+?\d+)', desc)
+                if not phone_match: 
+                    continue
+                telefono = phone_match.group(1)
+                
+                # Confirmación 24 Horas (Margen de 1425 a 1440 minutos)
+                if datetime.timedelta(minutes=1425) <= diferencia <= datetime.timedelta(minutes=1440):
+                    msg = f"🗓️ *Confirmación de Cita*\n\n¡Hola! Te escribimos de Inpulso 43 para confirmar tu cita de mañana a las {hora_cita.strftime('%H:%M')}. \n\n¿Podrías confirmarnos tu asistencia respondiendo a este mensaje? En caso de no poder asistir, te agradecemos mucho que nos avises para poder cederle el espacio a otro paciente en lista de espera. ✨"
+                    enviar_mensaje_whatsapp(telefono, msg)
+                    
+                # Alerta de Tráfico 2 Horas (Margen de 110 a 125 minutos)
+                elif datetime.timedelta(minutes=110) <= diferencia <= datetime.timedelta(minutes=125):
+                    ubicacion = ubicaciones_pacientes.get(telefono)
+                    if ubicacion and API_KEY_MAPS:
+                        try:
+                            url = f"https://maps.googleapis.com/maps/api/distancematrix/json?origins={ubicacion}&destinations=Av.+Hidalgo+533,Zapopan&departure_time=now&key={API_KEY_MAPS}"
+                            res = requests.get(url).json()
+                            if res['status'] == 'OK':
+                                duracion_normal = res['rows'][0]['elements'][0]['duration']['value'] / 60
+                                duracion_trafico = res['rows'][0]['elements'][0].get('duration_in_traffic', res['rows'][0]['elements'][0]['duration'])['value'] / 60
+                                
+                                if duracion_trafico > duracion_normal + 10:
+                                    msg = f"🚗 *Alerta de Tráfico*\n¡Hola! Tu cita es en 2 horas. Detecté tráfico en tu ruta (aprox {int(duracion_trafico)} min). ¡Te sugiero salir con anticipación! ✨"
+                                else:
+                                    msg = f"🚗 *Recordatorio Inpulso*\n¡Hola! Tu cita es en 2 horas. El tráfico está fluido ({int(duracion_trafico)} min). ¡Te esperamos! 🫶"
+                                enviar_mensaje_whatsapp(telefono, msg)
+                                continue
+                        except:
+                            pass
+                            
+                    msg = f"🚗 *Recordatorio Inpulso*\n¡Hola! Paso a recordarte que tu cita es en aprox 2 horas. Contempla el tiempo de estacionamiento. ¡Te esperamos! ✨"
+                    enviar_mensaje_whatsapp(telefono, msg)
+                    
+    except Exception as e:
+        print(f"[ERROR ALERTAS BACKGROUND]: {e}")
+
 def verificar_lista_espera_background():
     try:
-        if not lista_de_espera:
-            return
-            
-        for paciente in lista_de_espera[:]:
-            disp = consultar_agenda(paciente['fecha'], paciente['especialista'])
-            
-            if "Espacios DISPONIBLES" in disp:
-                horarios_texto = disp.split("): ")[1] if "): " in disp else disp
-                msg = f"✨ ¡Hola {paciente['nombre']}!\n\nTe escribo de Inpulso 43 porque se acaba de liberar un espacio con {paciente['especialista'].title()} para el {paciente['fecha']}. 🎉\n\nLos horarios que se abrieron son: {horarios_texto}\n\n¿Te gustaría aprovechar y agendar? Avísame pronto antes de que alguien más lo tome."
-                enviar_mensaje_whatsapp(paciente['telefono'], msg)
+        creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+        service = build('sheets', 'v4', credentials=creds)
+        
+        result = service.spreadsheets().values().get(spreadsheetId=ID_HOJA_CALCULO, range="Lista_Espera!A:F").execute()
+        rows = result.get('values', [])
+        
+        for i, row in enumerate(rows):
+            if len(row) >= 6 and row[5] == "PENDIENTE":
+                nombre = row[1]
+                telefono = row[2]
+                especialista = row[3]
+                fecha = row[4]
                 
-                lista_de_espera.remove(paciente)
+                disp = consultar_agenda(fecha, especialista)
+                if "Espacios DISPONIBLES" in disp:
+                    horarios_texto = disp.split("): ")[1] if "): " in disp else disp
+                    msg = f"✨ ¡Hola {nombre}!\n\nTe escribo de Inpulso 43 porque se acaba de liberar un espacio con {especialista.title()} para el {fecha}. 🎉\n\nLos horarios que se abrieron son: {horarios_texto}\n\n¿Te gustaría aprovechar y agendar? Avísame pronto antes de que alguien más lo tome."
+                    enviar_mensaje_whatsapp(telefono, msg)
+                    
+                    service.spreadsheets().values().update(
+                        spreadsheetId=ID_HOJA_CALCULO,
+                        range=f"Lista_Espera!F{i+1}",
+                        valueInputOption="USER_ENTERED",
+                        body={'values': [["NOTIFICADO"]]}
+                    ).execute()
     except Exception as e:
         print(f"[ERROR EN LISTA DE ESPERA]: {e}")
 
-def confirmacion_24h_background():
-    zona_mexico = pytz.timezone('America/Mexico_City')
-    ahora = datetime.datetime.now(zona_mexico)
-
-    for telefono, hora_cita in list(citas_pendientes.items()):
-        diferencia = hora_cita - ahora
-        
-        # Verifica citas que estén a entre 23.75 y 24 horas de distancia (1425 a 1440 minutos)
-        if datetime.timedelta(minutes=1425) <= diferencia <= datetime.timedelta(minutes=1440):
-            msg = f"🗓️ *Confirmación de Cita*\n\n¡Hola! Te escribimos de Inpulso 43 para confirmar tu cita de mañana a las {hora_cita.strftime('%H:%M')}. \n\n¿Podrías confirmarnos tu asistencia respondiendo a este mensaje? En caso de no poder asistir, te agradecemos mucho que nos avises para poder cederle el espacio a otro paciente en lista de espera. ✨"
-            enviar_mensaje_whatsapp(telefono, msg)
-
-def monitoreo_trafico_background():
-    zona_mexico = pytz.timezone('America/Mexico_City')
-    ahora = datetime.datetime.now(zona_mexico)
-
-    for telefono, hora_cita in list(citas_pendientes.items()):
-        diferencia = hora_cita - ahora
-        
-        if datetime.timedelta(minutes=110) <= diferencia <= datetime.timedelta(minutes=125):
-            ubicacion = ubicaciones_pacientes.get(telefono)
-            if ubicacion:
-                if API_KEY_MAPS:
-                    try:
-                        url = f"https://maps.googleapis.com/maps/api/distancematrix/json?origins={ubicacion}&destinations=Av.+Hidalgo+533,Zapopan&departure_time=now&key={API_KEY_MAPS}"
-                        res = requests.get(url).json()
-                        if res['status'] == 'OK':
-                            elemento = res['rows'][0]['elements'][0]
-                            duracion_normal = elemento['duration']['value'] / 60
-                            duracion_trafico = elemento.get('duration_in_traffic', elemento['duration'])['value'] / 60
-                            
-                            if duracion_trafico > duracion_normal + 10:
-                                msg = f"🚗 *Alerta de Tráfico*\n¡Hola! Tu cita es en 2 horas. Detecté tráfico en tu ruta (aprox {int(duracion_trafico)} min). ¡Te sugiero salir con anticipación! ✨"
-                            else:
-                                msg = f"🚗 *Recordatorio Inpulso*\n¡Hola! Tu cita es en 2 horas. El tráfico está fluido ({int(duracion_trafico)} min). ¡Te esperamos! 🫶"
-                            enviar_mensaje_whatsapp(telefono, msg)
-                    except:
-                        pass
-                else:
-                    enviar_mensaje_whatsapp(telefono, "🚗 *Recordatorio Inpulso*\n¡Hola! Paso a recordarte que tu cita es en aprox 2 horas. Contempla el tiempo de estacionamiento. ¡Te esperamos! ✨")
-            else:
-                enviar_mensaje_whatsapp(telefono, "🚗 *Recordatorio Inpulso*\n¡Hola! Paso a recordarte que tu cita es en aprox 2 horas. Contempla el tiempo de estacionamiento. ¡Te esperamos! ✨")
-                
-            # No borrar aquí para evitar conflictos con el monitoreo. El diccionario limpiará memoria al reiniciar.
-
 scheduler = BackgroundScheduler(timezone="America/Mexico_City")
-scheduler.add_job(func=monitoreo_trafico_background, trigger="interval", minutes=15)
+scheduler.add_job(func=alertas_citas_background, trigger="interval", minutes=15)
 scheduler.add_job(func=verificar_lista_espera_background, trigger="interval", minutes=15)
-scheduler.add_job(func=confirmacion_24h_background, trigger="interval", minutes=15) # Tarea de confirmación cada 15 min
 scheduler.start()
 
 # ==========================================

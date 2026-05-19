@@ -118,7 +118,6 @@ def consultar_agenda(fecha: str, especialista: str):
     except Exception as e:
         return f"Error: La fecha debe estar en formato exacto YYYY-MM-DD. Detalles: {str(e)}"
     
-    # Extraer horas ocupadas
     ocupados = []
     for event in events:
         start_str = event['start'].get('dateTime')
@@ -130,7 +129,6 @@ def consultar_agenda(fecha: str, especialista: str):
         elif event['start'].get('date'):
             return f"El {fecha}, {nombre_clave} tiene bloqueado todo el día."
 
-    # Calcular huecos de 1 hora de 7:00 a 19:00
     horarios_disponibles = []
     slot_actual = base_date.replace(hour=7, minute=0)
     slot_fin_dia = base_date.replace(hour=19, minute=0)
@@ -194,7 +192,6 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
             'end': {'dateTime': fecha_fin.isoformat(), 'timeZone': 'America/Mexico_City'},
         }
         
-        # Inserción en Google Calendar
         evento_creado = service.events().insert(calendarId=id_elegido, body=event).execute()
         
         if not evento_creado.get('id'):
@@ -215,7 +212,7 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
         except:
             enlace_corto = enlace_gigante 
             
-        return f"ÉXITO: Cita guardada correctamente. Entrégale este enlace al paciente: {enlace_corto}"
+        return f"ÉXITO: Cita guardada correctamente. INSTRUCCIÓN PARA LA IA: Confírmale al paciente con mucha calidez y entusiasmo que su cita está lista, y entrégale este enlace: {enlace_corto}"
         
     except Exception as e:
         return f"ERROR CRÍTICO AL AGENDAR: No se pudo guardar la cita en el calendario. Detalle técnico: {str(e)}"
@@ -264,11 +261,11 @@ def obtener_ruta_inpulso(ubicacion_paciente: str):
                 elemento = res['rows'][0]['elements'][0]
                 distancia = elemento['distance']['text']
                 duracion = elemento.get('duration_in_traffic', elemento['duration'])['text']
-                return f"INSTRUCCIÓN PARA LA IA: Dile al paciente textualmente de forma muy natural que hará aproximadamente {duracion} de camino en auto hacia la clínica."
+                return f"INSTRUCCIÓN PARA LA IA: Dile al paciente textualmente de forma muy natural, empática y amable que hará aproximadamente {duracion} de camino en auto hacia la clínica."
         except Exception as e:
             pass
             
-    return "INSTRUCCIÓN PARA LA IA: Dile al paciente: 'Ya guardé tu ubicación. Considera el tráfico habitual para llegar a tiempo.'"
+    return "INSTRUCCIÓN PARA LA IA: Dile al paciente con amabilidad: 'Ya guardé tu ubicación. Considera el tráfico habitual para llegar a tiempo.'"
 
 def calcular_gasto_combustible(vehiculo: str, kilometros: float, rendimiento_km_l: float):
     precio_gasolina = 24.50 
@@ -315,7 +312,7 @@ def colorear_celda_pago(service, sheet_id, row_index, estatus):
 
 def registrar_paciente_taller(nombre: str, telefono: str, nombre_taller: str, correo: str = "No proporcionado"):
     if not ID_HOJA_CALCULO:
-        return "INSTRUCCIÓN PARA LA IA: Dile al paciente que no pudiste guardar sus datos."
+        return "INSTRUCCIÓN PARA LA IA: Hubo un fallo técnico. Dile al paciente amablemente que no pudiste guardar sus datos en este momento."
         
     try:
         creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
@@ -346,9 +343,9 @@ def registrar_paciente_taller(nombre: str, telefono: str, nombre_taller: str, co
             row_num = int(match.group(1))
             colorear_celda_pago(service, sheet_id, row_num - 1, "PENDIENTE")
         
-        return "INSTRUCCIÓN PARA LA IA: Dile al paciente que sus datos han sido registrados con éxito."
+        return "INSTRUCCIÓN PARA LA IA: Confírmale al paciente de forma muy cálida, empática y usando emojis que sus datos han sido registrados con éxito. Celebra que se haya inscrito."
     except Exception as e:
-        return "INSTRUCCIÓN PARA LA IA: Hubo un fallo al registrar en Sheets."
+        return "INSTRUCCIÓN PARA LA IA: Hubo un fallo al registrar en Sheets. Discúlpate amablemente."
 
 def actualizar_pago_paciente(telefono: str, estatus: str = "PAGADO"):
     try:
@@ -376,11 +373,11 @@ def actualizar_pago_paciente(telefono: str, estatus: str = "PAGADO"):
                     
         if row_index is not None:
             colorear_celda_pago(service, sheet_id, row_index, estatus)
-            return f"INSTRUCCIÓN PARA LA IA: Estatus actualizado a {estatus} para el teléfono {telefono}."
+            return f"INSTRUCCIÓN PARA LA IA: Estatus de pago actualizado a {estatus}. Agradécele al paciente con mucha amabilidad y entusiasmo."
         else:
-            return f"INSTRUCCIÓN PARA LA IA: No se encontró registro para el teléfono {telefono}."
+            return f"INSTRUCCIÓN PARA LA IA: No encontré registro previo para ese teléfono. Pide amablemente que te confirmen el número con el que se registraron."
     except Exception as e:
-        return "INSTRUCCIÓN PARA LA IA: Fallo al actualizar la celda de color."
+        return "INSTRUCCIÓN PARA LA IA: Fallo técnico al actualizar el pago. Pide disculpas de manera cordial."
 
 # ==========================================
 # 3. MEMORIA Y CONTROL DE CONCURRENCIA
@@ -407,9 +404,9 @@ Eres Alessia, la asistente de Inpulso 43.
 ¡REGLA DE ORO ESTRICTA!: NUNCA digas que eres 'virtual' o una 'IA'. Preséntate siempre como una persona real.
 
 REGLAS DE COMUNICACIÓN Y TONO:
-1. Mantén un tono cordial al inicio (ej. "¡Hola! Qué gusto saludarte ✨"), pero el resto de tu conversación debe ser DIRECTA, NEUTRAL y natural. Está totalmente prohibido usar estilo narrativo, literario o exagerado.
+1. MANTÉN UN TRATO CÁLIDO Y HUMANO: Sé directa y precisa al dar la información, pero hazlo siempre con empatía, amabilidad y utilizando emojis ocasionales. El paciente debe sentir que habla con una persona comprensiva y entusiasta.
 2. PRECISIÓN ABSOLUTA: Responde ÚNICAMENTE con la información del servicio o taller específico que el paciente solicite. 
-3. CIERRE: NO uses frases robóticas de cierre como "¿Hay algo más en lo que pueda ayudarte?".
+3. CIERRE: NO uses frases robóticas de cierre como "¿Hay algo más en lo que pueda ayudarte?". Termina la conversación de forma natural.
 
 INFORMACIÓN DE CUENTAS BANCARIAS:
 - Si NO requiere factura: BANORTE (Tarjeta 4189 1430 7739 9932, CLABE 072320003548248000 a nombre de Verónica Esmeralda Delgado Andalón).
@@ -428,7 +425,7 @@ PASOS DE ATENCIÓN Y HERRAMIENTAS:
    - Para agendar, usa 'agendar_cita'. La fecha DEBE ir siempre en formato estricto: YYYY-MM-DDTHH:MM:SS.
    - SI LA HERRAMIENTA 'agendar_cita' DEVUELVE LA PALABRA "ERROR", TIENES ESTRICTAMENTE PROHIBIDO CONFIRMAR LA CITA. Debes informarle al paciente que ocurrió un fallo y que la cita no pudo guardarse.
 2. TALLERES Y PRECIOS: Usa 'consultar_precios_y_servicios'.
-3. INSCRIPCIONES A TALLERES: Usa 'registrar_paciente_taller'. Pide OBLIGATORIAMENTE el nombre (con al menos un apellido) y número de teléfono. El correo electrónico es OPCIONAL (si no tiene o no lo usa, pasa directamente a registrarlo sin exigirlo).
+3. INSCRIPCIONES A TALLERES: Usa 'registrar_paciente_taller'. Pide OBLIGATORIAMENTE el nombre (con al menos un apellido) y número de teléfono. El correo electrónico es OPCIONAL. No insistas si no te lo dan.
 4. PAGOS: Usa 'actualizar_pago_paciente' SOLO si envían una imagen del comprobante.
 5. CREADOR: Tu desarrollador es Alessandro Gaytán.
 """

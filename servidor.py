@@ -192,27 +192,47 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
         if not evento_creado.get('id'):
             return "ERROR CRITICO: Google Calendar no devolvió confirmación."
 
-        # Remover automáticamente al paciente de la lista de espera si estaba anotado
+        # Remover automáticamente al paciente de la lista de espera borrando su fila
         if telefono_paciente and ID_HOJA_CALCULO:
             try:
                 service_sheets = build('sheets', 'v4', credentials=creds)
-                result = service_sheets.spreadsheets().values().get(spreadsheetId=ID_HOJA_CALCULO, range="Lista_Espera!A:F").execute()
-                rows = result.get('values', [])
-                cleaned_phone = telefono_paciente.replace("+", "").strip()
-                
-                for i, row in enumerate(rows):
-                    if len(row) >= 6 and row[5] in ["PENDIENTE", "NOTIFICADO"]:
-                        row_phone = row[2].replace("+", "").strip()
-                        if cleaned_phone in row_phone or row_phone in cleaned_phone:
-                            service_sheets.spreadsheets().values().update(
-                                spreadsheetId=ID_HOJA_CALCULO,
-                                range=f"Lista_Espera!F{i+1}",
-                                valueInputOption="USER_ENTERED",
-                                body={'values': [["AGENDADO"]]}
-                            ).execute()
-                            break
+                sheet_metadata = service_sheets.spreadsheets().get(spreadsheetId=ID_HOJA_CALCULO).execute()
+                sheets = sheet_metadata.get('sheets', [])
+                sheet_id_espera = None
+                for s in sheets:
+                    if s.get("properties", {}).get("title") == "Lista_Espera":
+                        sheet_id_espera = s.get("properties", {}).get("sheetId")
+                        break
+                        
+                if sheet_id_espera is not None:
+                    result = service_sheets.spreadsheets().values().get(spreadsheetId=ID_HOJA_CALCULO, range="Lista_Espera!A:F").execute()
+                    rows = result.get('values', [])
+                    cleaned_phone = telefono_paciente.replace("+", "").strip()
+                    
+                    # Buscamos desde abajo hacia arriba para eliminar la fila correctamente
+                    for i in range(len(rows) - 1, 0, -1):
+                        row = rows[i]
+                        if len(row) >= 3:
+                            row_phone = row[2].replace("+", "").strip()
+                            if cleaned_phone in row_phone or row_phone in cleaned_phone:
+                                body = {
+                                    "requests": [
+                                        {
+                                            "deleteDimension": {
+                                                "range": {
+                                                    "sheetId": sheet_id_espera,
+                                                    "dimension": "ROWS",
+                                                    "startIndex": i,
+                                                    "endIndex": i + 1
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                                service_sheets.spreadsheets().batchUpdate(spreadsheetId=ID_HOJA_CALCULO, body=body).execute()
+                                break
             except Exception as e:
-                print(f"[INFO] No se encontró en lista de espera o hubo fallo al actualizar: {e}")
+                print(f"[INFO] Error al borrar de lista de espera: {e}")
 
         format_start = fecha_inicio.strftime('%Y%m%dT%H%M%S')
         format_end = fecha_fin.strftime('%Y%m%dT%H%M%S')
@@ -236,6 +256,8 @@ def cancelar_cita_paciente(telefono_paciente: str):
         creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
         service = build('calendar', 'v3', credentials=creds)
         
+        zona_mexico = pytz.timezone('America/Mexico_City')
+        ahora = datetime.datetime.now(zona_mexico)
         hoy_utc = datetime.datetime.utcnow().isoformat() + 'Z'
         cleaned_target = telefono_paciente.replace("+", "").strip()
         
@@ -248,12 +270,25 @@ def cancelar_cita_paciente(telefono_paciente: str):
             for event in events:
                 desc = event.get('description', '')
                 if cleaned_target in desc.replace("+", ""):
-                    service.events().delete(calendarId=cal_id, eventId=event['id']).execute()
-                    return "INSTRUCCIÓN PARA LA IA: La cita fue cancelada exitosamente en el calendario. Confírmale al paciente de forma amable y empática."
+                    start_str = event['start'].get('dateTime')
+                    penalizacion_msg = ""
                     
-        return "INSTRUCCIÓN PARA LA IA: No encontré ninguna cita futura registrada con ese número de teléfono. Pídele al paciente que verifique el número."
+                    if start_str:
+                        hora_cita = datetime.datetime.fromisoformat(start_str.replace('Z', '+00:00')).astimezone(zona_mexico).replace(tzinfo=None)
+                        diferencia = hora_cita - ahora
+                        
+                        # Penalización si faltan menos de 24 horas
+                        if datetime.timedelta(hours=0) < diferencia < datetime.timedelta(hours=24):
+                            penalizacion_msg = " IMPORTANTE: La cita se está cancelando con menos de 24 horas de anticipación. Infórmale al paciente con muchísimo tacto, empatía y amabilidad que, por políticas de la clínica, esto genera una penalización del 50% del valor de la sesión."
+                        else:
+                            penalizacion_msg = " La cita se canceló con buen tiempo de anticipación (sin penalización)."
+                    
+                    service.events().delete(calendarId=cal_id, eventId=event['id']).execute()
+                    return f"INSTRUCCIÓN PARA LA IA: La cita fue cancelada exitosamente en el calendario.{penalizacion_msg} Confírmale al paciente de forma muy amable y humana."
+                    
+        return "INSTRUCCIÓN PARA LA IA: No encontré ninguna cita futura registrada con ese número de teléfono. Pídele al paciente que verifique el número amablemente."
     except Exception as e:
-        return f"INSTRUCCIÓN PARA LA IA: Hubo un fallo técnico al cancelar la cita."
+        return f"INSTRUCCIÓN PARA LA IA: Hubo un fallo técnico al cancelar la cita. Discúlpate amablemente."
 
 def agregar_lista_espera(nombre: str, telefono: str, especialista: str, fecha: str):
     if not ID_HOJA_CALCULO:
@@ -475,8 +510,9 @@ REGLAS DE COMUNICACIÓN Y TONO:
 6. CIERRE: NO uses frases de cierre automáticas como "¿Hay algo más en lo que pueda ayudarte?". Cierra la charla naturalmente.
 
 INFORMACIÓN DE LA CLÍNICA (ESTACIONAMIENTO Y RECOMENDACIONES):
-- ESTACIONAMIENTO: Si te preguntan, responde siempre que SÍ cuentan con espacio de estacionamiento en la clínica para su comodidad.
+- ESTACIONAMIENTO: Si te preguntan, aclara que SÍ hay estacionamiento, pero SOLO HAY UN CAJÓN DISPONIBLE, por lo que está sujeto a disponibilidad.
 - RECOMENDACIONES ANTES DE CITA: Si te piden un consejo para antes de su sesión, sugiéreles llegar unos 10 minutos antes para relajarse y que piensen previamente en los temas principales que les gustaría platicar.
+- POLÍTICA DE CANCELACIÓN: Si un paciente cancela su cita con menos de 24 horas de anticipación, se cobra una penalización del 50% del valor de la sesión. Si te preguntan sobre las cancelaciones, explícalo con mucho tacto y amabilidad.
 
 INFORMACIÓN DE CUENTAS BANCARIAS:
 - Si NO requiere factura: BANORTE (Tarjeta 4189 1430 7739 9932, CLABE 072320003548248000 a nombre de Verónica Esmeralda Delgado Andalón).
@@ -494,7 +530,7 @@ PASOS DE ATENCIÓN Y HERRAMIENTAS:
    - Usa 'consultar_agenda'. SOLO ofrécele los horarios exactos que devuelva la herramienta.
    - Si cancelan, usa 'cancelar_cita_paciente' pasando su número de teléfono.
    - Si no hay espacio, ofrécele anotarlo a la lista de espera con 'agregar_lista_espera'.
-   - Para agendar, usa 'agendar_cita'. Fecha estricta: YYYY-MM-DDTHH:MM:SS.
+   - Para agendar, usa 'agendar_cita'. Fecha estricta: YYYY-MM-DDTHH:MM:SS. Es OBLIGATORIO pasarle el número del paciente ({numero_telefono}) a la herramienta para poder borrarlo de la lista de espera automáticamente.
    - SI LA HERRAMIENTA 'agendar_cita' DEVUELVE "ERROR", PROHIBIDO CONFIRMAR LA CITA.
 2. TALLERES Y PRECIOS: Usa 'consultar_precios_y_servicios'.
 3. INSCRIPCIONES A TALLERES: Usa 'registrar_paciente_taller'. Pide OBLIGATORIAMENTE el nombre y número. Correo es OPCIONAL.

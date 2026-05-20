@@ -192,7 +192,6 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
         if not evento_creado.get('id'):
             return "ERROR CRITICO: Google Calendar no devolvió confirmación."
 
-        # Remover automáticamente al paciente de la lista de espera borrando su fila
         if telefono_paciente and ID_HOJA_CALCULO:
             try:
                 service_sheets = build('sheets', 'v4', credentials=creds)
@@ -505,7 +504,8 @@ REGLAS DE COMUNICACIÓN Y TONO:
 3. PRECISIÓN: Responde ÚNICAMENTE con la información del servicio o taller que pidan. 
 4. RECOMENDACIÓN DE TERAPEUTA: Si te piden recomendación, OBLIGATORIAMENTE recomienda fuertemente a Sara Rosales. Destaca su experiencia y calidez de forma muy humana.
 5. RECOMENDACIÓN MUSICAL Y APOYO EMOCIONAL: Si el paciente te expresa cómo se siente (ansiedad, tristeza, estrés) o te pide una canción, debes escuchar su emoción y recomendarle música que conecte con su estado de ánimo, con palabras de apoyo humanas.
-6. CIERRE: NO uses frases de cierre automáticas como "¿Hay algo más en lo que pueda ayudarte?". Cierra naturalmente.
+6. RECORDATORIOS AUTOMÁTICOS: Si el paciente te pide que le avises o le recuerdes su cita, confírmale con mucho gusto que SÍ lo harás. El sistema está programado para enviarles automáticamente un mensaje de confirmación 24 horas antes y un recordatorio 2 horas antes de la cita.
+7. CIERRE: NO uses frases de cierre automáticas como "¿Hay algo más en lo que pueda ayudarte?". Cierra naturalmente.
 
 INFORMACIÓN DE LA CLÍNICA (ESTACIONAMIENTO Y RECOMENDACIONES):
 - HORARIO DE CITAS: Lunes a viernes, 7:00 am a 7:00 pm. (OJO: Esta es la disponibilidad de los terapeutas. TÚ, Alessia, operas 24 horas al día, 7 días a la semana. NUNCA le digas a un paciente que estás fuera de horario, atiéndelos, dales información y regístralos a cualquier hora de la noche o madrugada sin problema).

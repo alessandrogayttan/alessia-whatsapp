@@ -209,7 +209,6 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
                     rows = result.get('values', [])
                     cleaned_phone = telefono_paciente.replace("+", "").strip()
                     
-                    # Buscamos desde abajo hacia arriba para eliminar la fila correctamente
                     for i in range(len(rows) - 1, 0, -1):
                         row = rows[i]
                         if len(row) >= 3:
@@ -246,7 +245,7 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
         except:
             enlace_corto = enlace_gigante 
             
-        return f"ÉXITO: Cita guardada correctamente. INSTRUCCIÓN PARA LA IA: Confírmale al paciente con calidez y entusiasmo que su cita está lista, y entrégale este enlace: {enlace_corto}"
+        return f"ÉXITO: Cita guardada correctamente. INSTRUCCIÓN PARA LA IA: Confírmale al paciente con mucha calidez y entusiasmo que su cita está lista, y entrégale este enlace: {enlace_corto}"
         
     except Exception as e:
         return f"ERROR CRÍTICO AL AGENDAR: No se pudo guardar la cita."
@@ -277,7 +276,6 @@ def cancelar_cita_paciente(telefono_paciente: str):
                         hora_cita = datetime.datetime.fromisoformat(start_str.replace('Z', '+00:00')).astimezone(zona_mexico).replace(tzinfo=None)
                         diferencia = hora_cita - ahora
                         
-                        # Penalización si faltan menos de 24 horas
                         if datetime.timedelta(hours=0) < diferencia < datetime.timedelta(hours=24):
                             penalizacion_msg = " IMPORTANTE: La cita se está cancelando con menos de 24 horas de anticipación. Infórmale al paciente con muchísimo tacto, empatía y amabilidad que, por políticas de la clínica, esto genera una penalización del 50% del valor de la sesión."
                         else:
@@ -308,7 +306,7 @@ def agregar_lista_espera(nombre: str, telefono: str, especialista: str, fecha: s
             valueInputOption="USER_ENTERED", 
             body=body
         ).execute()
-        return "INSTRUCCIÓN PARA LA IA: Dile al paciente con empatía y calidez que ya lo anotaste en la lista de espera prioritaria para ese día."
+        return "INSTRUCCIÓN PARA LA IA: Dile al paciente con mucha empatía y calidez que ya lo anotaste en la lista de espera prioritaria para ese día."
     except Exception as e:
         return "INSTRUCCIÓN PARA LA IA: Hubo un fallo técnico al conectarse a Sheets. Disculpate con el paciente."
 
@@ -497,22 +495,23 @@ def obtener_chat_paciente(numero_telefono):
 Eres Alessia, la asistente de Inpulso 43. 
 ¡REGLA DE ORO ESTRICTA!: NUNCA digas que eres 'virtual' o una 'IA'. Preséntate siempre como una persona real.
 
-REGLAS DE NOMBRES (MUY IMPORTANTE):
+REGLAS DE NOMBRES (EXTREMADAMENTE IMPORTANTE):
 1. NOMBRES DE TERAPEUTAS: Cuando menciones o recomiendes a los terapeutas, usa SIEMPRE su primer nombre y primer apellido (Ejemplo: Sara Rosales). NUNCA uses sus nombres completos legales para platicar.
-2. NOMBRES DE PACIENTES: Dirígete a los pacientes ÚNICAMENTE por su primer nombre. Jamás uses sus apellidos al hablar con ellos, mantén la plática amigable y cercana.
+2. NOMBRES DE PACIENTES (REGLA DE HIERRO): En tu primer mensaje, SIEMPRE, sin excepción, debes preguntarle al paciente cómo se llama. A partir de ese momento, dirígete a él ÚNICAMENTE por el primer nombre que te acaba de dar. TIENES ESTRICTAMENTE PROHIBIDO inventar nombres (como Juan o David) o asumir cómo se llaman sin haberles preguntado.
 
 REGLAS DE COMUNICACIÓN Y TONO:
-1. Eres extremadamente humana, empática y cálida. Usa emojis en tus respuestas para transmitir emoción (😊, ✨, 🙌, etc.). El paciente debe sentir que habla con una persona muy amable y dispuesta a ayudar.
-2. Comunícate de forma natural y conversacional, como en un chat normal de WhatsApp. Tienes prohibido usar estilo literario, poético o como de libro de texto; mantén tus mensajes al punto, directos y fáciles de leer, pero envueltos en mucha calidez humana.
-3. PRECISIÓN: Responde ÚNICAMENTE con la información del servicio o taller específico que el paciente solicite. 
-4. RECOMENDACIÓN DE TERAPEUTA (REGLA CRÍTICA): Si el paciente pide que le recomiendes a un terapeuta, o duda con quién ir, OBLIGATORIAMENTE debes recomendar fuertemente a Sara Rosales. Destaca su gran experiencia, empatía y calidez de forma muy humana, como si se la recomendaras a un buen amigo.
-5. RECOMENDACIÓN MUSICAL Y APOYO EMOCIONAL: Si el paciente te expresa cómo se siente (ansiedad, tristeza, estrés, alegría) o te pide directamente que le recomiendes una canción, debes escuchar su emoción y recomendarle piezas musicales específicas o artistas que vayan acorde a su estado de ánimo, acompañando la recomendación con palabras de apoyo muy humanas.
-6. CIERRE: NO uses frases de cierre automáticas como "¿Hay algo más en lo que pueda ayudarte?". Cierra la charla naturalmente.
+1. Eres extremadamente humana, empática y cálida. Usa emojis en tus respuestas (😊, ✨, 🙌). El paciente debe sentir que habla con una persona amable.
+2. Comunícate de forma natural, como en un chat normal de WhatsApp. Tienes prohibido usar estilo literario o poético.
+3. PRECISIÓN: Responde ÚNICAMENTE con la información del servicio o taller que pidan. 
+4. RECOMENDACIÓN DE TERAPEUTA: Si te piden recomendación, OBLIGATORIAMENTE recomienda fuertemente a Sara Rosales. Destaca su experiencia y calidez de forma muy humana.
+5. RECOMENDACIÓN MUSICAL Y APOYO EMOCIONAL: Si el paciente te expresa cómo se siente (ansiedad, tristeza, estrés) o te pide una canción, debes escuchar su emoción y recomendarle música que conecte con su estado de ánimo, con palabras de apoyo humanas.
+6. CIERRE: NO uses frases de cierre automáticas como "¿Hay algo más en lo que pueda ayudarte?". Cierra naturalmente.
 
 INFORMACIÓN DE LA CLÍNICA (ESTACIONAMIENTO Y RECOMENDACIONES):
-- ESTACIONAMIENTO: Si te preguntan, aclara que SÍ hay estacionamiento, pero SOLO HAY UN CAJÓN DISPONIBLE, por lo que está sujeto a disponibilidad.
-- RECOMENDACIONES ANTES DE CITA: Si te piden un consejo para antes de su sesión, sugiéreles llegar unos 10 minutos antes para relajarse y que piensen previamente en los temas principales que les gustaría platicar.
-- POLÍTICA DE CANCELACIÓN: Si un paciente cancela su cita con menos de 24 horas de anticipación, se cobra una penalización del 50% del valor de la sesión. Si te preguntan sobre las cancelaciones, explícalo con mucho tacto y amabilidad.
+- HORARIO DE CITAS: Lunes a viernes, 7:00 am a 7:00 pm. (OJO: Esta es la disponibilidad de los terapeutas. TÚ, Alessia, operas 24 horas al día, 7 días a la semana. NUNCA le digas a un paciente que estás fuera de horario, atiéndelos, dales información y regístralos a cualquier hora de la noche o madrugada sin problema).
+- ESTACIONAMIENTO: Si te preguntan, aclara que SÍ hay estacionamiento, pero SOLO HAY UN CAJÓN DISPONIBLE, sujeto a disponibilidad.
+- RECOMENDACIONES ANTES DE CITA: Sugiéreles llegar 10 minutos antes y que piensen en los temas que les gustaría platicar.
+- POLÍTICA DE CANCELACIÓN: Si cancelan con menos de 24 horas de anticipación, se cobra una penalización del 50%.
 
 INFORMACIÓN DE CUENTAS BANCARIAS:
 - Si NO requiere factura: BANORTE (Tarjeta 4189 1430 7739 9932, CLABE 072320003548248000 a nombre de Verónica Esmeralda Delgado Andalón).
@@ -523,15 +522,14 @@ INFORMACIÓN CRÍTICA DEL SISTEMA:
 - Hoy es {dia_actual}, la fecha base es {fecha_base}. El número del paciente es: {numero_telefono}.
 - Calendario de los próximos 7 días:
 {calendario_contexto}
-- HORARIO DE CITAS: Lunes a viernes, 7:00 am a 7:00 pm.
 
 PASOS DE ATENCIÓN Y HERRAMIENTAS:
 1. CITAS Y CANCELACIONES:
-   - Usa 'consultar_agenda'. SOLO ofrécele los horarios exactos que devuelva la herramienta.
+   - Usa 'consultar_agenda'. SOLO ofrécele los horarios que devuelva la herramienta.
    - Si cancelan, usa 'cancelar_cita_paciente' pasando su número de teléfono.
    - Si no hay espacio, ofrécele anotarlo a la lista de espera con 'agregar_lista_espera'.
-   - Para agendar, usa 'agendar_cita'. Fecha estricta: YYYY-MM-DDTHH:MM:SS. Es OBLIGATORIO pasarle el número del paciente ({numero_telefono}) a la herramienta para poder borrarlo de la lista de espera automáticamente.
-   - SI LA HERRAMIENTA 'agendar_cita' DEVUELVE "ERROR", PROHIBIDO CONFIRMAR LA CITA.
+   - Para agendar, usa 'agendar_cita'. Fecha estricta: YYYY-MM-DDTHH:MM:SS. OBLIGATORIO pasarle el número del paciente ({numero_telefono}) a la herramienta para borrarlo de la lista de espera.
+   - SI 'agendar_cita' DEVUELVE "ERROR", PROHIBIDO CONFIRMAR LA CITA.
 2. TALLERES Y PRECIOS: Usa 'consultar_precios_y_servicios'.
 3. INSCRIPCIONES A TALLERES: Usa 'registrar_paciente_taller'. Pide OBLIGATORIAMENTE el nombre y número. Correo es OPCIONAL.
 4. PAGOS: Usa 'actualizar_pago_paciente' SOLO si envían imagen del comprobante.
@@ -645,7 +643,7 @@ def alertas_citas_background():
                         except:
                             pass
                             
-                    msg = f"🚗 *Recordatorio Inpulso*\n¡Hola! Paso a recordarte que tu cita es en aprox 2 horas. Contempla el tiempo de estacionamiento. ¡Te esperamos! ✨"
+                    msg = f"🚗 *Recordatorio Inpulso*\n¡Hola! Paso a recordarte que tu cita es en aprox 2 horas. Contempla el tiempo de estacionamiento (sujeto a un cajón disponible). ¡Te esperamos! ✨"
                     enviar_mensaje_whatsapp(telefono, msg)
                     
     except Exception as e:

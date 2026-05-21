@@ -260,10 +260,11 @@ def cancelar_cita_paciente(telefono_paciente: str):
         service = build('calendar', 'v3', credentials=creds)
         
         zona_mexico = pytz.timezone('America/Mexico_City')
-        ahora = datetime.datetime.now(zona_mexico)
+        ahora_aware = datetime.datetime.now(zona_mexico)
+        ahora_naive = ahora_aware.replace(tzinfo=None) # Corrección matemática clave
+        
         hoy_utc = datetime.datetime.utcnow().isoformat() + 'Z'
         
-        # Extraemos solo los dígitos del número para hacer una comparación a prueba de fallos
         target_digits = re.sub(r'\D', '', telefono_paciente)
         if target_digits.startswith('521') and len(target_digits) == 13:
             target_digits = target_digits.replace('521', '52', 1)
@@ -279,14 +280,13 @@ def cancelar_cita_paciente(telefono_paciente: str):
                 desc = event.get('description', '')
                 desc_digits = re.sub(r'\D', '', desc)
                 
-                # Si los últimos 10 dígitos coinciden, cancela la cita
                 if target_10_digits in desc_digits and len(target_10_digits) > 5:
                     start_str = event['start'].get('dateTime')
                     penalizacion_msg = ""
                     
                     if start_str:
                         hora_cita = datetime.datetime.fromisoformat(start_str.replace('Z', '+00:00')).astimezone(zona_mexico).replace(tzinfo=None)
-                        diferencia = hora_cita - ahora
+                        diferencia = hora_cita - ahora_naive
                         
                         if datetime.timedelta(hours=0) < diferencia < datetime.timedelta(hours=24):
                             penalizacion_msg = " IMPORTANTE: La cita se está cancelando con menos de 24 horas de anticipación. Infórmale al paciente con muchísimo tacto, empatía y amabilidad que, por políticas de la clínica, esto genera una penalización del 50% del valor de la sesión."
@@ -523,10 +523,12 @@ REGLAS DE COMUNICACIÓN Y TONO:
 4. PRECISIÓN: Responde ÚNICAMENTE con la información del servicio o taller que pidan. 
 5. RECOMENDACIÓN DE TERAPEUTA: Si te piden recomendación, OBLIGATORIAMENTE recomienda fuertemente a Sara Rosales. Destaca su experiencia y calidez.
 6. RECOMENDACIÓN MUSICAL: Si el paciente te expresa cómo se siente o te pide una canción, recomiéndale música que conecte con su estado de ánimo, con palabras de apoyo.
-7. CIERRE: NO uses frases de cierre automáticas como "¿Hay algo más en lo que pueda ayudarte?". Cierra naturalmente.
+7. RECORDATORIOS AUTOMÁTICOS: Si te piden recordarles la cita, confírmales con gusto que el sistema está programado para avisarles 24 horas y 2 horas antes de forma automática.
+8. CERO PRESIÓN (REGLA DE HIERRO): Cuando des información, NO termines tus mensajes con preguntas insistentes (ej. "¿Te gustaría agendar?", "¿Qué te parece?"). Deja que el paciente procese la información y decida su siguiente paso por sí mismo.
+9. DESPEDIDAS: TIENES ESTRICTAMENTE PROHIBIDO despedirte (ej. "Que tengas linda tarde", "Nos vemos") si el paciente no se ha despedido primero. No cierres la conversación prematuramente.
 
 INFORMACIÓN DE LA CLÍNICA Y PAGOS:
-- HORARIO DE CITAS: Lunes a viernes, 7:00 am a 7:00 pm. (OJO: Esta es la disponibilidad de los terapeutas. TÚ, Alessia, operas 24 horas al día, 7 días a la semana. NUNCA le digas a un paciente que estás fuera de horario, atiéndelos y regístralos a cualquier hora de la noche o madrugada sin problema).
+- HORARIO DE CITAS: Lunes a viernes, 7:00 am a 7:00 pm. (OJO: TÚ operas 24 horas. NUNCA le digas a un paciente que estás fuera de horario, atiéndelos a cualquier hora).
 - ESTACIONAMIENTO: Si te preguntan, aclara que SÍ hay estacionamiento, pero SOLO HAY UN CAJÓN DISPONIBLE, sujeto a disponibilidad.
 - RECOMENDACIONES ANTES DE CITA: Sugiéreles llegar 10 minutos antes y que piensen en los temas a tratar.
 - POLÍTICA DE CANCELACIÓN: Si cancelan con menos de 24 horas de anticipación, se cobra una penalización del 50%.
@@ -661,14 +663,15 @@ def limpiar_inscripciones_pendientes_background():
 
 def alertas_citas_background():
     zona_mexico = pytz.timezone('America/Mexico_City')
-    ahora = datetime.datetime.now(zona_mexico)
+    ahora_aware = datetime.datetime.now(zona_mexico)
+    ahora_naive = ahora_aware.replace(tzinfo=None)
     
     try:
         creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
         service = build('calendar', 'v3', credentials=creds)
         
-        time_min = ahora.isoformat()
-        time_max = (ahora + datetime.timedelta(hours=25)).isoformat()
+        time_min = ahora_aware.isoformat()
+        time_max = (ahora_aware + datetime.timedelta(hours=25)).isoformat()
         
         for especialista, cal_id in DIRECTORIO_CALENDARIOS.items():
             events_result = service.events().list(
@@ -682,7 +685,7 @@ def alertas_citas_background():
                     continue
                 
                 hora_cita = datetime.datetime.fromisoformat(start_str.replace('Z', '+00:00')).astimezone(zona_mexico).replace(tzinfo=None)
-                diferencia = hora_cita - ahora
+                diferencia = hora_cita - ahora_naive
                 
                 desc = event.get('description', '')
                 phone_match = re.search(r'Teléfono:\s*(\+?\d+)', desc)

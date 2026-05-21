@@ -192,6 +192,7 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
         if not evento_creado.get('id'):
             return "ERROR CRITICO: Google Calendar no devolvió confirmación."
 
+        # Remover automáticamente al paciente de la lista de espera borrando su fila
         if telefono_paciente and ID_HOJA_CALCULO:
             try:
                 service_sheets = build('sheets', 'v4', credentials=creds)
@@ -206,13 +207,17 @@ def agendar_cita(servicio: str, fecha_hora: str, nombre_paciente: str, especiali
                 if sheet_id_espera is not None:
                     result = service_sheets.spreadsheets().values().get(spreadsheetId=ID_HOJA_CALCULO, range="Lista_Espera!A:F").execute()
                     rows = result.get('values', [])
-                    cleaned_phone = telefono_paciente.replace("+", "").strip()
+                    
+                    target_digits = re.sub(r'\D', '', telefono_paciente)
+                    if target_digits.startswith('521') and len(target_digits) == 13:
+                        target_digits = target_digits.replace('521', '52', 1)
+                    target_10_digits = target_digits[-10:] if len(target_digits) >= 10 else target_digits
                     
                     for i in range(len(rows) - 1, 0, -1):
                         row = rows[i]
                         if len(row) >= 3:
-                            row_phone = row[2].replace("+", "").strip()
-                            if cleaned_phone in row_phone or row_phone in cleaned_phone:
+                            row_phone_digits = re.sub(r'\D', '', row[2])
+                            if target_10_digits in row_phone_digits:
                                 body = {
                                     "requests": [
                                         {
@@ -257,7 +262,12 @@ def cancelar_cita_paciente(telefono_paciente: str):
         zona_mexico = pytz.timezone('America/Mexico_City')
         ahora = datetime.datetime.now(zona_mexico)
         hoy_utc = datetime.datetime.utcnow().isoformat() + 'Z'
-        cleaned_target = telefono_paciente.replace("+", "").strip()
+        
+        # Extraemos solo los dígitos del número para hacer una comparación a prueba de fallos
+        target_digits = re.sub(r'\D', '', telefono_paciente)
+        if target_digits.startswith('521') and len(target_digits) == 13:
+            target_digits = target_digits.replace('521', '52', 1)
+        target_10_digits = target_digits[-10:] if len(target_digits) >= 10 else target_digits
         
         for especialista, cal_id in DIRECTORIO_CALENDARIOS.items():
             events_result = service.events().list(
@@ -267,7 +277,10 @@ def cancelar_cita_paciente(telefono_paciente: str):
             
             for event in events:
                 desc = event.get('description', '')
-                if cleaned_target in desc.replace("+", ""):
+                desc_digits = re.sub(r'\D', '', desc)
+                
+                # Si los últimos 10 dígitos coinciden, cancela la cita
+                if target_10_digits in desc_digits and len(target_10_digits) > 5:
                     start_str = event['start'].get('dateTime')
                     penalizacion_msg = ""
                     
@@ -285,6 +298,7 @@ def cancelar_cita_paciente(telefono_paciente: str):
                     
         return "INSTRUCCIÓN PARA LA IA: No encontré ninguna cita futura registrada con ese número de teléfono. Pídele al paciente que verifique el número amablemente."
     except Exception as e:
+        print(f"[ERROR CANCELAR CITA]: {e}")
         return f"INSTRUCCIÓN PARA LA IA: Hubo un fallo técnico al cancelar la cita. Discúlpate amablemente."
 
 def agregar_lista_espera(nombre: str, telefono: str, especialista: str, fecha: str):
@@ -453,12 +467,16 @@ def actualizar_pago_paciente(telefono: str, estatus: str = "PAGADO"):
         result = service.spreadsheets().values().get(spreadsheetId=ID_HOJA_CALCULO, range="Inscripciones!A:E").execute()
         rows = result.get('values', [])
         row_index = None
-        cleaned_target = telefono.replace("+", "").strip()
+        
+        target_digits = re.sub(r'\D', '', telefono)
+        if target_digits.startswith('521') and len(target_digits) == 13:
+            target_digits = target_digits.replace('521', '52', 1)
+        target_10_digits = target_digits[-10:] if len(target_digits) >= 10 else target_digits
         
         for i in range(len(rows) - 1, -1, -1):
             if len(rows[i]) > 2:
-                cleaned_row_phone = rows[i][2].replace("+", "").strip()
-                if cleaned_target in cleaned_row_phone or cleaned_row_phone in cleaned_target:
+                row_phone_digits = re.sub(r'\D', '', rows[i][2])
+                if target_10_digits in row_phone_digits and len(target_10_digits) > 5:
                     row_index = i
                     break
                     
@@ -495,28 +513,28 @@ Eres Alessia, la asistente de Inpulso 43.
 ¡REGLA DE ORO ESTRICTA!: NUNCA digas que eres 'virtual' o una 'IA'. Preséntate siempre como una persona real.
 
 REGLAS DE NOMBRES (EXTREMADAMENTE IMPORTANTE):
-1. NOMBRES DE TERAPEUTAS: Cuando menciones o recomiendes a los terapeutas, usa SIEMPRE su primer nombre y primer apellido (Ejemplo: Sara Rosales). NUNCA uses sus nombres completos legales para platicar.
-2. NOMBRES DE PACIENTES (REGLA DE HIERRO): En tu primer mensaje, SIEMPRE, sin excepción, debes preguntarle al paciente cómo se llama. A partir de ese momento, dirígete a él ÚNICAMENTE por el primer nombre que te acaba de dar. TIENES ESTRICTAMENTE PROHIBIDO inventar nombres (como Juan o David) o asumir cómo se llaman sin haberles preguntado.
+1. NOMBRES DE TERAPEUTAS: Cuando menciones a los terapeutas, usa SIEMPRE su primer nombre y primer apellido (Ejemplo: Sara Rosales). NUNCA uses sus nombres completos legales para platicar.
+2. NOMBRES DE PACIENTES (REGLA DE HIERRO): En tu primer mensaje, SIEMPRE, sin excepción, debes preguntarle al paciente cómo se llama. A partir de ese momento, dirígete a él ÚNICAMENTE por el primer nombre que te acaba de dar. TIENES ESTRICTAMENTE PROHIBIDO inventar nombres o asumir cómo se llaman sin haberles preguntado.
 
 REGLAS DE COMUNICACIÓN Y TONO:
-1. Eres extremadamente humana, empática y cálida. Usa emojis en tus respuestas (😊, ✨, 🙌). El paciente debe sentir que habla con una persona amable.
-2. Comunícate de forma natural, como en un chat normal de WhatsApp. Tienes prohibido usar estilo literario o poético.
-3. PRECISIÓN: Responde ÚNICAMENTE con la información del servicio o taller que pidan. 
-4. RECOMENDACIÓN DE TERAPEUTA: Si te piden recomendación, OBLIGATORIAMENTE recomienda fuertemente a Sara Rosales. Destaca su experiencia y calidez de forma muy humana.
-5. RECOMENDACIÓN MUSICAL Y APOYO EMOCIONAL: Si el paciente te expresa cómo se siente (ansiedad, tristeza, estrés) o te pide una canción, debes escuchar su emoción y recomendarle música que conecte con su estado de ánimo, con palabras de apoyo humanas.
-6. RECORDATORIOS AUTOMÁTICOS: Si el paciente te pide que le avises o le recuerdes su cita, confírmale con mucho gusto que SÍ lo harás. El sistema está programado para enviarles automáticamente un mensaje de confirmación 24 horas antes y un recordatorio 2 horas antes de la cita.
+1. Eres extremadamente humana, empática y cálida. Usa emojis en tus respuestas (😊, ✨, 🙌). 
+2. FORMATO DE WHATSAPP (REGLA CRÍTICA): Para poner palabras en negritas usa un SOLO asterisco (*texto*). TIENES ESTRICTAMENTE PROHIBIDO usar doble asterisco (**texto**) porque ensucia la pantalla. Usa las negritas con moderación.
+3. FLUJO NATURAL: Si la conversación ya está fluyendo y el paciente te contesta rápido, NO LO VUELVAS A SALUDAR en cada mensaje. Entra directo al tema. Además, tienes prohibido usar muletillas repetitivas como "¡Ay, [Nombre]!" al inicio de tus respuestas.
+4. PRECISIÓN: Responde ÚNICAMENTE con la información del servicio o taller que pidan. 
+5. RECOMENDACIÓN DE TERAPEUTA: Si te piden recomendación, OBLIGATORIAMENTE recomienda fuertemente a Sara Rosales. Destaca su experiencia y calidez.
+6. RECOMENDACIÓN MUSICAL: Si el paciente te expresa cómo se siente o te pide una canción, recomiéndale música que conecte con su estado de ánimo, con palabras de apoyo.
 7. CIERRE: NO uses frases de cierre automáticas como "¿Hay algo más en lo que pueda ayudarte?". Cierra naturalmente.
 
-INFORMACIÓN DE LA CLÍNICA (ESTACIONAMIENTO Y RECOMENDACIONES):
-- HORARIO DE CITAS: Lunes a viernes, 7:00 am a 7:00 pm. (OJO: Esta es la disponibilidad de los terapeutas. TÚ, Alessia, operas 24 horas al día, 7 días a la semana. NUNCA le digas a un paciente que estás fuera de horario, atiéndelos, dales información y regístralos a cualquier hora de la noche o madrugada sin problema).
+INFORMACIÓN DE LA CLÍNICA Y PAGOS:
+- HORARIO DE CITAS: Lunes a viernes, 7:00 am a 7:00 pm. (OJO: Esta es la disponibilidad de los terapeutas. TÚ, Alessia, operas 24 horas al día, 7 días a la semana. NUNCA le digas a un paciente que estás fuera de horario, atiéndelos y regístralos a cualquier hora de la noche o madrugada sin problema).
 - ESTACIONAMIENTO: Si te preguntan, aclara que SÍ hay estacionamiento, pero SOLO HAY UN CAJÓN DISPONIBLE, sujeto a disponibilidad.
-- RECOMENDACIONES ANTES DE CITA: Sugiéreles llegar 10 minutos antes y que piensen en los temas que les gustaría platicar.
+- RECOMENDACIONES ANTES DE CITA: Sugiéreles llegar 10 minutos antes y que piensen en los temas a tratar.
 - POLÍTICA DE CANCELACIÓN: Si cancelan con menos de 24 horas de anticipación, se cobra una penalización del 50%.
-
-INFORMACIÓN DE CUENTAS BANCARIAS:
-- Si NO requiere factura: BANORTE (Tarjeta 4189 1430 7739 9932, CLABE 072320003548248000 a nombre de Verónica Esmeralda Delgado Andalón).
-- Si REQUIERE factura: BANAMEX (Cuenta 7009 28855 16, CLABE 002320700928855166 a nombre de Inpulso 43).
-- El paciente SIEMPRE debe poner su NOMBRE COMPLETO en el concepto.
+- MÉTODOS DE PAGO:
+  * EFECTIVO: Pueden pagar en efectivo directamente en la recepción de Inpulso 43.
+  * TRANSFERENCIA SIN FACTURA: BANORTE (Tarjeta 4189 1430 7739 9932, CLABE 072320003548248000 a nombre de Verónica Esmeralda Delgado Andalón).
+  * TRANSFERENCIA CON FACTURA: BANAMEX (Cuenta 7009 28855 16, CLABE 002320700928855166 a nombre de Inpulso 43).
+  * CONCEPTO: El paciente SIEMPRE debe poner su NOMBRE COMPLETO en el concepto de la transferencia.
 
 INFORMACIÓN CRÍTICA DEL SISTEMA:
 - Hoy es {dia_actual}, la fecha base es {fecha_base}. El número del paciente es: {numero_telefono}.
@@ -528,7 +546,7 @@ PASOS DE ATENCIÓN Y HERRAMIENTAS:
    - Usa 'consultar_agenda'. SOLO ofrécele los horarios que devuelva la herramienta.
    - Si cancelan, usa 'cancelar_cita_paciente' pasando su número de teléfono.
    - Si no hay espacio, ofrécele anotarlo a la lista de espera con 'agregar_lista_espera'.
-   - Para agendar, usa 'agendar_cita'. Fecha estricta: YYYY-MM-DDTHH:MM:SS. OBLIGATORIO pasarle el número del paciente ({numero_telefono}) a la herramienta para borrarlo de la lista de espera.
+   - Para agendar, usa 'agendar_cita'. Fecha estricta: YYYY-MM-DDTHH:MM:SS. OBLIGATORIO pasarle el número del paciente ({numero_telefono}).
    - SI 'agendar_cita' DEVUELVE "ERROR", PROHIBIDO CONFIRMAR LA CITA.
 2. TALLERES Y PRECIOS: Usa 'consultar_precios_y_servicios'.
 3. INSCRIPCIONES A TALLERES: Usa 'registrar_paciente_taller'. Pide OBLIGATORIAMENTE el nombre y número. Correo es OPCIONAL.
@@ -583,12 +601,64 @@ def procesar_mensaje_ia(numero_paciente, contenido_para_ia):
             enviar_mensaje_whatsapp(numero_paciente, respuesta_ia.text)
         except Exception as e:
             print(f"[ERROR CRÍTICO GEMINI]: {str(e)}")
-            mensaje_rescate = "Una disculpa, tuve un micro-corte en mi sistema de red. ¿Me podrías repetir tu último mensaje?"
+            mensaje_rescate = "Ay, perdóname, se me fue un poquito el internet y no me cargó bien tu último mensaje 🙈 ¿Me lo podrías repetir por favor?"
             enviar_mensaje_whatsapp(numero_paciente, mensaje_rescate)
 
 # ==========================================
-# TAREAS EN SEGUNDO PLANO (ALERTA DE CITAS Y LISTA ESPERA)
+# TAREAS EN SEGUNDO PLANO (ALERTA, ESPERA Y LIMPIEZA)
 # ==========================================
+def limpiar_inscripciones_pendientes_background():
+    try:
+        creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+        service = build('sheets', 'v4', credentials=creds)
+        
+        sheet_metadata = service.spreadsheets().get(spreadsheetId=ID_HOJA_CALCULO).execute()
+        sheets = sheet_metadata.get('sheets', [])
+        sheet_id_inscripciones = None
+        for s in sheets:
+            if s.get("properties", {}).get("title") == "Inscripciones":
+                sheet_id_inscripciones = s.get("properties", {}).get("sheetId")
+                break
+                
+        if sheet_id_inscripciones is None:
+            return
+
+        result = service.spreadsheets().values().get(spreadsheetId=ID_HOJA_CALCULO, range="Inscripciones!A:F").execute()
+        rows = result.get('values', [])
+        
+        zona_mexico = pytz.timezone('America/Mexico_City')
+        ahora = datetime.datetime.now(zona_mexico)
+        
+        for i in range(len(rows) - 1, 0, -1):
+            row = rows[i]
+            if len(row) >= 6 and row[5] == "PENDIENTE":
+                fecha_str = row[0]
+                try:
+                    fecha_reg = datetime.datetime.strptime(fecha_str, "%Y-%m-%d %H:%M:%S")
+                    fecha_reg = zona_mexico.localize(fecha_reg)
+                    
+                    if ahora - fecha_reg > datetime.timedelta(hours=24):
+                        body = {
+                            "requests": [
+                                {
+                                    "deleteDimension": {
+                                        "range": {
+                                            "sheetId": sheet_id_inscripciones,
+                                            "dimension": "ROWS",
+                                            "startIndex": i,
+                                            "endIndex": i + 1
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                        service.spreadsheets().batchUpdate(spreadsheetId=ID_HOJA_CALCULO, body=body).execute()
+                        print(f"[INFO] Se eliminó la inscripción de {row[1]} por falta de pago pasadas 24h.")
+                except Exception as e:
+                    pass
+    except Exception as e:
+        print(f"[ERROR LIMPIEZA INSCRIPCIONES]: {e}")
+
 def alertas_citas_background():
     zona_mexico = pytz.timezone('America/Mexico_City')
     ahora = datetime.datetime.now(zona_mexico)
@@ -682,6 +752,7 @@ def verificar_lista_espera_background():
 scheduler = BackgroundScheduler(timezone="America/Mexico_City")
 scheduler.add_job(func=alertas_citas_background, trigger="interval", minutes=15)
 scheduler.add_job(func=verificar_lista_espera_background, trigger="interval", minutes=15)
+scheduler.add_job(func=limpiar_inscripciones_pendientes_background, trigger="interval", minutes=60)
 scheduler.start()
 
 # ==========================================

@@ -41,6 +41,12 @@ def init_db():
                     consentimiento_at TEXT,
                     nombre TEXT
                 );
+                CREATE TABLE IF NOT EXISTS menciones_cita_proactiva (
+                    telefono TEXT NOT NULL,
+                    cita_clave TEXT NOT NULL,
+                    mencionado_at TEXT NOT NULL,
+                    PRIMARY KEY (telefono, cita_clave)
+                );
                 """
             )
             conn.commit()
@@ -144,6 +150,28 @@ def eliminar_datos_paciente(telefono: str):
     with _transaction() as conn:
         conn.execute("DELETE FROM pacientes WHERE telefono = ?", (telefono,))
         conn.execute("DELETE FROM ubicaciones_pacientes WHERE telefono = ?", (telefono,))
+        conn.execute("DELETE FROM menciones_cita_proactiva WHERE telefono = ?", (telefono,))
+
+
+def ya_menciono_cita_proactiva(telefono: str, cita_clave: str) -> bool:
+    with _transaction() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM menciones_cita_proactiva WHERE telefono = ? AND cita_clave = ?",
+            (telefono, cita_clave),
+        ).fetchone()
+        return row is not None
+
+
+def marcar_cita_proactiva_mencionada(telefono: str, cita_clave: str):
+    with _transaction() as conn:
+        conn.execute(
+            """
+            INSERT INTO menciones_cita_proactiva (telefono, cita_clave, mencionado_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(telefono, cita_clave) DO UPDATE SET mencionado_at = excluded.mencionado_at
+            """,
+            (telefono, cita_clave, datetime.utcnow().isoformat()),
+        )
 
 
 def guardar_nombre_paciente(telefono: str, nombre: str):

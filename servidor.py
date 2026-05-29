@@ -11,6 +11,7 @@ from google.genai import types
 import config
 import storage
 from chat import procesar_mensaje_ia, reiniciar_chat_paciente
+from tools import envolver_mensaje_con_contexto_paciente
 from jobs import (
     alertas_citas_background,
     limpiar_inscripciones_pendientes_background,
@@ -107,9 +108,12 @@ def webhook():
             continue
 
         numero_remitente = mensaje_info["from"]
+        contenido_con_citas = envolver_mensaje_con_contexto_paciente(
+            numero_remitente, contenido_para_ia
+        )
         threading.Thread(
             target=procesar_mensaje_ia,
-            args=(numero_remitente, contenido_para_ia),
+            args=(numero_remitente, contenido_con_citas),
         ).start()
 
     return "OK", 200

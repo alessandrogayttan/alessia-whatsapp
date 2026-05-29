@@ -9,6 +9,8 @@ import pytz
 import requests
 
 import config
+import storage
+from catalogo import consultar_catalogo_drive, obtener_cuentas_pago_texto
 from google_client import get_calendar_service, get_sheets_service
 
 logger = logging.getLogger(__name__)
@@ -81,6 +83,12 @@ def slot_disponible(fecha_hora: datetime.datetime, nombre_clave: str) -> bool:
 
 
 def consultar_precios_y_servicios(especialista: str = "todos"):
+    """Consulta precios: primero Google Sheets (Drive), luego precios.json local."""
+    from catalogo import _leer_filas_catalogo
+
+    if _leer_filas_catalogo():
+        return consultar_catalogo_drive(especialista)
+
     try:
         with open(PRECIOS_PATH, "r", encoding="utf-8") as f:
             catalogo = json.load(f)
@@ -92,6 +100,11 @@ def consultar_precios_y_servicios(especialista: str = "todos"):
     except OSError as e:
         logger.error("Error leyendo precios.json: %s", e)
         return "Error interno al leer la base de datos de precios."
+
+
+def consultar_talleres_y_servicios(especialista: str = "todos"):
+    """Alias explícito para catálogo en Google Sheets (Drive)."""
+    return consultar_catalogo_drive(especialista)
 
 
 def consultar_agenda(fecha: str, especialista: str):
@@ -141,6 +154,155 @@ def _normalizar_telefono_digitos(telefono: str) -> str:
     return target_digits[-10:] if len(target_digits) >= 10 else target_digits
 
 
+NOMBRES_TERAPEUTAS = {
+    "juan": "Juan",
+    "sara": "Sara Rosales",
+    "patricia": "Patricia",
+    "ivan": "Iván",
+    "nutricion": "Nutricionista",
+    "mentoras": "Mentoras",
+    "talleres": "Talleres",
+}
+
+
+def _especialista_desde_calendario(calendar_id: str) -> str:
+    for clave, cal_id in config.DIRECTORIO_CALENDARIOS.items():
+        if cal_id == calendar_id:
+            return NOMBRES_TERAPEUTAS.get(clave, clave.title())
+    return "Especialista"
+
+
+def _parsear_servicio_descripcion(descripcion: str) -> str:
+    if descripcion.startswith("Cita de "):
+        parte = descripcion.split(" con ", 1)[0]
+        return parte.replace("Cita de ", "").strip()
+    return "Consulta"
+
+
+def listar_citas_futuras_por_telefono(telefono_paciente: str) -> list[dict]:
+    """Busca citas futuras del paciente en todos los calendarios por número."""
+    citas = []
+    try:
+        service = get_calendar_service()
+        ahora_aware = datetime.datetime.now(ZONA)
+        ahora_naive = ahora_aware.replace(tzinfo=None)
+        hoy_utc = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+        target_10_digits = _normalizar_telefono_digitos(telefono_paciente)
+
+        for cal_id in config.DIRECTORIO_CALENDARIOS.values():
+            events_result = service.events().list(
+                calendarId=cal_id,
+                timeMin=hoy_utc,
+                maxResults=20,
+                singleEvents=True,
+                orderBy="startTime",
+            ).execute()
+            for event in events_result.get("items", []):
+                desc = event.get("description", "")
+                desc_digits = re.sub(r"\D", "", desc)
+                if target_10_digits not in desc_digits or len(target_10_digits) <= 5:
+                    continue
+
+                start_str = event["start"].get("dateTime") or event["start"].get("date")
+                if not start_str:
+                    continue
+
+                if "T" in start_str:
+                    hora_cita = (
+                        datetime.datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+                        .astimezone(ZONA)
+                        .replace(tzinfo=None)
+                    )
+                    fecha = hora_cita.strftime("%Y-%m-%d")
+                    hora = hora_cita.strftime("%H:%M")
+                else:
+                    hora_cita = datetime.datetime.strptime(start_str[:10], "%Y-%m-%d")
+                    fecha = start_str[:10]
+                    hora = "Todo el día"
+
+                diferencia = hora_cita - ahora_naive
+                citas.append(
+                    {
+                        "event_id": event.get("id", ""),
+                        "fecha": fecha,
+                        "hora": hora,
+                        "especialista": _especialista_desde_calendario(cal_id),
+                        "servicio": _parsear_servicio_descripcion(desc),
+                        "resumen": event.get("summary", ""),
+                        "dias_restantes": max(0, diferencia.days),
+                        "horas_restantes": max(0, int(diferencia.total_seconds() // 3600)),
+                    }
+                )
+    except Exception as e:
+        logger.error("Error listando citas por teléfono: %s", e)
+
+    citas.sort(key=lambda c: (c["fecha"], c["hora"]))
+    return citas
+
+
+def consultar_mis_citas(telefono: str):
+    """
+    Consulta las citas futuras del paciente usando su número de teléfono.
+    Busca en todos los calendarios de Inpulso.
+    """
+    citas = listar_citas_futuras_por_telefono(telefono)
+    if not citas:
+        return (
+            "INSTRUCCIÓN PARA LA IA: No hay citas futuras registradas con este número de teléfono. "
+            "Pregunta amablemente si agendó con otro número o si desea agendar una nueva cita."
+        )
+
+    resumen = []
+    for c in citas:
+        resumen.append(
+            f"{c['fecha']} a las {c['hora']} con {c['especialista']} "
+            f"({c['servicio']}) — en {c['dias_restantes']} día(s)"
+        )
+    return "CITAS DEL PACIENTE: " + " | ".join(resumen)
+
+
+def obtener_contexto_citas_paciente(telefono: str) -> str:
+    """
+    Contexto automático para inyectar en cada mensaje del paciente.
+    Incluye recordatorio proactivo si la cita es dentro de 7 días.
+    """
+    citas = listar_citas_futuras_por_telefono(telefono)
+    if not citas:
+        return "[Sistema: Este paciente NO tiene citas futuras con este número.]\n"
+
+    lineas = ["[Sistema: CITAS REGISTRADAS DE ESTE PACIENTE]"]
+    for c in citas:
+        lineas.append(
+            f"- {c['fecha']} {c['hora']} con {c['especialista']} ({c['servicio']})"
+        )
+
+    proxima = citas[0]
+    cita_clave = f"{proxima['fecha']}_{proxima['hora']}_{proxima['especialista']}"
+
+    if proxima["dias_restantes"] <= 7 and not storage.ya_menciono_cita_proactiva(telefono, cita_clave):
+        lineas.append(
+            f"[RECORDATORIO PROACTIVO (mencionar UNA sola vez con naturalidad): "
+            f"Tiene cita el {proxima['fecha']} a las {proxima['hora']} con {proxima['especialista']}. "
+            f"Puedes recordárselo con calidez si encaja en la plática (llegar 10 min antes). "
+            f"NO repitas este recordatorio en mensajes siguientes.]"
+        )
+        storage.marcar_cita_proactiva_mencionada(telefono, cita_clave)
+
+    return "\n".join(lineas) + "\n"
+
+
+def envolver_mensaje_con_contexto_paciente(telefono: str, contenido):
+    """Anteponer contexto de citas al mensaje que recibe la IA."""
+    from google.genai import types
+
+    ctx = obtener_contexto_citas_paciente(telefono)
+    if isinstance(contenido, str):
+        return ctx + contenido
+    if isinstance(contenido, list):
+        return [types.Part(text=ctx)] + contenido
+    return contenido
+
+
 def agendar_cita(
     servicio: str,
     fecha_hora: str,
@@ -171,14 +333,7 @@ def agendar_cita(
         calendar_id = config.DIRECTORIO_CALENDARIOS[nombre_clave]
         service = get_calendar_service()
 
-        nombres_detallados = {
-            "juan": "Juan",
-            "sara": "Sara Rosales",
-            "patricia": "Patricia",
-            "ivan": "Iván",
-            "nutricion": "Nutricionista",
-        }
-        especialista_texto = nombres_detallados.get(nombre_clave, especialista.title())
+        especialista_texto = NOMBRES_TERAPEUTAS.get(nombre_clave, especialista.title())
 
         event = {
             "summary": nombre_paciente.upper(),
@@ -501,12 +656,33 @@ def registrar_paciente_taller(
 
         return (
             "INSTRUCCIÓN PARA LA IA: Confírmale al paciente de forma muy alegre, humana "
-            "y con emojis que sus datos han sido registrados con éxito. NOTA: El pago queda "
-            "PENDIENTE hasta que recepción lo confirme manualmente."
+            "y con emojis que sus datos han sido registrados con éxito. Indícale los "
+            "datos bancarios para transferencia y que al enviar el comprobante se "
+            "confirmará su pago automáticamente."
         )
     except Exception as e:
         logger.error("Error registrar taller: %s", e)
         return "INSTRUCCIÓN PARA LA IA: Hubo un fallo al registrar en Sheets."
+
+
+def confirmar_pago_comprobante(telefono: str):
+    """
+    Confirma automáticamente el pago de un paciente tras validar su comprobante.
+    Usar SOLO si la imagen muestra transferencia COMPLETADA a cuenta válida de Inpulso.
+    """
+    cuentas = obtener_cuentas_pago_texto()
+    resultado = actualizar_pago_paciente(telefono, "PAGADO")
+    if "actualizado a PAGADO" in resultado:
+        return (
+            "ÉXITO: Pago confirmado automáticamente en el sistema. INSTRUCCIÓN PARA LA IA: "
+            "Felicita al paciente con calidez — su comprobante fue validado y su pago/inscripción "
+            "quedó confirmado. ✨"
+        )
+    return (
+        f"{resultado} Cuentas válidas de referencia: {cuentas}. "
+        "INSTRUCCIÓN PARA LA IA: Si no hay registro previo, primero usa registrar_paciente_taller "
+        "o pide amablemente que confirme para qué taller/servicio es el pago."
+    )
 
 
 def actualizar_pago_paciente(telefono: str, estatus: str = "PAGADO"):
@@ -522,7 +698,7 @@ def actualizar_pago_paciente(telefono: str, estatus: str = "PAGADO"):
                 break
 
         result = service.spreadsheets().values().get(
-            spreadsheetId=config.ID_HOJA_CALCULO, range="Inscripciones!A:E"
+            spreadsheetId=config.ID_HOJA_CALCULO, range="Inscripciones!A:F"
         ).execute()
         rows = result.get("values", [])
         target_10_digits = _normalizar_telefono_digitos(telefono)

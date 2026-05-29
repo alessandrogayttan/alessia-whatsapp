@@ -61,3 +61,11 @@ def test_validar_monto_rechaza_diferencia(monkeypatch):
     )
     ok, msg = validar_monto_pago("523326505999", 100.0)
     assert ok is False
+
+
+def test_validar_fecha_cita_martes():
+    from tools import validar_fecha_cita
+
+    result = validar_fecha_cita("2026-06-02")
+    assert "martes" in result
+    assert "2026-06-02" in result

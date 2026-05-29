@@ -187,8 +187,10 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
                     text=(
                         texto_contexto
                         + texto_descriptivo
-                        + " [Nota: Si parece comprobante de pago, agradece y dile "
-                        "que recepción lo verificará pronto. NO confirmes el pago automáticamente]."
+                        + f" [COMPROBANTE DE PAGO — teléfono paciente: {numero_remitente}]. "
+                        "Analiza si es transferencia COMPLETADA a BANORTE CLABE 072320003548248000 "
+                        "o BANAMEX CLABE 002320700928855166. Si es válido, usa confirmar_pago_comprobante "
+                        f"con teléfono {numero_remitente}. Si no es legible o inválido, pide otro comprobante."
                     )
                 ),
             ]

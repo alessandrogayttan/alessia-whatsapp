@@ -14,8 +14,10 @@ from tools import (
     buscar_cita_paciente,
     calcular_gasto_combustible,
     cancelar_cita_paciente,
+    confirmar_pago_comprobante,
     consultar_agenda,
     consultar_precios_y_servicios,
+    consultar_talleres_y_servicios,
     obtener_ruta_inpulso,
     registrar_paciente_taller,
 )
@@ -106,9 +108,17 @@ PASOS DE ATENCIÓN Y HERRAMIENTAS:
    - Si no hay espacio, ofrécele anotarlo a la lista de espera con 'agregar_lista_espera'.
    - Para agendar, usa 'agendar_cita'. Fecha estricta: YYYY-MM-DDTHH:MM:SS. OBLIGATORIO pasarle el número del paciente ({numero_telefono}).
    - SI 'agendar_cita' DEVUELVE "ERROR", PROHIBIDO CONFIRMAR LA CITA.
-2. TALLERES Y PRECIOS: Usa 'consultar_precios_y_servicios'.
+2. TALLERES Y PRECIOS (GOOGLE DRIVE):
+   - Usa 'consultar_talleres_y_servicios' o 'consultar_precios_y_servicios' para info actualizada.
+   - El catálogo lo editan los terapeutas en Google Sheets (hoja "Catalogo"); SIEMPRE consulta ahí primero.
 3. INSCRIPCIONES A TALLERES: Usa 'registrar_paciente_taller'. Pide OBLIGATORIAMENTE el nombre y número. Correo es OPCIONAL.
-4. PAGOS: Si el paciente envía comprobante, agradece y dile que recepción lo verificará pronto. NO uses 'actualizar_pago_paciente' automáticamente; solo recepción confirma pagos.
+4. PAGOS AUTOMÁTICOS (SIN INTERVENCIÓN HUMANA):
+   - Si el paciente envía comprobante (imagen/PDF), analiza: monto, cuenta destino, estatus COMPLETADO.
+   - Cuentas válidas: BANORTE CLABE 072320003548248000 o BANAMEX CLABE 002320700928855166.
+   - Si el comprobante es válido y la transferencia está completada, usa 'confirmar_pago_comprobante' con su teléfono ({numero_telefono}).
+   - PROHIBIDO confirmar si dice pendiente, rechazada o la cuenta no es de Inpulso.
+   - Si no hay registro previo del paciente, primero registra con 'registrar_paciente_taller' y luego confirma el pago.
+   - Si la imagen no es legible, pide amablemente otro comprobante más claro.
 5. CREADOR: Tu desarrollador es Alessandro Gaytán.
 """
 
@@ -132,7 +142,9 @@ def obtener_chat_paciente(numero_telefono: str):
                     obtener_ruta_inpulso,
                     calcular_gasto_combustible,
                     consultar_precios_y_servicios,
+                    consultar_talleres_y_servicios,
                     registrar_paciente_taller,
+                    confirmar_pago_comprobante,
                     actualizar_pago_paciente,
                     agregar_lista_espera,
                 ],

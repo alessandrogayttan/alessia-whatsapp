@@ -1,8 +1,6 @@
-import datetime
 import logging
 import threading
 
-import pytz
 from google import genai
 from google.genai import types
 
@@ -21,6 +19,7 @@ from tools import (
     consultar_talleres_y_servicios,
     obtener_ruta_inpulso,
     registrar_paciente_taller,
+    validar_fecha_cita,
 )
 from whatsapp import enviar_mensaje_whatsapp
 
@@ -41,26 +40,6 @@ def _get_genai_client():
 
 
 def _construir_instrucciones(numero_telefono: str) -> str:
-    zona_mexico = pytz.timezone(config.ZONA_MEXICO)
-    hoy = datetime.datetime.now(zona_mexico)
-    fecha_base = hoy.strftime("%Y-%m-%d")
-    dias_es = [
-        "lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo",
-    ]
-    meses_es = [
-        "enero", "febrero", "marzo", "abril", "mayo", "junio",
-        "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
-    ]
-    dia_actual = dias_es[hoy.weekday()]
-
-    calendario_contexto = ""
-    for i in range(8):
-        dia_f = hoy + datetime.timedelta(days=i)
-        calendario_contexto += (
-            f"- {dias_es[dia_f.weekday()]} {dia_f.day} de "
-            f"{meses_es[dia_f.month - 1]} de {dia_f.year}\n"
-        )
-
     banorte = config.CUENTAS_OFICIALES["BANORTE"]
     banamex = config.CUENTAS_OFICIALES["BANAMEX"]
 
@@ -104,14 +83,16 @@ INFORMACIÓN DE LA CLÍNICA Y PAGOS:
   * CONCEPTO: El paciente SIEMPRE debe poner su NOMBRE COMPLETO en el concepto de la transferencia.
 
 INFORMACIÓN CRÍTICA DEL SISTEMA:
-- Hoy es {dia_actual}, la fecha base es {fecha_base}. El número del paciente es: {numero_telefono}.
-- Calendario de los próximos 7 días:
-{calendario_contexto}
+- El número del paciente es: {numero_telefono}.
+- En CADA mensaje recibes [Sistema: FECHA Y HORA ACTUAL] con el calendario correcto de México.
+- USA SOLO ese calendario para fechas. PROHIBIDO corregir al paciente si su día y fecha coinciden con la tabla.
+- Si tienes duda sobre una fecha, usa 'validar_fecha_cita' antes de responder.
 
 PASOS DE ATENCIÓN Y HERRAMIENTAS:
 1. CITAS Y CANCELACIONES:
    - Para ver sus citas: 'consultar_mis_citas' con teléfono {numero_telefono} (no pidas nombre si ya tienes el número).
-   - Para disponibilidad nueva: 'consultar_agenda'. SOLO ofrécele los horarios que devuelva la herramienta.
+   - Para disponibilidad: 'consultar_agenda'. SOLO ofrece los horarios EXACTOS que devuelva la herramienta (ya excluye horas pasadas si es hoy).
+   - Para confirmar qué día es una fecha: 'validar_fecha_cita' con formato YYYY-MM-DD.
    - Si cancelan, usa 'cancelar_cita_paciente' pasando su número de teléfono.
    - Si no hay espacio, ofrécele anotarlo a la lista de espera con 'agregar_lista_espera'.
    - Para agendar, usa 'agendar_cita'. Fecha estricta: YYYY-MM-DDTHH:MM:SS. OBLIGATORIO pasarle el número del paciente ({numero_telefono}).
@@ -146,6 +127,7 @@ def obtener_chat_paciente(numero_telefono: str):
                 tools=[
                     consultar_agenda,
                     consultar_mis_citas,
+                    validar_fecha_cita,
                     agendar_cita,
                     cancelar_cita_paciente,
                     buscar_cita_paciente,

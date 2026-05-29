@@ -248,6 +248,10 @@ def slot_disponible(fecha_hora: datetime.datetime, nombre_clave: str) -> bool:
     if slot_inicio.hour < 7 or slot_inicio.hour >= 19:
         return False
 
+    ahora = datetime.datetime.now(ZONA).replace(tzinfo=None)
+    if slot_inicio < ahora.replace(minute=0, second=0, microsecond=0):
+        return False
+
     slot_fin = slot_inicio + datetime.timedelta(hours=1)
     for o_start, o_end in ocupados:
         if max(slot_inicio, o_start) < min(slot_fin, o_end):
@@ -280,6 +284,56 @@ def consultar_talleres_y_servicios(especialista: str = "todos"):
     return consultar_catalogo_drive(especialista)
 
 
+def _inicio_slots_disponibles(base_date: datetime.datetime) -> datetime.datetime:
+    """Primera hora ofrecible: 7:00 am, o la hora actual si la fecha es hoy."""
+    inicio_dia = base_date.replace(hour=7, minute=0, second=0, microsecond=0)
+    ahora = datetime.datetime.now(ZONA).replace(tzinfo=None)
+    if base_date.date() != ahora.date():
+        return inicio_dia
+    if ahora.minute > 0 or ahora.second > 0:
+        desde_ahora = ahora.replace(minute=0, second=0, microsecond=0) + datetime.timedelta(hours=1)
+    else:
+        desde_ahora = ahora.replace(minute=0, second=0, microsecond=0)
+    return max(inicio_dia, desde_ahora)
+
+
+def validar_fecha_cita(fecha: str):
+    """
+    Devuelve el día de la semana de una fecha (YYYY-MM-DD).
+    Usar SIEMPRE antes de decirle al paciente que se equivocó en una fecha.
+    """
+    try:
+        d = datetime.datetime.strptime(fecha.strip()[:10], "%Y-%m-%d")
+    except ValueError:
+        return "Formato inválido. La fecha debe ser YYYY-MM-DD."
+    dia = DIAS_ES[d.weekday()]
+    mes = MESES_ES[d.month - 1]
+    return f"{fecha[:10]} es {dia} {d.day} de {mes} de {d.year}."
+
+
+def obtener_contexto_fecha_actual() -> str:
+    """Calendario fresco en cada mensaje (evita fechas desactualizadas en memoria del chat)."""
+    hoy = datetime.datetime.now(ZONA)
+    lineas = [
+        "[Sistema: FECHA Y HORA ACTUAL — Zona México]",
+        (
+            f"Ahora: {DIAS_ES[hoy.weekday()]} {hoy.day} de {MESES_ES[hoy.month - 1]} "
+            f"de {hoy.year} ({hoy.strftime('%Y-%m-%d')}) — {hoy.strftime('%H:%M')}"
+        ),
+        "Calendario (referencia obligatoria; NO adivines ni corrijas fechas sin esto):",
+    ]
+    for i in range(14):
+        d = hoy + datetime.timedelta(days=i)
+        lineas.append(
+            f"  {d.strftime('%Y-%m-%d')} = {DIAS_ES[d.weekday()]} {d.day} de {MESES_ES[d.month - 1]}"
+        )
+    lineas.append(
+        "REGLA: Si el paciente nombra un día que COINCIDE con esta tabla, ACEPTA su fecha. "
+        "PROHIBIDO decirle que se equivoca si coincide. Usa 'validar_fecha_cita' si tienes duda."
+    )
+    return "\n".join(lineas) + "\n"
+
+
 def consultar_agenda(fecha: str, especialista: str):
     nombre_clave = _resolver_especialista(especialista)
     if not nombre_clave:
@@ -297,7 +351,7 @@ def consultar_agenda(fecha: str, especialista: str):
         return f"El {fecha}, {nombre_clave} tiene bloqueado todo el día."
 
     horarios_disponibles = []
-    slot_actual = base_date.replace(hour=7, minute=0)
+    slot_actual = _inicio_slots_disponibles(base_date)
     slot_fin_dia = base_date.replace(hour=19, minute=0)
 
     while slot_actual < slot_fin_dia:
@@ -314,8 +368,10 @@ def consultar_agenda(fecha: str, especialista: str):
     if not horarios_disponibles:
         return f"El {fecha}, {nombre_clave} NO tiene espacios disponibles."
 
+    hoy_str = datetime.datetime.now(ZONA).strftime("%Y-%m-%d")
+    sufijo = " (desde la hora actual en adelante)" if fecha == hoy_str else ""
     return (
-        f"Espacios DISPONIBLES para {nombre_clave} el {fecha} (Citas de 1 hora): "
+        f"Espacios DISPONIBLES para {nombre_clave} el {fecha}{sufijo} (Citas de 1 hora): "
         + ", ".join(horarios_disponibles)
     )
 
@@ -478,10 +534,10 @@ def obtener_contexto_citas_paciente(telefono: str) -> str:
 
 
 def envolver_mensaje_con_contexto_paciente(telefono: str, contenido):
-    """Anteponer contexto de citas al mensaje que recibe la IA."""
+    """Anteponer contexto de fecha y citas al mensaje que recibe la IA."""
     from google.genai import types
 
-    ctx = obtener_contexto_citas_paciente(telefono)
+    ctx = obtener_contexto_fecha_actual() + obtener_contexto_citas_paciente(telefono)
     if isinstance(contenido, str):
         return ctx + contenido
     if isinstance(contenido, list):

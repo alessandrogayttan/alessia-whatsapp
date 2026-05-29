@@ -1,4 +1,6 @@
+import json
 import os
+import re
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -45,6 +47,104 @@ WHATSAPP_TEMPLATE_LANG = os.getenv("WHATSAPP_TEMPLATE_LANG", "es_MX")
 # Escalación humana — WhatsApp de recepción (opcional, ej. 5233XXXXXXXX)
 RECEPCION_WHATSAPP = os.getenv("RECEPCION_WHATSAPP", "")
 
+
+def _normalizar_whatsapp(numero: str) -> str:
+    digits = re.sub(r"\D", "", numero)
+    if digits.startswith("521") and len(digits) == 13:
+        digits = "52" + digits[3:]
+    return digits
+
+
+def _cargar_terapeutas_whatsapp() -> dict[str, str]:
+    """WhatsApp personal de cada terapeuta (52 + 10 dígitos)."""
+    base = {
+        "sara": _normalizar_whatsapp(os.getenv("WHATSAPP_SARA", "523310265936")),
+        "sara rosales": _normalizar_whatsapp(os.getenv("WHATSAPP_SARA", "523310265936")),
+        "juan": _normalizar_whatsapp(os.getenv("WHATSAPP_JUAN", "")),
+        "patricia": _normalizar_whatsapp(os.getenv("WHATSAPP_PATRICIA", "")),
+        "ivan": _normalizar_whatsapp(os.getenv("WHATSAPP_IVAN", "")),
+        "iván": _normalizar_whatsapp(os.getenv("WHATSAPP_IVAN", "")),
+        "nutricion": _normalizar_whatsapp(os.getenv("WHATSAPP_NUTRICION", "")),
+        "nutricionista": _normalizar_whatsapp(os.getenv("WHATSAPP_NUTRICION", "")),
+    }
+    raw = os.getenv("TERAPEUTAS_WHATSAPP_JSON", "").strip()
+    if raw:
+        try:
+            for nombre, numero in json.loads(raw).items():
+                n = _normalizar_whatsapp(str(numero))
+                if n:
+                    base[nombre.lower()] = n
+        except json.JSONDecodeError:
+            pass
+    return {k: v for k, v in base.items() if v}
+
+
+TERAPEUTAS_WHATSAPP = _cargar_terapeutas_whatsapp()
+
+TERAPEUTA_NOMBRES = {
+    "sara": "Sara Rosales",
+    "sara rosales": "Sara Rosales",
+    "juan": "Juan",
+    "patricia": "Patricia",
+    "ivan": "Iván",
+    "iván": "Iván",
+    "nutricion": "Nutrición",
+    "nutricionista": "Nutrición",
+}
+
+
+def identificar_terapeuta(telefono: str) -> str | None:
+    """Si el WhatsApp pertenece a un terapeuta registrado, devuelve su nombre."""
+    norm = _normalizar_whatsapp(telefono)
+    ultimos_10 = norm[-10:] if len(norm) >= 10 else norm
+    vistos: set[str] = set()
+    for clave, numero in TERAPEUTAS_WHATSAPP.items():
+        if not numero or numero in vistos:
+            continue
+        num10 = numero[-10:] if len(numero) >= 10 else numero
+        if numero != norm and num10 != ultimos_10:
+            continue
+        vistos.add(numero)
+        if clave in TERAPEUTA_NOMBRES:
+            return TERAPEUTA_NOMBRES[clave]
+        return clave.title()
+    return None
+
+PALABRAS_LLEGADA = (
+    "ya llegué",
+    "ya llegue",
+    "estoy aquí",
+    "estoy aqui",
+    "ya estoy aquí",
+    "ya estoy aqui",
+    "llegué a inpulso",
+    "llegue a inpulso",
+    "ya estoy en inpulso",
+)
+
+PALABRAS_EMERGENCIA = (
+    "emergencia",
+    "urgencia médica",
+    "urgencia medica",
+    "suicid",
+    "quiero matarme",
+    "me quiero matar",
+    "voy a hacerme daño",
+    "voy a hacerme dano",
+    "ataque de pánico grave",
+    "ataque de panico grave",
+    "no puedo respirar",
+    "estoy en peligro",
+    "me están golpeando",
+    "me estan golpeando",
+    "violencia doméstica",
+    "violencia domestica",
+)
+
+PALABRAS_ANSIEDAD = (
+    "ansios", "ansiedad", "pánico", "panico", "nervios", "agobiad", "estres", "estrés",
+)
+
 # Seguridad endpoint de diagnóstico (solo producción)
 HEALTH_CONFIG_SECRET = os.getenv("HEALTH_CONFIG_SECRET", "")
 
@@ -55,6 +155,9 @@ WHATSAPP_MAX_CHARS = 4000
 CITAS_CACHE_TTL = int(os.getenv("CITAS_CACHE_TTL", "180"))
 PAGO_TOLERANCIA_MXN = float(os.getenv("PAGO_TOLERANCIA_MXN", "10"))
 PAGO_TOLERANCIA_PORCENTAJE = float(os.getenv("PAGO_TOLERANCIA_PORCENTAJE", "0.05"))
+CLIMA_LAT = 20.7236
+CLIMA_LON = -103.3848
+REFERIDO_DESCUENTO = "10% en tu siguiente sesión"
 
 SCOPES = [
     "https://www.googleapis.com/auth/calendar",

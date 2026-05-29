@@ -144,7 +144,6 @@ def webhook():
             threading.Thread(
                 target=procesar_mensaje_ia,
                 args=(numero_remitente, contenido_para_ia, es_primer_contacto),
-                daemon=True,
             ).start()
 
     except (KeyError, IndexError):
@@ -154,9 +153,18 @@ def webhook():
 
 
 def create_app():
+    config.validar_config_minima()
     config.validar_config_produccion()
     storage.init_db()
     _iniciar_scheduler()
+    logger.info(
+        "Alessia lista — WhatsApp:%s Gemini:%s VerifyToken:%s AppSecret:%s GoogleJSON:%s",
+        "OK" if config.TOKEN_WHATSAPP else "FALTA",
+        "OK" if config.GEMINI_API_KEY else "FALTA",
+        "OK" if config.WHATSAPP_VERIFY_TOKEN else "FALTA",
+        "OK" if config.WHATSAPP_APP_SECRET else "FALTA",
+        "OK" if config.GOOGLE_SERVICE_ACCOUNT_JSON or __import__("pathlib").Path(config.SERVICE_ACCOUNT_FILE).is_file() else "FALTA",
+    )
     return app
 
 

@@ -73,24 +73,35 @@ AVISO_PRIVACIDAD = (
 ZONA_MEXICO = "America/Mexico_City"
 
 
-def validar_config_produccion():
-    """Falla al arrancar si faltan variables críticas en producción."""
-    if not IS_PRODUCTION:
-        return
+def validar_config_minima():
+    """Siempre valida lo mínimo para atender mensajes (local y producción)."""
     requeridas = {
         "TOKEN_WHATSAPP": TOKEN_WHATSAPP,
         "ID_TELEFONO": ID_TELEFONO,
-        "WHATSAPP_VERIFY_TOKEN": WHATSAPP_VERIFY_TOKEN,
         "GEMINI_API_KEY": GEMINI_API_KEY,
+    }
+    faltantes = [k for k, v in requeridas.items() if not v]
+    if faltantes:
+        raise RuntimeError(
+            f"Variables de entorno faltantes: {', '.join(faltantes)}. "
+            "Configúralas en DigitalOcean > Settings > Environment Variables."
+        )
+    if not GOOGLE_SERVICE_ACCOUNT_JSON and not Path(SERVICE_ACCOUNT_FILE).is_file():
+        raise RuntimeError(
+            "Falta GOOGLE_SERVICE_ACCOUNT_JSON o el archivo de cuenta de servicio de Google."
+        )
+
+
+def validar_config_produccion():
+    """Validación extra en producción."""
+    if not IS_PRODUCTION:
+        return
+    requeridas = {
+        "WHATSAPP_VERIFY_TOKEN": WHATSAPP_VERIFY_TOKEN,
         "ID_HOJA_CALCULO": ID_HOJA_CALCULO,
     }
     faltantes = [k for k, v in requeridas.items() if not v]
     if faltantes:
         raise RuntimeError(
             f"Variables de entorno faltantes en producción: {', '.join(faltantes)}"
-        )
-    if not GOOGLE_SERVICE_ACCOUNT_JSON and not Path(SERVICE_ACCOUNT_FILE).is_file():
-        raise RuntimeError(
-            "Configura GOOGLE_SERVICE_ACCOUNT_JSON o el archivo "
-            f"{SERVICE_ACCOUNT_FILE}"
         )

@@ -59,26 +59,21 @@ def _transaction():
             conn.close()
 
 
-def mensaje_ya_procesado(mensaje_id: str) -> bool:
+def reservar_mensaje_para_procesar(mensaje_id: str) -> bool:
+    """Atómico: True solo la primera vez que llega este id (evita respuestas duplicadas)."""
     with _transaction() as conn:
-        row = conn.execute(
-            "SELECT 1 FROM mensajes_procesados WHERE mensaje_id = ?",
-            (mensaje_id,),
-        ).fetchone()
-        return row is not None
-
-
-def marcar_mensaje_procesado(mensaje_id: str):
-    with _transaction() as conn:
-        conn.execute(
+        cur = conn.execute(
             "INSERT OR IGNORE INTO mensajes_procesados (mensaje_id, procesado_at) VALUES (?, ?)",
             (mensaje_id, datetime.utcnow().isoformat()),
         )
+        if cur.rowcount == 0:
+            return False
         cutoff = (datetime.utcnow() - timedelta(days=7)).isoformat()
         conn.execute(
             "DELETE FROM mensajes_procesados WHERE procesado_at < ?",
             (cutoff,),
         )
+        return True
 
 
 def recordatorio_ya_enviado(event_id: str, tipo: str) -> bool:

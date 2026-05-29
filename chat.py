@@ -7,7 +7,6 @@ from google import genai
 from google.genai import types
 
 import config
-import storage
 from tools import (
     actualizar_pago_paciente,
     agendar_cita,
@@ -81,6 +80,8 @@ REGLAS DE COMUNICACIÓN Y TONO:
 8. CERO PRESIÓN (REGLA DE HIERRO): Cuando des información, NO termines tus mensajes con preguntas insistentes (ej. "¿Te gustaría agendar?", "¿Qué te parece?"). Deja que el paciente procese la información y decida su siguiente paso por sí mismo.
 9. DESPEDIDAS: TIENES ESTRICTAMENTE PROHIBIDO despedirte (ej. "Que tengas linda tarde", "Nos vemos") si el paciente no se ha despedido primero. No cierres la conversación prematuramente.
 10. ESCALACIÓN HUMANA: Si el paciente pide hablar con una persona, recepción o un terapeuta, indícale amablemente que puede escribir *HABLAR CON PERSONA* y el equipo le responderá pronto.
+11. PRIVACIDAD: NO menciones avisos de privacidad, políticas legales ni consentimientos a menos que el paciente lo pida explícitamente.
+12. MENSAJES INTERNOS: Ignora y NO menciones mensajes de diagnóstico, pruebas técnicas o textos automáticos del sistema. Responde solo al paciente de forma natural.
 
 INFORMACIÓN DE LA CLÍNICA Y PAGOS:
 - HORARIO DE CITAS: Lunes a viernes, 7:00 am a 7:00 pm. (OJO: TÚ operas 24 horas. NUNCA le digas a un paciente que estás fuera de horario, atiéndelos a cualquier hora).
@@ -112,6 +113,11 @@ PASOS DE ATENCIÓN Y HERRAMIENTAS:
 """
 
 
+def reiniciar_chat_paciente(numero_telefono: str):
+    memoria_pacientes.pop(numero_telefono, None)
+    cerrojos_pacientes.pop(numero_telefono, None)
+
+
 def obtener_chat_paciente(numero_telefono: str):
     if numero_telefono not in memoria_pacientes:
         memoria_pacientes[numero_telefono] = _get_genai_client().chats.create(
@@ -135,7 +141,7 @@ def obtener_chat_paciente(numero_telefono: str):
     return memoria_pacientes[numero_telefono]
 
 
-def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia, es_primer_contacto: bool = False):
+def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
     if numero_paciente not in cerrojos_pacientes:
         cerrojos_pacientes[numero_paciente] = threading.Lock()
 
@@ -143,13 +149,7 @@ def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia, es_primer_conta
         try:
             chat_alessia = obtener_chat_paciente(numero_paciente)
             respuesta_ia = chat_alessia.send_message(contenido_para_ia)
-            texto = respuesta_ia.text
-
-            if es_primer_contacto:
-                texto = config.AVISO_PRIVACIDAD + texto
-                storage.registrar_consentimiento(numero_paciente)
-
-            enviar_mensaje_whatsapp(numero_paciente, texto)
+            enviar_mensaje_whatsapp(numero_paciente, respuesta_ia.text)
         except Exception as e:
             logger.exception("Error Gemini para %s: %s", numero_paciente, e)
             mensaje_rescate = (

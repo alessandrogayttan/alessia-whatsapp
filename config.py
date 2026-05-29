@@ -65,9 +65,20 @@ CUENTAS_OFICIALES = {
 }
 
 AVISO_PRIVACIDAD = (
-    "🔒 *Aviso de privacidad*: Al continuar, aceptas que Inpulso 43 procese tus datos "
-    "(nombre, teléfono y citas) para brindarte atención. Puedes solicitar la eliminación "
-    "de tus datos escribiendo *ELIMINAR DATOS*.\n\n"
+    "🔒 *Aviso de privacidad*\n"
+    "Inpulso 43 usa tus datos (nombre, teléfono y citas) solo para darte atención y "
+    "agendar servicios. No los compartimos con terceros ajenos a la clínica.\n"
+    "Puedes solicitar la eliminación de tus datos escribiendo *ELIMINAR DATOS*."
+)
+
+PALABRAS_PRIVACIDAD = (
+    "privacidad",
+    "aviso de privacidad",
+    "politica de privacidad",
+    "política de privacidad",
+    "datos personales",
+    "proteccion de datos",
+    "protección de datos",
 )
 
 ZONA_MEXICO = "America/Mexico_City"

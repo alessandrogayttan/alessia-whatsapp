@@ -174,6 +174,15 @@ def marcar_cita_proactiva_mencionada(telefono: str, cita_clave: str):
         )
 
 
+def resetear_menciones_proactivas(telefono: str):
+    """Borra recordatorios proactivos al cancelar o reagendar (punto 13)."""
+    with _transaction() as conn:
+        conn.execute(
+            "DELETE FROM menciones_cita_proactiva WHERE telefono = ?",
+            (telefono,),
+        )
+
+
 def guardar_nombre_paciente(telefono: str, nombre: str):
     with _transaction() as conn:
         conn.execute(
@@ -184,3 +193,14 @@ def guardar_nombre_paciente(telefono: str, nombre: str):
             """,
             (telefono, nombre, datetime.utcnow().isoformat()),
         )
+
+
+def obtener_nombre_paciente(telefono: str) -> str | None:
+    with _transaction() as conn:
+        row = conn.execute(
+            "SELECT nombre FROM pacientes WHERE telefono = ?",
+            (telefono,),
+        ).fetchone()
+        if row and row["nombre"]:
+            return row["nombre"]
+        return None

@@ -7,3 +7,4 @@ gunicorn
 pytz
 apscheduler
 python-dotenv
+pytest

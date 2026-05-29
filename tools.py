@@ -2,6 +2,7 @@ import datetime
 import json
 import logging
 import re
+import time
 import urllib.parse
 from pathlib import Path
 
@@ -10,12 +11,184 @@ import requests
 
 import config
 import storage
-from catalogo import consultar_catalogo_drive, obtener_cuentas_pago_texto
+from catalogo import consultar_catalogo_drive, obtener_cuentas_pago_texto, _leer_filas_catalogo
 from google_client import get_calendar_service, get_sheets_service
 
 logger = logging.getLogger(__name__)
 ZONA = pytz.timezone(config.ZONA_MEXICO)
 PRECIOS_PATH = Path(__file__).resolve().parent / "precios.json"
+
+MESES_ES = [
+    "enero", "febrero", "marzo", "abril", "mayo", "junio",
+    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+]
+DIAS_ES = [
+    "lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo",
+]
+
+_citas_cache: dict[str, dict] = {}
+
+
+def _formatear_fecha_español(fecha: datetime.datetime) -> str:
+    dia = DIAS_ES[fecha.weekday()]
+    mes = MESES_ES[fecha.month - 1]
+    return f"{dia.capitalize()} {fecha.day} de {mes} de {fecha.year}"
+
+
+def _formatear_confirmacion_cita(
+    fecha_inicio: datetime.datetime,
+    especialista_texto: str,
+    servicio: str,
+    enlace_corto: str,
+) -> str:
+    hora = fecha_inicio.strftime("%I:%M %p").lstrip("0").replace("AM", "a.m.").replace("PM", "p.m.")
+    fecha_txt = _formatear_fecha_español(fecha_inicio)
+    return (
+        f"✅ *Cita confirmada*\n"
+        f"📅 {fecha_txt}, {hora}\n"
+        f"👩‍⚕️ {especialista_texto}\n"
+        f"🩺 {servicio}\n"
+        f"📍 {config.CLINICA_DIRECCION}\n"
+        f"🗺️ {config.CLINICA_MAPS_URL}\n"
+        f"💡 Llega 10 minutos antes\n\n"
+        f"Agrega a tu calendario: {enlace_corto}"
+    )
+
+
+def _extraer_montos_de_texto(texto: str) -> list[float]:
+    montos = []
+    for match in re.findall(r"\d[\d,]*\.?\d*", texto.replace(",", "")):
+        try:
+            valor = float(match)
+            if valor >= 50:
+                montos.append(valor)
+        except ValueError:
+            continue
+    return montos
+
+
+def _montos_esperados_taller(nombre_taller: str) -> list[float]:
+    nombre_lower = nombre_taller.lower()
+    for fila in _leer_filas_catalogo():
+        if nombre_lower in fila["nombre"].lower() or fila["nombre"].lower() in nombre_lower:
+            return _extraer_montos_de_texto(fila["precio"])
+    return []
+
+
+def _obtener_inscripcion_pendiente(telefono: str) -> dict | None:
+    if not config.ID_HOJA_CALCULO:
+        return None
+    try:
+        service = get_sheets_service()
+        result = service.spreadsheets().values().get(
+            spreadsheetId=config.ID_HOJA_CALCULO, range="Inscripciones!A:F"
+        ).execute()
+        rows = result.get("values", [])
+        target = _normalizar_telefono_digitos(telefono)
+        for i in range(len(rows) - 1, 0, -1):
+            row = rows[i]
+            if len(row) < 6:
+                continue
+            row_digits = re.sub(r"\D", "", row[2])
+            if target not in row_digits or row[5].upper() != "PENDIENTE":
+                continue
+            nombre_taller = row[4] if len(row) > 4 else ""
+            return {
+                "nombre": row[1] if len(row) > 1 else "",
+                "telefono": row[2] if len(row) > 2 else telefono,
+                "taller": nombre_taller,
+                "montos_esperados": _montos_esperados_taller(nombre_taller),
+            }
+    except Exception as e:
+        logger.error("Error leyendo inscripción pendiente: %s", e)
+    return None
+
+
+def validar_monto_pago(telefono: str, monto_comprobante: float) -> tuple[bool, str]:
+    """Valida monto del comprobante contra inscripción pendiente y catálogo."""
+    if monto_comprobante <= 0:
+        return False, "El monto del comprobante debe ser mayor a cero."
+
+    inscripcion = _obtener_inscripcion_pendiente(telefono)
+    if not inscripcion:
+        return False, (
+            "No hay inscripción PENDIENTE para este teléfono. "
+            "Primero registra al paciente con registrar_paciente_taller."
+        )
+
+    montos = inscripcion["montos_esperados"]
+    if not montos:
+        return True, (
+            f"No hay precio en catálogo para '{inscripcion['taller']}'. "
+            "Se acepta el pago; revisa manualmente el monto."
+        )
+
+    for esperado in montos:
+        tolerancia = max(config.PAGO_TOLERANCIA_MXN, esperado * config.PAGO_TOLERANCIA_PORCENTAJE)
+        if abs(monto_comprobante - esperado) <= tolerancia:
+            return True, f"Monto ${monto_comprobante:.0f} coincide con precio esperado ${esperado:.0f}."
+
+    montos_txt = ", ".join(f"${m:.0f}" for m in montos)
+    return False, (
+        f"Monto ${monto_comprobante:.0f} no coincide con precios esperados ({montos_txt}). "
+        "Pide al paciente verificar el monto o enviar comprobante correcto."
+    )
+
+
+def _asegurar_hoja_escalaciones(service) -> bool:
+    meta = service.spreadsheets().get(spreadsheetId=config.ID_HOJA_CALCULO).execute()
+    tabs = [s["properties"]["title"] for s in meta.get("sheets", [])]
+    if "Escalaciones" in tabs:
+        return True
+    service.spreadsheets().batchUpdate(
+        spreadsheetId=config.ID_HOJA_CALCULO,
+        body={"requests": [{"addSheet": {"properties": {"title": "Escalaciones"}}}]},
+    ).execute()
+    service.spreadsheets().values().update(
+        spreadsheetId=config.ID_HOJA_CALCULO,
+        range="Escalaciones!A1:F1",
+        valueInputOption="USER_ENTERED",
+        body={"values": [["Fecha", "Teléfono", "Nombre", "Motivo", "Estado", "Notas"]]},
+    ).execute()
+    return True
+
+
+def registrar_escalacion_humana(telefono: str, motivo: str = "Paciente solicitó hablar con persona"):
+    """Registra escalación en Google Sheets y opcionalmente avisa a recepción por WhatsApp."""
+    if not config.ID_HOJA_CALCULO:
+        logger.warning("Escalación sin ID_HOJA_CALCULO: %s", telefono)
+        return False
+
+    nombre = storage.obtener_nombre_paciente(telefono) or ""
+
+    try:
+        service = get_sheets_service()
+        _asegurar_hoja_escalaciones(service)
+        fecha = datetime.datetime.now(ZONA).strftime("%Y-%m-%d %H:%M:%S")
+        service.spreadsheets().values().append(
+            spreadsheetId=config.ID_HOJA_CALCULO,
+            range="Escalaciones!A:F",
+            valueInputOption="USER_ENTERED",
+            body={"values": [[fecha, telefono, nombre, motivo, "PENDIENTE", ""]]},
+        ).execute()
+        logger.info("Escalación registrada: %s (%s)", telefono, nombre or "sin nombre")
+    except Exception as e:
+        logger.error("Error registrando escalación: %s", e)
+        return False
+
+    if config.RECEPCION_WHATSAPP:
+        from whatsapp import enviar_mensaje_whatsapp
+
+        aviso = (
+            f"🙋 *Escalación humana*\n"
+            f"Tel: {telefono}\n"
+            f"Nombre: {nombre or 'No registrado'}\n"
+            f"Motivo: {motivo}\n\n"
+            f"Revisa la hoja Escalaciones en Google Sheets."
+        )
+        enviar_mensaje_whatsapp(config.RECEPCION_WHATSAPP, aviso)
+
+    return True
 
 
 def _resolver_especialista(especialista: str) -> str | None:
@@ -154,6 +327,13 @@ def _normalizar_telefono_digitos(telefono: str) -> str:
     return target_digits[-10:] if len(target_digits) >= 10 else target_digits
 
 
+def _invalidar_cache_citas(telefono: str):
+    digits = _normalizar_telefono_digitos(telefono)
+    keys = [k for k in _citas_cache if k.endswith(digits) or k == digits]
+    for k in keys:
+        _citas_cache.pop(k, None)
+
+
 NOMBRES_TERAPEUTAS = {
     "juan": "Juan",
     "sara": "Sara Rosales",
@@ -181,6 +361,11 @@ def _parsear_servicio_descripcion(descripcion: str) -> str:
 
 def listar_citas_futuras_por_telefono(telefono_paciente: str) -> list[dict]:
     """Busca citas futuras del paciente en todos los calendarios por número."""
+    cache_key = _normalizar_telefono_digitos(telefono_paciente)
+    cached = _citas_cache.get(cache_key)
+    if cached and time.time() - cached["ts"] < config.CITAS_CACHE_TTL:
+        return cached["citas"]
+
     citas = []
     try:
         service = get_calendar_service()
@@ -237,6 +422,7 @@ def listar_citas_futuras_por_telefono(telefono_paciente: str) -> list[dict]:
         logger.error("Error listando citas por teléfono: %s", e)
 
     citas.sort(key=lambda c: (c["fecha"], c["hora"]))
+    _citas_cache[cache_key] = {"citas": citas, "ts": time.time()}
     return citas
 
 
@@ -356,6 +542,10 @@ def agendar_cita(
             return "ERROR CRITICO: Google Calendar no devolvió confirmación."
 
         _quitar_de_lista_espera(telefono_paciente)
+        _invalidar_cache_citas(telefono_paciente)
+        storage.resetear_menciones_proactivas(telefono_paciente)
+        if telefono_paciente:
+            storage.guardar_nombre_paciente(telefono_paciente, nombre_paciente)
 
         format_start = fecha_inicio.strftime("%Y%m%dT%H%M%S")
         format_end = fecha_fin.strftime("%Y%m%dT%H%M%S")
@@ -378,10 +568,13 @@ def agendar_cita(
         except requests.RequestException:
             enlace_corto = enlace_gigante
 
+        bloque = _formatear_confirmacion_cita(
+            fecha_inicio, especialista_texto, servicio, enlace_corto
+        )
         return (
             f"ÉXITO: Cita guardada correctamente. INSTRUCCIÓN PARA LA IA: "
-            f"Confírmale al paciente con mucha calidez y entusiasmo que su cita está lista, "
-            f"y entrégale este enlace: {enlace_corto}"
+            f"Envía al paciente EXACTAMENTE este bloque de confirmación (puedes añadir "
+            f"una frase cálida antes o después, pero conserva el bloque completo):\n\n{bloque}"
         )
     except Exception as e:
         logger.error("Error al agendar cita: %s", e)
@@ -478,6 +671,8 @@ def cancelar_cita_paciente(telefono_paciente: str):
                                 "(sin penalización)."
                             )
                     service.events().delete(calendarId=cal_id, eventId=event["id"]).execute()
+                    _invalidar_cache_citas(telefono_paciente)
+                    storage.resetear_menciones_proactivas(telefono_paciente)
                     return (
                         f"INSTRUCCIÓN PARA LA IA: La cita fue cancelada exitosamente "
                         f"en el calendario.{penalizacion_msg} Confírmale al paciente de forma "
@@ -665,23 +860,30 @@ def registrar_paciente_taller(
         return "INSTRUCCIÓN PARA LA IA: Hubo un fallo al registrar en Sheets."
 
 
-def confirmar_pago_comprobante(telefono: str):
+def confirmar_pago_comprobante(telefono: str, monto_comprobante: float):
     """
-    Confirma automáticamente el pago de un paciente tras validar su comprobante.
-    Usar SOLO si la imagen muestra transferencia COMPLETADA a cuenta válida de Inpulso.
+    Confirma automáticamente el pago tras validar comprobante y monto.
+    Usar SOLO si la imagen muestra transferencia COMPLETADA a cuenta válida de Inpulso
+    y el monto coincide con el precio del taller inscrito.
     """
     cuentas = obtener_cuentas_pago_texto()
-    resultado = actualizar_pago_paciente(telefono, "PAGADO")
-    if "actualizado a PAGADO" in resultado:
+    ok, detalle = validar_monto_pago(telefono, monto_comprobante)
+    if not ok:
         return (
-            "ÉXITO: Pago confirmado automáticamente en el sistema. INSTRUCCIÓN PARA LA IA: "
-            "Felicita al paciente con calidez — su comprobante fue validado y su pago/inscripción "
-            "quedó confirmado. ✨"
+            f"RECHAZADO: {detalle} INSTRUCCIÓN PARA LA IA: Explica amablemente al paciente "
+            f"que el monto no coincide o falta inscripción. Cuentas válidas: {cuentas}."
+        )
+
+    resultado = actualizar_pago_paciente(telefono, "PAGADO")
+    if "actualizado a PAGADO" in resultado or "Estatus de pago actualizado" in resultado:
+        return (
+            f"ÉXITO: Pago confirmado ({detalle}). INSTRUCCIÓN PARA LA IA: "
+            "Felicita al paciente con calidez — su comprobante fue validado y su "
+            "inscripción quedó confirmada. ✨"
         )
     return (
-        f"{resultado} Cuentas válidas de referencia: {cuentas}. "
-        "INSTRUCCIÓN PARA LA IA: Si no hay registro previo, primero usa registrar_paciente_taller "
-        "o pide amablemente que confirme para qué taller/servicio es el pago."
+        f"{resultado} {detalle} Cuentas válidas: {cuentas}. "
+        "INSTRUCCIÓN PARA LA IA: Si no hay registro previo, primero usa registrar_paciente_taller."
     )
 
 

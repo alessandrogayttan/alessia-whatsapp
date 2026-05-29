@@ -11,13 +11,18 @@ from google.genai import types
 import config
 import storage
 from chat import procesar_mensaje_ia, reiniciar_chat_paciente
-from tools import envolver_mensaje_con_contexto_paciente
+from tools import envolver_mensaje_con_contexto_paciente, registrar_escalacion_humana
 from jobs import (
     alertas_citas_background,
     limpiar_inscripciones_pendientes_background,
     verificar_lista_espera_background,
 )
-from whatsapp import descargar_media_whatsapp, enviar_mensaje_whatsapp, verificar_firma_webhook
+from whatsapp import (
+    descargar_media_whatsapp,
+    enviar_mensaje_whatsapp,
+    marcar_leido_y_escribiendo,
+    verificar_firma_webhook,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,6 +41,9 @@ def _iniciar_scheduler():
     global _scheduler_iniciado
     if _scheduler_iniciado:
         return
+    if not config.ENABLE_SCHEDULER:
+        logger.info("Scheduler desactivado (ENABLE_SCHEDULER=0)")
+        return
     scheduler = BackgroundScheduler(timezone=config.ZONA_MEXICO)
     scheduler.add_job(alertas_citas_background, "interval", minutes=15)
     scheduler.add_job(verificar_lista_espera_background, "interval", minutes=15)
@@ -52,7 +60,12 @@ def health():
 
 @app.route("/health/config", methods=["GET"])
 def health_config():
-    """Muestra que variables tiene el servidor (sin revelar valores)."""
+    """Muestra qué variables tiene el servidor (sin revelar valores)."""
+    if config.IS_PRODUCTION and config.HEALTH_CONFIG_SECRET:
+        token = request.args.get("secret") or request.headers.get("X-Health-Secret", "")
+        if token != config.HEALTH_CONFIG_SECRET:
+            return {"error": "Forbidden"}, 403
+
     from pathlib import Path
     google_ok = bool(config.GOOGLE_SERVICE_ACCOUNT_JSON) or Path(
         config.SERVICE_ACCOUNT_FILE
@@ -108,6 +121,7 @@ def webhook():
             continue
 
         numero_remitente = mensaje_info["from"]
+        marcar_leido_y_escribiendo(mensaje_id)
         contenido_con_citas = envolver_mensaje_con_contexto_paciente(
             numero_remitente, contenido_para_ia
         )
@@ -150,6 +164,7 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
             return None
 
         if texto_paciente.upper() == "HABLAR CON PERSONA":
+            registrar_escalacion_humana(numero_remitente)
             enviar_mensaje_whatsapp(
                 numero_remitente,
                 "Entendido 😊 He notificado al equipo de recepción. "
@@ -182,21 +197,30 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
 
         if file_bytes:
             caption = mensaje_info.get(tipo_clave, {}).get("caption", "")
-            texto_descriptivo = f"Archivo tipo {tipo_mensaje}."
+            if tipo_mensaje in ("audio", "voice"):
+                texto_descriptivo = (
+                    "NOTA DE VOZ del paciente. Escucha/transcribe el audio y responde "
+                    "al contenido de forma natural. Si no entiendes el audio, pide "
+                    "amablemente que lo repita por texto."
+                )
+            else:
+                texto_descriptivo = f"Archivo tipo {tipo_mensaje}."
             if caption:
-                texto_descriptivo += f" Texto: {caption}"
+                texto_descriptivo += f" Texto adjunto: {caption}"
+            instruccion_pago = ""
+            if tipo_mensaje in ("image", "document"):
+                instruccion_pago = (
+                    f" [COMPROBANTE DE PAGO — teléfono paciente: {numero_remitente}]. "
+                    "Analiza: monto numérico, cuenta destino, estatus COMPLETADO. "
+                    "Cuentas válidas: BANORTE CLABE 072320003548248000 o "
+                    "BANAMEX CLABE 002320700928855166. "
+                    "OBLIGATORIO: extrae el monto en pesos MXN y llama "
+                    f"confirmar_pago_comprobante(telefono='{numero_remitente}', "
+                    "monto_comprobante=<número>). NO confirmes sin monto válido."
+                )
             return [
                 types.Part(inline_data=types.Blob(data=file_bytes, mime_type=mime_type)),
-                types.Part(
-                    text=(
-                        texto_contexto
-                        + texto_descriptivo
-                        + f" [COMPROBANTE DE PAGO — teléfono paciente: {numero_remitente}]. "
-                        "Analiza si es transferencia COMPLETADA a BANORTE CLABE 072320003548248000 "
-                        "o BANAMEX CLABE 002320700928855166. Si es válido, usa confirmar_pago_comprobante "
-                        f"con teléfono {numero_remitente}. Si no es legible o inválido, pide otro comprobante."
-                    )
-                ),
+                types.Part(text=(texto_contexto + texto_descriptivo + instruccion_pago)),
             ]
         return texto_contexto + "Error al descargar archivo."
 

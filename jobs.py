@@ -9,7 +9,7 @@ import config
 import storage
 from google_client import get_calendar_service, get_sheets_service
 from tools import consultar_agenda
-from whatsapp import enviar_mensaje_whatsapp
+from whatsapp import enviar_mensaje_whatsapp, enviar_recordatorio
 
 logger = logging.getLogger(__name__)
 ZONA = pytz.timezone(config.ZONA_MEXICO)
@@ -71,14 +71,21 @@ def limpiar_inscripciones_pendientes_background():
 def _enviar_recordatorio_24h(telefono: str, hora_cita: datetime.datetime, event_id: str):
     if storage.recordatorio_ya_enviado(event_id, "24h"):
         return
+    hora_txt = hora_cita.strftime("%H:%M")
     msg = (
         f"🗓️ *Confirmación de Cita*\n\n¡Hola! Te escribimos de Inpulso 43 para confirmar "
-        f"tu cita de mañana a las {hora_cita.strftime('%H:%M')}. \n\n"
-        f"¿Podrías confirmarnos tu asistencia respondiendo a este mensaje? En caso de no "
-        f"poder asistir, te agradecemos mucho que nos avises para poder cederle el espacio "
-        f"a otro paciente en lista de espera. ✨"
+        f"tu cita de mañana a las {hora_txt}.\n\n"
+        f"📍 {config.CLINICA_DIRECCION}\n"
+        f"🗺️ {config.CLINICA_MAPS_URL}\n\n"
+        f"¿Podrías confirmarnos tu asistencia respondiendo a este mensaje? Si no puedes "
+        f"asistir, avísanos para ceder el espacio a otro paciente en lista de espera. ✨"
     )
-    if enviar_mensaje_whatsapp(telefono, msg):
+    if enviar_recordatorio(
+        telefono,
+        msg,
+        config.WHATSAPP_TEMPLATE_24H,
+        [hora_txt, config.CLINICA_DIRECCION],
+    ):
         storage.marcar_recordatorio_enviado(event_id, "24h")
 
 
@@ -105,26 +112,43 @@ def _enviar_recordatorio_2h(telefono: str, hora_cita: datetime.datetime, event_i
                 )
                 if duracion_trafico > duracion_normal + 10:
                     msg = (
-                        f"🚗 *Alerta de Tráfico*\n¡Hola! Tu cita es en 2 horas. Detecté tráfico "
-                        f"en tu ruta (aprox {int(duracion_trafico)} min). "
+                        f"🚗 *Alerta de Tráfico*\n¡Hola! Tu cita es en 2 horas ({hora_cita.strftime('%H:%M')}). "
+                        f"Detecté tráfico en tu ruta (aprox {int(duracion_trafico)} min).\n\n"
+                        f"📍 {config.CLINICA_DIRECCION}\n"
+                        f"🗺️ {config.CLINICA_MAPS_URL}\n\n"
                         f"¡Te sugiero salir con anticipación! ✨"
                     )
                 else:
                     msg = (
-                        f"🚗 *Recordatorio Inpulso*\n¡Hola! Tu cita es en 2 horas. "
-                        f"El tráfico está fluido ({int(duracion_trafico)} min). ¡Te esperamos! 😊"
+                        f"🚗 *Recordatorio Inpulso*\n¡Hola! Tu cita es en 2 horas ({hora_cita.strftime('%H:%M')}). "
+                        f"El tráfico está fluido ({int(duracion_trafico)} min).\n\n"
+                        f"📍 {config.CLINICA_DIRECCION}\n"
+                        f"🗺️ {config.CLINICA_MAPS_URL}\n\n"
+                        f"¡Te esperamos! 😊"
                     )
-                if enviar_mensaje_whatsapp(telefono, msg):
+                if enviar_recordatorio(
+                    telefono,
+                    msg,
+                    config.WHATSAPP_TEMPLATE_2H,
+                    [hora_cita.strftime("%H:%M"), config.CLINICA_MAPS_URL],
+                ):
                     storage.marcar_recordatorio_enviado(event_id, "2h")
                 return
         except requests.RequestException as e:
             logger.warning("Error Maps en recordatorio: %s", e)
 
     msg = (
-        "🚗 *Recordatorio Inpulso*\n¡Hola! Paso a recordarte que tu cita es en aprox 2 horas. "
+        f"🚗 *Recordatorio Inpulso*\n¡Hola! Tu cita es en aprox 2 horas ({hora_cita.strftime('%H:%M')}).\n\n"
+        f"📍 {config.CLINICA_DIRECCION}\n"
+        f"🗺️ {config.CLINICA_MAPS_URL}\n\n"
         "Contempla el tiempo de estacionamiento (sujeto a un cajón disponible). ¡Te esperamos! ✨"
     )
-    if enviar_mensaje_whatsapp(telefono, msg):
+    if enviar_recordatorio(
+        telefono,
+        msg,
+        config.WHATSAPP_TEMPLATE_2H,
+        [hora_cita.strftime("%H:%M"), config.CLINICA_MAPS_URL],
+    ):
         storage.marcar_recordatorio_enviado(event_id, "2h")
 
 

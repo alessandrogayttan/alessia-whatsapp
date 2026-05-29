@@ -34,6 +34,28 @@ GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
 DATABASE_PATH = os.getenv("DATABASE_PATH", str(DATA_DIR / "alessia.db"))
 PORT = int(os.getenv("PORT", "5000"))
 
+# Scheduler: solo un worker/proceso debe ejecutar tareas en segundo plano
+ENABLE_SCHEDULER = os.getenv("ENABLE_SCHEDULER", "1").strip().lower() in ("1", "true", "yes")
+
+# WhatsApp — plantillas Meta (fuera de ventana 24 h). Déjalas vacías hasta aprobarlas en Meta.
+WHATSAPP_TEMPLATE_24H = os.getenv("WHATSAPP_TEMPLATE_24H", "")
+WHATSAPP_TEMPLATE_2H = os.getenv("WHATSAPP_TEMPLATE_2H", "")
+WHATSAPP_TEMPLATE_LANG = os.getenv("WHATSAPP_TEMPLATE_LANG", "es_MX")
+
+# Escalación humana — WhatsApp de recepción (opcional, ej. 5233XXXXXXXX)
+RECEPCION_WHATSAPP = os.getenv("RECEPCION_WHATSAPP", "")
+
+# Seguridad endpoint de diagnóstico (solo producción)
+HEALTH_CONFIG_SECRET = os.getenv("HEALTH_CONFIG_SECRET", "")
+
+# Clínica
+CLINICA_DIRECCION = "Av. Hidalgo 533, República, 45146 Zapopan, Jal."
+CLINICA_MAPS_URL = "https://maps.google.com/?q=Av.+Hidalgo+533,+Zapopan,+Jalisco"
+WHATSAPP_MAX_CHARS = 4000
+CITAS_CACHE_TTL = int(os.getenv("CITAS_CACHE_TTL", "180"))
+PAGO_TOLERANCIA_MXN = float(os.getenv("PAGO_TOLERANCIA_MXN", "10"))
+PAGO_TOLERANCIA_PORCENTAJE = float(os.getenv("PAGO_TOLERANCIA_PORCENTAJE", "0.05"))
+
 SCOPES = [
     "https://www.googleapis.com/auth/calendar",
     "https://www.googleapis.com/auth/spreadsheets",

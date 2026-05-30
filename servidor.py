@@ -1,5 +1,6 @@
 import datetime
 import logging
+import re
 import sys
 import threading
 
@@ -10,11 +11,22 @@ from google.genai import types
 
 import config
 import storage
+from bienestar import MENSAJE_PRIMERA_VEZ, micro_ejercicio_para_texto
 from chat import procesar_mensaje_ia, reiniciar_chat_paciente
-from tools import envolver_mensaje_con_contexto_paciente, registrar_escalacion_humana
+from tools import (
+    envolver_mensaje_con_contexto_paciente,
+    notificar_emergencia_paciente,
+    notificar_llegada_paciente,
+    registrar_escalacion_humana,
+)
 from jobs import (
     alertas_citas_background,
+    dashboard_background,
+    frase_del_dia_background,
     limpiar_inscripciones_pendientes_background,
+    reporte_semanal_background,
+    seguimiento_post_cita_background,
+    trivia_semanal_background,
     verificar_lista_espera_background,
 )
 from whatsapp import (
@@ -46,8 +58,13 @@ def _iniciar_scheduler():
         return
     scheduler = BackgroundScheduler(timezone=config.ZONA_MEXICO)
     scheduler.add_job(alertas_citas_background, "interval", minutes=15)
+    scheduler.add_job(seguimiento_post_cita_background, "interval", minutes=30)
     scheduler.add_job(verificar_lista_espera_background, "interval", minutes=15)
     scheduler.add_job(limpiar_inscripciones_pendientes_background, "interval", minutes=60)
+    scheduler.add_job(frase_del_dia_background, "interval", minutes=15)
+    scheduler.add_job(trivia_semanal_background, "interval", minutes=15)
+    scheduler.add_job(reporte_semanal_background, "interval", minutes=15)
+    scheduler.add_job(dashboard_background, "interval", hours=6)
     scheduler.start()
     _scheduler_iniciado = True
     logger.info("Scheduler de tareas en segundo plano iniciado")
@@ -152,6 +169,54 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
 
     if tipo_mensaje == "text":
         texto_paciente = mensaje_info["text"]["body"].strip()
+        es_terapeuta = config.identificar_terapeuta(numero_remitente)
+
+        if es_terapeuta:
+            return texto_contexto + f"[Modo staff: {es_terapeuta}]\n" + texto_paciente
+
+        if storage.es_primera_vez(numero_remitente):
+            storage.marcar_no_primera_vez(numero_remitente)
+            storage.obtener_o_crear_codigo_referido(numero_remitente)
+            enviar_mensaje_whatsapp(numero_remitente, MENSAJE_PRIMERA_VEZ)
+            return None
+
+        texto_lower = texto_paciente.lower()
+
+        if texto_paciente.upper() in ("ACTIVAR FRASE", "FRASE DEL DIA", "FRASE DEL DÍA"):
+            storage.activar_frase_dia(numero_remitente, True)
+            enviar_mensaje_whatsapp(
+                numero_remitente,
+                "☀️ Listo — te enviaré una frase de bienestar cada mañana (8 am). "
+                "Escribe *DESACTIVAR FRASE* cuando quieras pausarlo.",
+            )
+            return None
+
+        if texto_paciente.upper() == "DESACTIVAR FRASE":
+            storage.activar_frase_dia(numero_remitente, False)
+            enviar_mensaje_whatsapp(numero_remitente, "Entendido, pausé las frases matutinas 😊")
+            return None
+
+        ref_match = re.search(r"INPULSO-[A-F0-9]{6}", texto_paciente.upper())
+        if ref_match:
+            from tools import registrar_codigo_referido
+            resultado = registrar_codigo_referido(numero_remitente, ref_match.group(0))
+            return texto_contexto + f"[Sistema: {resultado}]\n" + texto_paciente
+
+        escala_match = re.match(r"^\s*(\d{1,2})\s*$", texto_paciente)
+        if escala_match:
+            escala = int(escala_match.group(1))
+            if 1 <= escala <= 10:
+                storage.guardar_checkin_emocional(numero_remitente, escala)
+                return (
+                    texto_contexto
+                    + f"[Sistema: Check-in emocional registrado ({escala}/10). "
+                    f"Agradece con calidez; si es bajo (1-4), ofrece apoyo sin alarmar.]\n"
+                    + texto_paciente
+                )
+
+        ejercicio = micro_ejercicio_para_texto(texto_paciente)
+        if ejercicio and any(p in texto_lower for p in config.PALABRAS_ANSIEDAD):
+            enviar_mensaje_whatsapp(numero_remitente, ejercicio)
 
         if texto_paciente.upper() == "ELIMINAR DATOS":
             storage.eliminar_datos_paciente(numero_remitente)
@@ -173,10 +238,27 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
             logger.info("Escalación humana solicitada por %s", numero_remitente)
             return None
 
-        texto_lower = texto_paciente.lower()
         if any(palabra in texto_lower for palabra in config.PALABRAS_PRIVACIDAD):
             enviar_mensaje_whatsapp(numero_remitente, config.AVISO_PRIVACIDAD)
             return None
+
+        if any(p in texto_lower for p in config.PALABRAS_LLEGADA):
+            notificar_llegada_paciente(numero_remitente)
+            return (
+                texto_contexto
+                + "[Sistema: Paciente indica que YA LLEGÓ — terapeuta notificado automáticamente. "
+                "Confirma con calidez. NO llames notificar_llegada_paciente otra vez.]\n"
+                + texto_paciente
+            )
+
+        if any(p in texto_lower for p in config.PALABRAS_EMERGENCIA):
+            notificar_emergencia_paciente(numero_remitente, texto_paciente[:400])
+            return (
+                texto_contexto
+                + "[Sistema: EMERGENCIA detectada — terapeuta y recepción alertados. "
+                "Indica 911 si hay riesgo inmediato. NO llames notificar_emergencia_paciente otra vez.]\n"
+                + texto_paciente
+            )
 
         return texto_contexto + texto_paciente
 
@@ -211,12 +293,11 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
             if tipo_mensaje in ("image", "document"):
                 instruccion_pago = (
                     f" [COMPROBANTE DE PAGO — teléfono paciente: {numero_remitente}]. "
-                    "Analiza: monto numérico, cuenta destino, estatus COMPLETADO. "
+                    "Analiza internamente: monto numérico, cuenta destino, estatus COMPLETADO. "
                     "Cuentas válidas: BANORTE CLABE 072320003548248000 o "
                     "BANAMEX CLABE 002320700928855166. "
-                    "OBLIGATORIO: extrae el monto en pesos MXN y llama "
-                    f"confirmar_pago_comprobante(telefono='{numero_remitente}', "
-                    "monto_comprobante=<número>). NO confirmes sin monto válido."
+                    "OBLIGATORIO: llama confirmar_pago_comprobante con el monto. "
+                    "Al paciente NO le digas que hay confirmación automática por IA."
                 )
             return [
                 types.Part(inline_data=types.Blob(data=file_bytes, mime_type=mime_type)),

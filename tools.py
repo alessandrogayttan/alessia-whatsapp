@@ -191,6 +191,143 @@ def registrar_escalacion_humana(telefono: str, motivo: str = "Paciente solicitó
     return True
 
 
+def _resolver_whatsapp_terapeuta(especialista: str) -> tuple[str, str] | None:
+    """Devuelve (nombre_display, whatsapp) del terapeuta o None."""
+    if not especialista:
+        return None
+    esp = especialista.lower().strip()
+    for clave, numero in config.TERAPEUTAS_WHATSAPP.items():
+        if clave in esp or esp in clave:
+            display = NOMBRES_TERAPEUTAS.get(clave, especialista.title())
+            if clave in NOMBRES_TERAPEUTAS:
+                display = NOMBRES_TERAPEUTAS[clave]
+            elif "sara" in clave:
+                display = "Sara Rosales"
+            return display, numero
+    clave_cal = _resolver_especialista(especialista)
+    if clave_cal and clave_cal in config.TERAPEUTAS_WHATSAPP:
+        return NOMBRES_TERAPEUTAS.get(clave_cal, clave_cal.title()), config.TERAPEUTAS_WHATSAPP[clave_cal]
+    return None
+
+
+def _cita_relevante_hoy(telefono: str) -> dict | None:
+    """Cita del paciente hoy, o la más próxima si no hay una hoy."""
+    citas = listar_citas_futuras_por_telefono(telefono)
+    if not citas:
+        return None
+    hoy = datetime.datetime.now(ZONA).strftime("%Y-%m-%d")
+    for c in citas:
+        if c["fecha"] == hoy:
+            return c
+    return citas[0]
+
+
+def _inferir_terapeuta_paciente(telefono: str, especialista: str = "") -> tuple[str, str] | None:
+    if especialista:
+        res = _resolver_whatsapp_terapeuta(especialista)
+        if res:
+            return res
+    cita = _cita_relevante_hoy(telefono)
+    if cita:
+        return _resolver_whatsapp_terapeuta(cita["especialista"])
+    if config.TERAPEUTAS_WHATSAPP.get("sara"):
+        return "Sara Rosales", config.TERAPEUTAS_WHATSAPP["sara"]
+    return None
+
+
+def notificar_llegada_paciente(telefono_paciente: str, especialista: str = ""):
+    """
+    Avisa al terapeuta por WhatsApp que su paciente llegó a Inpulso.
+    Si no indicas especialista, se usa la cita de hoy o la más próxima.
+    """
+    from whatsapp import enviar_mensaje_whatsapp
+
+    nombre = storage.obtener_nombre_paciente(telefono_paciente) or "Paciente"
+    terapeuta_info = _inferir_terapeuta_paciente(telefono_paciente, especialista)
+    if not terapeuta_info:
+        return (
+            "INSTRUCCIÓN PARA LA IA: No hay WhatsApp configurado para ese terapeuta. "
+            "Dile al paciente que recepción ya fue avisada y que espere un momento."
+        )
+
+    display, whatsapp = terapeuta_info
+    cita = _cita_relevante_hoy(telefono_paciente)
+    cita_txt = ""
+    if cita:
+        cita_txt = f"\nCita: {cita['fecha']} {cita['hora']} — {cita['servicio']}"
+
+    aviso = (
+        f"🚪 *Paciente en recepción*\n"
+        f"Paciente: {nombre}\n"
+        f"Tel: {telefono_paciente}{cita_txt}\n\n"
+        f"Te avisamos que ya llegó a Inpulso 43."
+    )
+    ok = enviar_mensaje_whatsapp(whatsapp, aviso)
+    registrar_escalacion_humana(
+        telefono_paciente,
+        f"Llegada a clínica — aviso enviado a {display}",
+    )
+    if ok:
+        return (
+            f"ÉXITO: Aviso de llegada enviado a {display}. INSTRUCCIÓN PARA LA IA: "
+            f"Confirma al paciente con calidez que {display} fue notificada y que lo "
+            f"atiendan en breve. Recuérdale el cajón de estacionamiento si aplica."
+        )
+    return (
+        f"INSTRUCCIÓN PARA LA IA: Intenté avisar a {display} pero WhatsApp no entregó el mensaje "
+        f"(puede que no haya escrito a Alessia antes). Dile al paciente que espere en recepción."
+    )
+
+
+def notificar_emergencia_paciente(
+    telefono_paciente: str,
+    descripcion: str,
+    especialista: str = "",
+):
+    """
+    Avisa emergencia o crisis al terapeuta y recepción. Usar SOLO ante riesgo real.
+    Siempre indica al paciente llamar al 911.
+    """
+    from whatsapp import enviar_mensaje_whatsapp
+
+    nombre = storage.obtener_nombre_paciente(telefono_paciente) or "Paciente"
+    terapeuta_info = _inferir_terapeuta_paciente(telefono_paciente, especialista)
+    enviados = []
+
+    aviso = (
+        f"🚨 *EMERGENCIA / CRISIS*\n"
+        f"Paciente: {nombre}\n"
+        f"Tel: {telefono_paciente}\n"
+        f"Detalle: {descripcion[:500]}\n\n"
+        f"Contactar al paciente de inmediato. Si hay riesgo de vida, urgencias/911."
+    )
+
+    if terapeuta_info:
+        display, whatsapp = terapeuta_info
+        if enviar_mensaje_whatsapp(whatsapp, aviso):
+            enviados.append(display)
+
+    if config.RECEPCION_WHATSAPP:
+        if enviar_mensaje_whatsapp(config.RECEPCION_WHATSAPP, aviso):
+            enviados.append("recepción")
+
+    registrar_escalacion_humana(
+        telefono_paciente,
+        f"EMERGENCIA: {descripcion[:200]}",
+    )
+
+    if enviados:
+        return (
+            f"ÉXITO: Emergencia notificada a {', '.join(enviados)}. INSTRUCCIÓN PARA LA IA: "
+            f"Con mucha calma indica al paciente que llame al *911* si hay riesgo inmediato. "
+            f"Confirma que el equipo ({', '.join(enviados)}) fue alertado y no está solo."
+        )
+    return (
+        "INSTRUCCIÓN PARA LA IA: Registré la emergencia pero no pude enviar WhatsApp a terapeutas. "
+        "Indica al paciente llamar al *911* de inmediato si hay riesgo de vida."
+    )
+
+
 def _resolver_especialista(especialista: str) -> str | None:
     especialista_completo = especialista.lower()
     for nombre in config.DIRECTORIO_CALENDARIOS:
@@ -729,6 +866,11 @@ def cancelar_cita_paciente(telefono_paciente: str):
                     service.events().delete(calendarId=cal_id, eventId=event["id"]).execute()
                     _invalidar_cache_citas(telefono_paciente)
                     storage.resetear_menciones_proactivas(telefono_paciente)
+                    if start_str:
+                        clave_esp = _especialista_clave_desde_calendario(cal_id)
+                        notificar_lista_espera_inmediata(
+                            hora_cita.strftime("%Y-%m-%d"), clave_esp
+                        )
                     return (
                         f"INSTRUCCIÓN PARA LA IA: La cita fue cancelada exitosamente "
                         f"en el calendario.{penalizacion_msg} Confírmale al paciente de forma "
@@ -744,6 +886,103 @@ def cancelar_cita_paciente(telefono_paciente: str):
             "INSTRUCCIÓN PARA LA IA: Hubo un fallo técnico al cancelar la cita. "
             "Discúlpate amablemente."
         )
+
+
+def _especialista_clave_desde_calendario(calendar_id: str) -> str:
+    for clave, cal_id in config.DIRECTORIO_CALENDARIOS.items():
+        if cal_id == calendar_id:
+            return clave
+    return ""
+
+
+def notificar_lista_espera_inmediata(fecha: str, especialista_clave: str):
+    """Tras una cancelación, avisa al primer paciente en lista de espera."""
+    if not config.ID_HOJA_CALCULO or not especialista_clave:
+        return
+    try:
+        service = get_sheets_service()
+        result = service.spreadsheets().values().get(
+            spreadsheetId=config.ID_HOJA_CALCULO, range="Lista_Espera!A:F"
+        ).execute()
+        rows = result.get("values", [])
+        disp = consultar_agenda(fecha, especialista_clave)
+        if "Espacios DISPONIBLES" not in disp:
+            return
+        horarios = disp.split("): ")[1] if "): " in disp else ""
+        from whatsapp import enviar_mensaje_whatsapp
+
+        for i, row in enumerate(rows):
+            if len(row) < 6 or row[5] != "PENDIENTE":
+                continue
+            nombre, telefono, esp, fecha_row = row[1], row[2], row[3], row[4]
+            if fecha_row != fecha:
+                continue
+            if especialista_clave.lower() not in esp.lower() and esp.lower() not in especialista_clave.lower():
+                continue
+            msg = (
+                f"✨ ¡Hola {nombre}!\n\nSe acaba de liberar un espacio con "
+                f"{esp.title()} el {fecha}. 🎉\n\nHorarios: {horarios}\n\n"
+                f"¿Te gustaría agendar? Escríbeme pronto antes de que alguien más lo tome 😊"
+            )
+            if enviar_mensaje_whatsapp(telefono, msg):
+                service.spreadsheets().values().update(
+                    spreadsheetId=config.ID_HOJA_CALCULO,
+                    range=f"Lista_Espera!F{i+1}",
+                    valueInputOption="USER_ENTERED",
+                    body={"values": [["NOTIFICADO"]]},
+                ).execute()
+            break
+    except Exception as e:
+        logger.warning("Error lista espera inmediata: %s", e)
+
+
+def bloquear_horario_calendario(
+    especialista: str,
+    fecha_hora_inicio: str,
+    fecha_hora_fin: str,
+    motivo: str = "Horario bloqueado",
+):
+    """Bloquea un rango de horario en el calendario del terapeuta."""
+    nombre_clave = _resolver_especialista(especialista)
+    if not nombre_clave:
+        return "ERROR: Especialista no encontrado."
+    try:
+        inicio = datetime.datetime.fromisoformat(fecha_hora_inicio.replace(" ", "T"))
+        fin = datetime.datetime.fromisoformat(fecha_hora_fin.replace(" ", "T"))
+        calendar_id = config.DIRECTORIO_CALENDARIOS[nombre_clave]
+        service = get_calendar_service()
+        event = {
+            "summary": f"BLOQUEADO — {motivo}",
+            "description": "Bloqueo creado por Alessia (modo staff)",
+            "start": {"dateTime": inicio.isoformat(), "timeZone": config.ZONA_MEXICO},
+            "end": {"dateTime": fin.isoformat(), "timeZone": config.ZONA_MEXICO},
+        }
+        service.events().insert(calendarId=calendar_id, body=event).execute()
+        return f"ÉXITO: Horario bloqueado del {inicio} al {fin}."
+    except Exception as e:
+        logger.error("Error bloqueando horario: %s", e)
+        return "ERROR: No se pudo bloquear el horario."
+
+
+def obtener_mi_codigo_referido(telefono: str):
+    """Devuelve el código de referido del paciente para invitar amigos."""
+    codigo = storage.obtener_o_crear_codigo_referido(telefono)
+    return (
+        f"Código de referido: {codigo}. INSTRUCCIÓN PARA LA IA: Explícale que si un amigo "
+        f"escribe ese código al registrarse, recibe {config.REFERIDO_DESCUENTO} (aplican políticas "
+        f"de la clínica). Comparte con calidez, sin presión."
+    )
+
+
+def registrar_codigo_referido(telefono: str, codigo: str):
+    """Registra que un paciente nuevo usó un código de referido."""
+    ok = storage.registrar_uso_referido(codigo.strip().upper(), telefono)
+    if ok:
+        return (
+            f"ÉXITO: Referido {codigo} registrado. INSTRUCCIÓN PARA LA IA: Agradece y confirma "
+            f"el beneficio de {config.REFERIDO_DESCUENTO} en recepción."
+        )
+    return "INSTRUCCIÓN PARA LA IA: Código inválido o ya usado. Pide verificar amablemente."
 
 
 def agregar_lista_espera(nombre: str, telefono: str, especialista: str, fecha: str):
@@ -908,8 +1147,9 @@ def registrar_paciente_taller(
         return (
             "INSTRUCCIÓN PARA LA IA: Confírmale al paciente de forma muy alegre, humana "
             "y con emojis que sus datos han sido registrados con éxito. Indícale los "
-            "datos bancarios para transferencia y que al enviar el comprobante se "
-            "confirmará su pago automáticamente."
+            "datos bancarios para transferencia y pídele que envíe su comprobante por "
+            "aquí para confirmar su inscripción. NO digas que la IA o el sistema lo "
+            "confirma automáticamente."
         )
     except Exception as e:
         logger.error("Error registrar taller: %s", e)
@@ -934,8 +1174,8 @@ def confirmar_pago_comprobante(telefono: str, monto_comprobante: float):
     if "actualizado a PAGADO" in resultado or "Estatus de pago actualizado" in resultado:
         return (
             f"ÉXITO: Pago confirmado ({detalle}). INSTRUCCIÓN PARA LA IA: "
-            "Felicita al paciente con calidez — su comprobante fue validado y su "
-            "inscripción quedó confirmada. ✨"
+            "Felicita al paciente con calidez — su inscripción quedó confirmada. ✨ "
+            "NO menciones validación automática, IA ni revisión del comprobante."
         )
     return (
         f"{resultado} {detalle} Cuentas válidas: {cuentas}. "

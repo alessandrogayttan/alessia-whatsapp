@@ -69,3 +69,10 @@ def test_validar_fecha_cita_martes():
     result = validar_fecha_cita("2026-06-02")
     assert "martes" in result
     assert "2026-06-02" in result
+
+
+def test_identificar_terapeuta_sara():
+    from config import identificar_terapeuta
+
+    assert identificar_terapeuta("523310265936") == "Sara Rosales"
+    assert identificar_terapeuta("5213310265936") == "Sara Rosales"

@@ -5,6 +5,16 @@ from google import genai
 from google.genai import types
 
 import config
+from terapeutas import (
+    identificar_terapeuta,
+    terapeuta_actualizar_taller,
+    terapeuta_bloquear_horario,
+    terapeuta_consultar_agenda,
+    terapeuta_desactivar,
+    terapeuta_mi_catalogo,
+    terapeuta_publicar_taller,
+    terapeuta_ver_inscritos,
+)
 from tools import (
     actualizar_pago_paciente,
     agendar_cita,
@@ -17,6 +27,9 @@ from tools import (
     consultar_mis_citas,
     consultar_precios_y_servicios,
     consultar_talleres_y_servicios,
+    notificar_emergencia_paciente,
+    notificar_llegada_paciente,
+    obtener_mi_codigo_referido,
     obtener_ruta_inpulso,
     registrar_paciente_taller,
     validar_fecha_cita,
@@ -27,6 +40,7 @@ logger = logging.getLogger(__name__)
 
 _genai_client = None
 memoria_pacientes = {}
+memoria_terapeutas = {}
 cerrojos_pacientes = {}
 
 
@@ -58,7 +72,7 @@ REGLAS DE COMUNICACIÓN Y TONO:
 4. BREVEDAD (REGLA CRÍTICA): Respuestas cortas — máximo 2-3 párrafos. Si hay mucha información (temario, precios), resume lo esencial. WhatsApp tiene límite de caracteres.
 5. PRECISIÓN: Responde ÚNICAMENTE con la información del servicio o taller que pidan.
 6. RECOMENDACIÓN DE TERAPEUTA: Si te piden recomendación, OBLIGATORIAMENTE recomienda fuertemente a Sara Rosales. Destaca su experiencia y calidez.
-7. RECOMENDACIÓN MUSICAL: Si el paciente te expresa cómo se siente o te pide una canción, recomiéndale música que conecte con su estado de ánimo, con palabras de apoyo.
+7. RECOMENDACIÓN MUSICAL (Rincón musical): Si el paciente expresa emociones o pide música, recomienda 2-3 canciones concretas que conecten con su estado (tristeza, ansiedad, calma, alegría). Nombra artista y canción. Añade palabras de apoyo breves.
 8. RECORDATORIOS: El sistema envía WhatsApp automático 24 h y 2 h antes de cada cita. Si preguntan por su cita, usa 'consultar_mis_citas' con su teléfono ({numero_telefono}).
 9. MEMORIA DE CITAS: En cada mensaje recibes [Sistema: CITAS REGISTRADAS...] con sus citas futuras. Úsalo para responder con precisión. Si aparece [RECORDATORIO PROACTIVO], menciona la cita UNA sola vez con calidez y naturalidad; no repitas en mensajes siguientes.
 10. CERO PRESIÓN (REGLA DE HIERRO): Cuando des información, NO termines tus mensajes con preguntas insistentes (ej. "¿Te gustaría agendar?", "¿Qué te parece?"). Deja que el paciente procese la información y decida su siguiente paso por sí mismo.
@@ -66,8 +80,14 @@ REGLAS DE COMUNICACIÓN Y TONO:
 12. ESCALACIÓN HUMANA: Si el paciente pide hablar con una persona, recepción o un terapeuta, indícale amablemente que puede escribir *HABLAR CON PERSONA* y el equipo le responderá pronto.
 13. PRIVACIDAD: NO menciones avisos de privacidad, políticas legales ni consentimientos a menos que el paciente lo pida explícitamente.
 14. MENSAJES INTERNOS: Ignora y NO menciones mensajes de diagnóstico, pruebas técnicas o textos automáticos del sistema. Responde solo al paciente de forma natural.
-15. EMERGENCIAS: Si el paciente menciona riesgo de vida, autolesión, violencia o crisis grave, indica con calma que llame al *911* o acuda a urgencias. Alessia NO sustituye atención de emergencia ni terapia de crisis.
+15. EMERGENCIAS: Si hay riesgo de vida, autolesión, violencia o crisis grave, usa INMEDIATAMENTE 'notificar_emergencia_paciente' y dile al paciente que llame al *911*. Alessia NO sustituye urgencias.
 16. NOTAS DE VOZ: Si el paciente manda audio, responde al contenido transcrito con naturalidad.
+17. LLEGADA A CLÍNICA: Si el paciente dice que ya llegó, usa 'notificar_llegada_paciente'.
+18. MICRO-EJERCICIOS: Si detectas ansiedad, estrés o pánico, ofrece con calma un ejercicio breve (respiración 4-7-8 o grounding 5-4-3-2-1). El sistema puede enviar uno automático; complementa con empatía.
+19. REFERIDOS: Si preguntan cómo invitar amigos, usa 'obtener_mi_codigo_referido'. Beneficio: {config.REFERIDO_DESCUENTO}.
+20. FRASE DEL DÍA: Si quieren frases matutinas, indícales escribir *ACTIVAR FRASE* o *DESACTIVAR FRASE*.
+21. CHECK-IN EMOCIONAL: Si responden un número del 1-10 tras recordatorio, acoge su respuesta con empatía.
+22. NPS: Si responden del 1-10 tras encuesta de recomendación, agradece sinceramente.
 
 INFORMACIÓN DE LA CLÍNICA Y PAGOS:
 - HORARIO DE CITAS (agendar): Lunes a viernes, 7:00 am a 7:00 pm. Solo se pueden agendar citas en ese horario.
@@ -81,6 +101,7 @@ INFORMACIÓN DE LA CLÍNICA Y PAGOS:
   * TRANSFERENCIA SIN FACTURA: BANORTE (Tarjeta {banorte['tarjeta']}, CLABE {banorte['clabe']} a nombre de {banorte['titular']}).
   * TRANSFERENCIA CON FACTURA: BANAMEX (Cuenta {banamex['cuenta']}, CLABE {banamex['clabe']} a nombre de {banamex['titular']}).
   * CONCEPTO: El paciente SIEMPRE debe poner su NOMBRE COMPLETO en el concepto de la transferencia.
+  * COMPROBANTE: Indica que envíe su comprobante por aquí para confirmar su inscripción. No menciones procesos automáticos ni IA.
 
 INFORMACIÓN CRÍTICA DEL SISTEMA:
 - El número del paciente es: {numero_telefono}.
@@ -98,27 +119,133 @@ PASOS DE ATENCIÓN Y HERRAMIENTAS:
    - Para agendar, usa 'agendar_cita'. Fecha estricta: YYYY-MM-DDTHH:MM:SS. OBLIGATORIO pasarle el número del paciente ({numero_telefono}).
    - SI 'agendar_cita' DEVUELVE "ERROR", PROHIBIDO CONFIRMAR LA CITA.
    - SI 'agendar_cita' DEVUELVE bloque "✅ *Cita confirmada*", envíalo COMPLETO al paciente.
+   - LLEGADA: Si dice que ya llegó → 'notificar_llegada_paciente' con teléfono {numero_telefono}.
+   - EMERGENCIA/CRISIS → 'notificar_emergencia_paciente' con teléfono y descripción breve.
 2. TALLERES Y PRECIOS (GOOGLE DRIVE):
    - Usa 'consultar_talleres_y_servicios' o 'consultar_precios_y_servicios' para info actualizada.
    - El catálogo lo editan los terapeutas en Google Sheets (hoja "Catalogo"); SIEMPRE consulta ahí primero.
 3. INSCRIPCIONES A TALLERES: Usa 'registrar_paciente_taller'. Pide OBLIGATORIAMENTE el nombre y número. Correo es OPCIONAL.
-4. PAGOS AUTOMÁTICOS (SIN INTERVENCIÓN HUMANA):
+4. COMPROBANTES DE PAGO (INTERNO — no lo expliques al paciente):
    - Si el paciente envía comprobante (imagen/PDF), analiza: monto en MXN, cuenta destino, estatus COMPLETADO.
    - Cuentas válidas: BANORTE CLABE 072320003548248000 o BANAMEX CLABE 002320700928855166.
    - OBLIGATORIO: extrae el monto numérico y llama confirmar_pago_comprobante(telefono, monto_comprobante).
    - PROHIBIDO confirmar si el monto no coincide, dice pendiente/rechazada, o la cuenta no es de Inpulso.
    - Si no hay registro previo, primero registra con 'registrar_paciente_taller' y luego confirma el pago.
    - Si la imagen no es legible, pide amablemente otro comprobante más claro.
+   - AL PACIENTE: di solo que envíe su comprobante *para confirmar su inscripción*. PROHIBIDO mencionar IA, validación automática, robots o que "el sistema confirma solo".
 5. CREADOR: Tu desarrollador es Alessandro Gaytán.
 """
 
 
+def _construir_instrucciones_terapeuta(nombre_terapeuta: str) -> str:
+    return f"""
+Eres Alessia en *MODO STAFF* para {nombre_terapeuta}, terapeuta de Inpulso 43.
+El remitente está autenticado por su WhatsApp. Trátalo/a como colega, con calidez profesional.
+
+REGLAS MODO STAFF:
+1. NO pidas su nombre ni lo trates como paciente.
+2. Salúdalo/a por su primer nombre ({nombre_terapeuta.split()[0]}).
+3. Ayúdale a gestionar su catálogo en Google Sheets SIN que entre a Drive.
+4. Confirma siempre con un resumen claro lo que quedó publicado o cambiado.
+5. Respuestas breves y prácticas.
+
+QUÉ PUEDE HACER {nombre_terapeuta.upper()} POR WHATSAPP:
+- *Ver catálogo:* "¿Qué tengo publicado?" → mi_catalogo
+- *Publicar taller:* datos completos → publicar_taller
+- *Editar taller:* fechas, horario, temario, cupo → actualizar_taller (NO precios de consultas — eso es administración)
+- *Quitar taller:* → desactivar_catalogo
+- *Ver agenda:* fecha YYYY-MM-DD → consultar_mi_agenda
+- *Bloquear horario:* "Bloquea viernes 2-7pm" → bloquear_horario
+- *Ver inscritos:* "¿Quién se inscribió a [taller]?" → ver_inscritos_taller
+
+PROHIBIDO: cambiar precios de consultas individuales. Solo administración.
+
+IMPORTANTE: Solo edita SU catálogo de talleres. Los pacientes ven cambios al instante.
+"""
+
+
+def _crear_herramientas_terapeuta(telefono: str):
+    def mi_catalogo():
+        """Lista talleres y servicios publicados del terapeuta."""
+        return terapeuta_mi_catalogo(telefono)
+
+    def publicar_taller(
+        nombre_taller: str,
+        fechas: str,
+        horario: str,
+        precio: str,
+        modalidad: str = "Presencial en Inpulso 43",
+        cupo: str = "Cupo limitado",
+        temario: str = "",
+    ):
+        """Publica un taller nuevo en el catálogo visible para pacientes."""
+        return terapeuta_publicar_taller(
+            telefono, nombre_taller, fechas, horario, precio, modalidad, cupo, temario
+        )
+
+    def actualizar_taller(
+        nombre: str,
+        fechas: str = "",
+        horario: str = "",
+        precio: str = "",
+        cupo: str = "",
+        temario: str = "",
+    ):
+        """Actualiza un taller existente (fechas, horario, temario). Precio solo si es taller."""
+        return terapeuta_actualizar_taller(
+            telefono, nombre, fechas, horario, precio, cupo, temario
+        )
+
+    def desactivar_catalogo(nombre: str):
+        """Oculta un taller del catálogo."""
+        return terapeuta_desactivar(telefono, nombre)
+
+    def consultar_mi_agenda(fecha: str):
+        """Consulta la agenda del terapeuta (YYYY-MM-DD)."""
+        return terapeuta_consultar_agenda(telefono, fecha)
+
+    def bloquear_horario(fecha_hora_inicio: str, fecha_hora_fin: str, motivo: str = "No disponible"):
+        """Bloquea un rango horario en Google Calendar."""
+        return terapeuta_bloquear_horario(telefono, fecha_hora_inicio, fecha_hora_fin, motivo)
+
+    def ver_inscritos_taller(nombre_taller: str):
+        """Lista pacientes inscritos a un taller."""
+        return terapeuta_ver_inscritos(telefono, nombre_taller)
+
+    return [
+        mi_catalogo,
+        publicar_taller,
+        actualizar_taller,
+        desactivar_catalogo,
+        consultar_mi_agenda,
+        bloquear_horario,
+        ver_inscritos_taller,
+    ]
+
+
 def reiniciar_chat_paciente(numero_telefono: str):
     memoria_pacientes.pop(numero_telefono, None)
+    memoria_terapeutas.pop(numero_telefono, None)
     cerrojos_pacientes.pop(numero_telefono, None)
 
 
+def _obtener_chat_terapeuta(numero_telefono: str, nombre_terapeuta: str):
+    if numero_telefono not in memoria_terapeutas:
+        memoria_terapeutas[numero_telefono] = _get_genai_client().chats.create(
+            model="gemini-2.5-flash",
+            config=types.GenerateContentConfig(
+                system_instruction=_construir_instrucciones_terapeuta(nombre_terapeuta),
+                tools=_crear_herramientas_terapeuta(numero_telefono),
+            ),
+        )
+    return memoria_terapeutas[numero_telefono]
+
+
 def obtener_chat_paciente(numero_telefono: str):
+    nombre_terapeuta = identificar_terapeuta(numero_telefono)
+    if nombre_terapeuta:
+        return _obtener_chat_terapeuta(numero_telefono, nombre_terapeuta)
+
     if numero_telefono not in memoria_pacientes:
         memoria_pacientes[numero_telefono] = _get_genai_client().chats.create(
             model="gemini-2.5-flash",
@@ -128,6 +255,8 @@ def obtener_chat_paciente(numero_telefono: str):
                     consultar_agenda,
                     consultar_mis_citas,
                     validar_fecha_cita,
+                    notificar_llegada_paciente,
+                    notificar_emergencia_paciente,
                     agendar_cita,
                     cancelar_cita_paciente,
                     buscar_cita_paciente,
@@ -139,6 +268,7 @@ def obtener_chat_paciente(numero_telefono: str):
                     confirmar_pago_comprobante,
                     actualizar_pago_paciente,
                     agregar_lista_espera,
+                    obtener_mi_codigo_referido,
                 ],
             ),
         )
@@ -152,6 +282,12 @@ def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
     with cerrojos_pacientes[numero_paciente]:
         try:
             chat_alessia = obtener_chat_paciente(numero_paciente)
+            nombre_terapeuta = identificar_terapeuta(numero_paciente)
+            if nombre_terapeuta and isinstance(contenido_para_ia, str):
+                contenido_para_ia = (
+                    f"[Sistema: MODO STAFF — Terapeuta autenticado: {nombre_terapeuta}]\n"
+                    + contenido_para_ia
+                )
             respuesta_ia = chat_alessia.send_message(contenido_para_ia)
             enviar_mensaje_whatsapp(numero_paciente, respuesta_ia.text)
         except Exception as e:

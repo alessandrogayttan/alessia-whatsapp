@@ -76,6 +76,142 @@ def invalidar_cache():
     _cache["ts"] = 0
 
 
+def _filas_crudas_catalogo() -> list[list]:
+    if not config.ID_HOJA_CALCULO:
+        return []
+    service = get_sheets_service()
+    result = service.spreadsheets().values().get(
+        spreadsheetId=config.ID_HOJA_CALCULO,
+        range=f"{CATALOGO_TAB}!A2:J",
+    ).execute()
+    return result.get("values", [])
+
+
+def listar_catalogo_terapeuta(terapeuta: str, incluir_inactivos: bool = False) -> list[dict]:
+    terapeuta_lower = terapeuta.lower()
+    filas = []
+    for row in _filas_crudas_catalogo():
+        if len(row) < 3:
+            continue
+        if terapeuta_lower not in row[0].lower():
+            continue
+        activo_raw = (row[9] if len(row) > 9 else "SI").strip().upper()
+        activo = activo_raw in ("SI", "SÍ", "S", "YES", "1", "TRUE")
+        if not incluir_inactivos and not activo:
+            continue
+        filas.append(
+            {
+                "terapeuta": row[0].strip(),
+                "tipo": row[1].strip().lower() if len(row) > 1 else "",
+                "nombre": row[2].strip() if len(row) > 2 else "",
+                "fechas": row[3].strip() if len(row) > 3 else "",
+                "horario": row[4].strip() if len(row) > 4 else "",
+                "modalidad": row[5].strip() if len(row) > 5 else "",
+                "precio": row[6].strip() if len(row) > 6 else "",
+                "cupo": row[7].strip() if len(row) > 7 else "",
+                "temario": row[8].strip() if len(row) > 8 else "",
+                "activo": activo,
+            }
+        )
+    return filas
+
+
+def _buscar_fila_catalogo(terapeuta: str, nombre: str) -> int | None:
+    terapeuta_lower = terapeuta.lower()
+    nombre_lower = nombre.lower()
+    for i, row in enumerate(_filas_crudas_catalogo()):
+        if len(row) < 3:
+            continue
+        if terapeuta_lower in row[0].lower() and nombre_lower in row[2].lower():
+            return i + 2  # fila en sheet (1-based, + header)
+    return None
+
+
+def agregar_entrada_catalogo(
+    terapeuta: str,
+    tipo: str,
+    nombre: str,
+    fechas: str = "",
+    horario: str = "",
+    modalidad: str = "Presencial",
+    precio: str = "",
+    cupo: str = "",
+    temario: str = "",
+    activo: str = "SI",
+) -> tuple[bool, str]:
+    if not config.ID_HOJA_CALCULO:
+        return False, "ID_HOJA_CALCULO no configurado."
+    try:
+        service = get_sheets_service()
+        valores = [
+            [
+                terapeuta,
+                tipo.lower(),
+                nombre,
+                fechas,
+                horario,
+                modalidad,
+                precio,
+                cupo,
+                temario,
+                activo,
+            ]
+        ]
+        service.spreadsheets().values().append(
+            spreadsheetId=config.ID_HOJA_CALCULO,
+            range=f"{CATALOGO_TAB}!A:J",
+            valueInputOption="USER_ENTERED",
+            body={"values": valores},
+        ).execute()
+        invalidar_cache()
+        return True, f"'{nombre}' agregado al catálogo."
+    except Exception as e:
+        logger.error("Error agregando al catálogo: %s", e)
+        return False, str(e)
+
+
+def actualizar_entrada_catalogo(
+    terapeuta: str, nombre: str, campos: dict
+) -> tuple[bool, str]:
+    if not config.ID_HOJA_CALCULO:
+        return False, "ID_HOJA_CALCULO no configurado."
+    fila = _buscar_fila_catalogo(terapeuta, nombre)
+    if fila is None:
+        return False, f"No encontré '{nombre}' en tu catálogo."
+    col_map = {
+        "terapeuta": "A",
+        "tipo": "B",
+        "nombre": "C",
+        "fechas": "D",
+        "horario": "E",
+        "modalidad": "F",
+        "precio": "G",
+        "cupo": "H",
+        "temario": "I",
+        "activo": "J",
+    }
+    try:
+        service = get_sheets_service()
+        for campo, valor in campos.items():
+            if campo not in col_map:
+                continue
+            service.spreadsheets().values().update(
+                spreadsheetId=config.ID_HOJA_CALCULO,
+                range=f"{CATALOGO_TAB}!{col_map[campo]}{fila}",
+                valueInputOption="USER_ENTERED",
+                body={"values": [[valor]]},
+            ).execute()
+        invalidar_cache()
+        return True, f"'{nombre}' actualizado."
+    except Exception as e:
+        logger.error("Error actualizando catálogo: %s", e)
+        return False, str(e)
+
+
+def desactivar_entrada_catalogo(terapeuta: str, nombre: str) -> tuple[bool, str]:
+    return actualizar_entrada_catalogo(terapeuta, nombre, {"activo": "NO"})
+
+
 def consultar_catalogo_drive(especialista: str = "todos"):
     """
     Consulta talleres y servicios publicados por terapeutas en Google Sheets.

@@ -47,6 +47,31 @@ def init_db():
                     mencionado_at TEXT NOT NULL,
                     PRIMARY KEY (telefono, cita_clave)
                 );
+                CREATE TABLE IF NOT EXISTS paciente_extra (
+                    telefono TEXT PRIMARY KEY,
+                    citas_completadas INTEGER DEFAULT 0,
+                    nps_enviado INTEGER DEFAULT 0,
+                    primera_vez INTEGER DEFAULT 1,
+                    frase_dia INTEGER DEFAULT 0,
+                    codigo_referido TEXT UNIQUE,
+                    referido_por TEXT,
+                    ultimo_animo INTEGER,
+                    ultima_trivia_semana INTEGER DEFAULT 0
+                );
+                CREATE TABLE IF NOT EXISTS checkins_emocionales (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    telefono TEXT NOT NULL,
+                    event_id TEXT,
+                    escala INTEGER,
+                    notas TEXT,
+                    creado_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS referidos_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    codigo TEXT NOT NULL,
+                    telefono_nuevo TEXT NOT NULL,
+                    creado_at TEXT NOT NULL
+                );
                 """
             )
             conn.commit()
@@ -151,6 +176,8 @@ def eliminar_datos_paciente(telefono: str):
         conn.execute("DELETE FROM pacientes WHERE telefono = ?", (telefono,))
         conn.execute("DELETE FROM ubicaciones_pacientes WHERE telefono = ?", (telefono,))
         conn.execute("DELETE FROM menciones_cita_proactiva WHERE telefono = ?", (telefono,))
+        conn.execute("DELETE FROM paciente_extra WHERE telefono = ?", (telefono,))
+        conn.execute("DELETE FROM checkins_emocionales WHERE telefono = ?", (telefono,))
 
 
 def ya_menciono_cita_proactiva(telefono: str, cita_clave: str) -> bool:
@@ -204,3 +231,205 @@ def obtener_nombre_paciente(telefono: str) -> str | None:
         if row and row["nombre"]:
             return row["nombre"]
         return None
+
+
+def _ensure_extra(conn, telefono: str):
+    conn.execute(
+        "INSERT OR IGNORE INTO paciente_extra (telefono) VALUES (?)",
+        (telefono,),
+    )
+
+
+def es_primera_vez(telefono: str) -> bool:
+    with _transaction() as conn:
+        _ensure_extra(conn, telefono)
+        row = conn.execute(
+            "SELECT primera_vez FROM paciente_extra WHERE telefono = ?",
+            (telefono,),
+        ).fetchone()
+        return row is None or row["primera_vez"] == 1
+
+
+def marcar_no_primera_vez(telefono: str):
+    with _transaction() as conn:
+        _ensure_extra(conn, telefono)
+        conn.execute(
+            "UPDATE paciente_extra SET primera_vez = 0 WHERE telefono = ?",
+            (telefono,),
+        )
+
+
+def frase_dia_activa(telefono: str) -> bool:
+    with _transaction() as conn:
+        _ensure_extra(conn, telefono)
+        row = conn.execute(
+            "SELECT frase_dia FROM paciente_extra WHERE telefono = ?",
+            (telefono,),
+        ).fetchone()
+        return row and row["frase_dia"] == 1
+
+
+def activar_frase_dia(telefono: str, activo: bool):
+    with _transaction() as conn:
+        _ensure_extra(conn, telefono)
+        conn.execute(
+            "UPDATE paciente_extra SET frase_dia = ? WHERE telefono = ?",
+            (1 if activo else 0, telefono),
+        )
+
+
+def obtener_o_crear_codigo_referido(telefono: str) -> str:
+    import secrets
+
+    with _transaction() as conn:
+        _ensure_extra(conn, telefono)
+        row = conn.execute(
+            "SELECT codigo_referido FROM paciente_extra WHERE telefono = ?",
+            (telefono,),
+        ).fetchone()
+        if row and row["codigo_referido"]:
+            return row["codigo_referido"]
+        codigo = f"INPULSO-{secrets.token_hex(3).upper()}"
+        conn.execute(
+            "UPDATE paciente_extra SET codigo_referido = ? WHERE telefono = ?",
+            (codigo, telefono),
+        )
+        return codigo
+
+
+def registrar_uso_referido(codigo: str, telefono_nuevo: str) -> bool:
+    with _transaction() as conn:
+        row = conn.execute(
+            "SELECT telefono FROM paciente_extra WHERE codigo_referido = ?",
+            (codigo.upper(),),
+        ).fetchone()
+        if not row:
+            return False
+        dup = conn.execute(
+            "SELECT 1 FROM referidos_log WHERE telefono_nuevo = ?",
+            (telefono_nuevo,),
+        ).fetchone()
+        if dup:
+            return False
+        conn.execute(
+            "INSERT INTO referidos_log (codigo, telefono_nuevo, creado_at) VALUES (?, ?, ?)",
+            (codigo.upper(), telefono_nuevo, datetime.utcnow().isoformat()),
+        )
+        _ensure_extra(conn, telefono_nuevo)
+        conn.execute(
+            "UPDATE paciente_extra SET referido_por = ? WHERE telefono = ?",
+            (codigo.upper(), telefono_nuevo),
+        )
+        return True
+
+
+def guardar_checkin_emocional(telefono: str, escala: int, event_id: str = "", notas: str = ""):
+    with _transaction() as conn:
+        _ensure_extra(conn, telefono)
+        conn.execute(
+            "INSERT INTO checkins_emocionales (telefono, event_id, escala, notas, creado_at) VALUES (?, ?, ?, ?, ?)",
+            (telefono, event_id, escala, notas, datetime.utcnow().isoformat()),
+        )
+        conn.execute(
+            "UPDATE paciente_extra SET ultimo_animo = ? WHERE telefono = ?",
+            (escala, telefono),
+        )
+
+
+def incrementar_citas_completadas(telefono: str) -> int:
+    with _transaction() as conn:
+        _ensure_extra(conn, telefono)
+        conn.execute(
+            "UPDATE paciente_extra SET citas_completadas = citas_completadas + 1 WHERE telefono = ?",
+            (telefono,),
+        )
+        row = conn.execute(
+            "SELECT citas_completadas FROM paciente_extra WHERE telefono = ?",
+            (telefono,),
+        ).fetchone()
+        return row["citas_completadas"] if row else 0
+
+
+def marcar_nps_enviado(telefono: str):
+    with _transaction() as conn:
+        _ensure_extra(conn, telefono)
+        conn.execute(
+            "UPDATE paciente_extra SET nps_enviado = 1 WHERE telefono = ?",
+            (telefono,),
+        )
+
+
+def nps_ya_enviado(telefono: str) -> bool:
+    with _transaction() as conn:
+        _ensure_extra(conn, telefono)
+        row = conn.execute(
+            "SELECT nps_enviado FROM paciente_extra WHERE telefono = ?",
+            (telefono,),
+        ).fetchone()
+        return row and row["nps_enviado"] == 1
+
+
+def citas_completadas(telefono: str) -> int:
+    with _transaction() as conn:
+        _ensure_extra(conn, telefono)
+        row = conn.execute(
+            "SELECT citas_completadas FROM paciente_extra WHERE telefono = ?",
+            (telefono,),
+        ).fetchone()
+        return row["citas_completadas"] if row else 0
+
+
+def pacientes_frase_dia_activa() -> list[str]:
+    with _transaction() as conn:
+        rows = conn.execute(
+            "SELECT telefono FROM paciente_extra WHERE frase_dia = 1"
+        ).fetchall()
+        return [r["telefono"] for r in rows]
+
+
+def marcar_trivia_enviada(telefono: str, semana: int):
+    with _transaction() as conn:
+        _ensure_extra(conn, telefono)
+        conn.execute(
+            "UPDATE paciente_extra SET ultima_trivia_semana = ? WHERE telefono = ?",
+            (semana, telefono),
+        )
+
+
+def trivia_enviada_esta_semana(telefono: str, semana: int) -> bool:
+    with _transaction() as conn:
+        _ensure_extra(conn, telefono)
+        row = conn.execute(
+            "SELECT ultima_trivia_semana FROM paciente_extra WHERE telefono = ?",
+            (telefono,),
+        ).fetchone()
+        return row and row["ultima_trivia_semana"] == semana
+
+
+def telefonos_pacientes_con_nombre() -> list[str]:
+    with _transaction() as conn:
+        rows = conn.execute(
+            "SELECT telefono FROM pacientes WHERE nombre IS NOT NULL AND nombre != ''"
+        ).fetchall()
+        return [r["telefono"] for r in rows]
+
+
+def estadisticas_globales() -> dict:
+    mes = datetime.utcnow().strftime("%Y-%m")
+    with _transaction() as conn:
+        pacientes = conn.execute("SELECT COUNT(*) AS c FROM pacientes").fetchone()["c"]
+        referidos = conn.execute("SELECT COUNT(*) AS c FROM referidos_log").fetchone()["c"]
+        checkins = conn.execute(
+            "SELECT COUNT(*) AS c FROM checkins_emocionales WHERE creado_at LIKE ?",
+            (f"{mes}%",),
+        ).fetchone()["c"]
+        return {"pacientes": pacientes, "referidos": referidos, "checkins_mes": checkins}
+
+
+def obtener_ultimo_animo(telefono: str) -> int | None:
+    with _transaction() as conn:
+        row = conn.execute(
+            "SELECT ultimo_animo FROM paciente_extra WHERE telefono = ?",
+            (telefono,),
+        ).fetchone()
+        return row["ultimo_animo"] if row and row["ultimo_animo"] is not None else None

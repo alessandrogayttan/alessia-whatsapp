@@ -2,6 +2,7 @@
 import logging
 
 import config
+import storage
 from catalogo import (
     agregar_entrada_catalogo,
     actualizar_entrada_catalogo,
@@ -111,6 +112,28 @@ def terapeuta_bloquear_horario(
     """Bloquea horario en Google Calendar."""
     nombre = _solo_terapeuta(telefono)
     return bloquear_horario_calendario(nombre, fecha_hora_inicio, fecha_hora_fin, motivo)
+
+
+def terapeuta_asignar_tarea(
+    telefono: str,
+    telefono_paciente: str,
+    descripcion: str,
+    dias_semana: str = "lunes,martes,miercoles,jueves,viernes",
+):
+    """Asigna tarea terapéutica al paciente con recordatorios entre sesiones."""
+    _solo_terapeuta(telefono)
+    if not telefono_paciente or not descripcion.strip():
+        return "ERROR: Indica teléfono del paciente y descripción de la tarea."
+    tarea_id = storage.crear_tarea_terapeutica(
+        telefono_paciente.strip(),
+        telefono.strip(),
+        descripcion.strip(),
+        dias_semana.strip(),
+    )
+    return (
+        f"ÉXITO: Tarea #{tarea_id} asignada. "
+        f"El paciente recibirá recordatorios los días: {dias_semana}."
+    )
 
 
 def terapeuta_ver_inscritos(telefono: str, nombre_taller: str):

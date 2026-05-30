@@ -8,6 +8,7 @@ import config
 from terapeutas import (
     identificar_terapeuta,
     terapeuta_actualizar_taller,
+    terapeuta_asignar_tarea,
     terapeuta_bloquear_horario,
     terapeuta_consultar_agenda,
     terapeuta_desactivar,
@@ -27,10 +28,13 @@ from tools import (
     consultar_mis_citas,
     consultar_precios_y_servicios,
     consultar_talleres_y_servicios,
+    guardar_nota_ritual_cierre,
+    guardar_prep_sesion,
     notificar_emergencia_paciente,
     notificar_llegada_paciente,
     obtener_mi_codigo_referido,
     obtener_ruta_inpulso,
+    reagendar_cita_inteligente,
     registrar_paciente_taller,
     validar_fecha_cita,
 )
@@ -88,6 +92,10 @@ REGLAS DE COMUNICACIÓN Y TONO:
 20. FRASE DEL DÍA: Si quieren frases matutinas, indícales escribir *ACTIVAR FRASE* o *DESACTIVAR FRASE*.
 21. CHECK-IN EMOCIONAL: Si responden un número del 1-10 tras recordatorio, acoge su respuesta con empatía.
 22. NPS: Si responden del 1-10 tras encuesta de recomendación, agradece sinceramente.
+23. PREP DE SESIÓN: Tras recordatorio 24 h, si el paciente responde qué quiere trabajar, usa 'guardar_prep_sesion'.
+24. REAGENDAR: Si quiere cambiar horario sin buscar manualmente, usa 'reagendar_cita_inteligente' — cancela y ofrece alternativas.
+25. RITUAL DE CIERRE: Tras seguimiento post-cita, si escribe reflexión privada, usa 'guardar_nota_ritual_cierre' (no se comparte con terapeuta).
+26. BIBLIOTECA: Comandos *RESPIRAR*, *GROUNDING*, *CRISIS* envían ejercicios al instante; CRISIS también alerta al equipo.
 
 INFORMACIÓN DE LA CLÍNICA Y PAGOS:
 - HORARIO DE CITAS (agendar): Lunes a viernes, 7:00 am a 7:00 pm. Solo se pueden agendar citas en ese horario.
@@ -115,6 +123,7 @@ PASOS DE ATENCIÓN Y HERRAMIENTAS:
    - Para disponibilidad: 'consultar_agenda'. SOLO ofrece los horarios EXACTOS que devuelva la herramienta (ya excluye horas pasadas si es hoy).
    - Para confirmar qué día es una fecha: 'validar_fecha_cita' con formato YYYY-MM-DD.
    - Si cancelan, usa 'cancelar_cita_paciente' pasando su número de teléfono.
+   - Si quieren reagendar de forma rápida, usa 'reagendar_cita_inteligente' con teléfono {numero_telefono}.
    - Si no hay espacio, ofrécele anotarlo a la lista de espera con 'agregar_lista_espera'.
    - Para agendar, usa 'agendar_cita'. Fecha estricta: YYYY-MM-DDTHH:MM:SS. OBLIGATORIO pasarle el número del paciente ({numero_telefono}).
    - SI 'agendar_cita' DEVUELVE "ERROR", PROHIBIDO CONFIRMAR LA CITA.
@@ -157,6 +166,7 @@ QUÉ PUEDE HACER {nombre_terapeuta.upper()} POR WHATSAPP:
 - *Ver agenda:* fecha YYYY-MM-DD → consultar_mi_agenda
 - *Bloquear horario:* "Bloquea viernes 2-7pm" → bloquear_horario
 - *Ver inscritos:* "¿Quién se inscribió a [taller]?" → ver_inscritos_taller
+- *Asignar tarea:* teléfono paciente + descripción + días → asignar_tarea
 
 PROHIBIDO: cambiar precios de consultas individuales. Solo administración.
 
@@ -212,6 +222,14 @@ def _crear_herramientas_terapeuta(telefono: str):
         """Lista pacientes inscritos a un taller."""
         return terapeuta_ver_inscritos(telefono, nombre_taller)
 
+    def asignar_tarea(
+        telefono_paciente: str,
+        descripcion: str,
+        dias_semana: str = "lunes,martes,miercoles,jueves,viernes",
+    ):
+        """Asigna tarea terapéutica con recordatorios entre sesiones."""
+        return terapeuta_asignar_tarea(telefono, telefono_paciente, descripcion, dias_semana)
+
     return [
         mi_catalogo,
         publicar_taller,
@@ -220,6 +238,7 @@ def _crear_herramientas_terapeuta(telefono: str):
         consultar_mi_agenda,
         bloquear_horario,
         ver_inscritos_taller,
+        asignar_tarea,
     ]
 
 
@@ -269,6 +288,9 @@ def obtener_chat_paciente(numero_telefono: str):
                     actualizar_pago_paciente,
                     agregar_lista_espera,
                     obtener_mi_codigo_referido,
+                    reagendar_cita_inteligente,
+                    guardar_prep_sesion,
+                    guardar_nota_ritual_cierre,
                 ],
             ),
         )

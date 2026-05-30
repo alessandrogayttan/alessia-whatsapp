@@ -11,8 +11,9 @@ from google.genai import types
 
 import config
 import storage
-from bienestar import MENSAJE_PRIMERA_VEZ, micro_ejercicio_para_texto
+from bienestar import MENSAJE_PRIMERA_VEZ, comando_biblioteca, micro_ejercicio_para_texto
 from chat import procesar_mensaje_ia, reiniciar_chat_paciente
+from experiencia import calcular_minutos_ruta, guardar_nota_ritual_cierre, guardar_prep_sesion
 from tools import (
     envolver_mensaje_con_contexto_paciente,
     notificar_emergencia_paciente,
@@ -28,6 +29,7 @@ from jobs import (
     seguimiento_post_cita_background,
     trivia_semanal_background,
     verificar_lista_espera_background,
+    experiencia_diaria_background,
 )
 from whatsapp import (
     descargar_media_whatsapp,
@@ -65,6 +67,7 @@ def _iniciar_scheduler():
     scheduler.add_job(trivia_semanal_background, "interval", minutes=15)
     scheduler.add_job(reporte_semanal_background, "interval", minutes=15)
     scheduler.add_job(dashboard_background, "interval", hours=6)
+    scheduler.add_job(experiencia_diaria_background, "interval", minutes=15)
     scheduler.start()
     _scheduler_iniciado = True
     logger.info("Scheduler de tareas en segundo plano iniciado")
@@ -182,6 +185,31 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
 
         texto_lower = texto_paciente.lower()
 
+        cmd = comando_biblioteca(texto_paciente)
+        if cmd:
+            if texto_paciente.upper() == "CRISIS":
+                notificar_emergencia_paciente(numero_remitente, "Comando CRISIS")
+            enviar_mensaje_whatsapp(numero_remitente, cmd)
+            if texto_paciente.upper() == "CRISIS":
+                return None
+            return texto_contexto + f"[Sistema: Comando {texto_paciente.upper()} enviado.]\n" + texto_paciente
+
+        if storage.obtener_ritual_pendiente(numero_remitente) and len(texto_paciente) > 3:
+            guardar_nota_ritual_cierre(numero_remitente, texto_paciente)
+            enviar_mensaje_whatsapp(
+                numero_remitente,
+                "💙 Guardé tu reflexión. Es solo tuya — gracias por compartirla.",
+            )
+            return None
+
+        if storage.obtener_prep_pendiente(numero_remitente) and len(texto_paciente) > 5:
+            guardar_prep_sesion(numero_remitente, texto_paciente, "")
+            return (
+                texto_contexto
+                + "[Sistema: Prep de sesión guardado para el terapeuta. Agradece con calidez.]\n"
+                + texto_paciente
+            )
+
         if texto_paciente.upper() in ("ACTIVAR FRASE", "FRASE DEL DIA", "FRASE DEL DÍA"):
             storage.activar_frase_dia(numero_remitente, True)
             enviar_mensaje_whatsapp(
@@ -266,6 +294,15 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
         lat = mensaje_info["location"]["latitude"]
         lng = mensaje_info["location"]["longitude"]
         storage.guardar_ubicacion(numero_remitente, lat, lng)
+        minutos = calcular_minutos_ruta(numero_remitente)
+        if minutos:
+            salir = max(minutos - 10, 5)
+            enviar_mensaje_whatsapp(
+                numero_remitente,
+                f"📍 Ubicación guardada. Con el tráfico actual, tu ruta a Inpulso 43 "
+                f"es de ~{minutos} min. Si tienes cita pronto, te sugiero salir en "
+                f"*{salir} minutos*.",
+            )
         return (
             texto_contexto
             + f"[El paciente envió su ubicación {lat},{lng}]. "

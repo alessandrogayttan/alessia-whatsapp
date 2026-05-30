@@ -59,7 +59,43 @@ MICRO_EJERCICIOS = {
         "Suelta la mandíbula, baja los hombros, respira lento.\n"
         "Di en voz baja: 'En este momento estoy a salvo.'"
     ),
+    "respirar": (
+        "🌬️ *Respiración 4-7-8*\n"
+        "1. Inhala por la nariz contando hasta 4\n"
+        "2. Sostén el aire contando hasta 7\n"
+        "3. Exhala lentamente contando hasta 8\n"
+        "Repite 3 veces. Estoy aquí contigo."
+    ),
+    "grounding": (
+        "🧭 *Grounding 5-4-3-2-1*\n"
+        "Nombra: 5 cosas que ves, 4 que tocas, 3 que escuchas, 2 que hueles, 1 que saboreas.\n"
+        "Esto ayuda a anclarte al presente."
+    ),
 }
+
+MENSAJE_CRISIS = (
+    "🆘 *Estoy aquí contigo*\n\n"
+    "Si hay riesgo inmediato, llama al *911*.\n"
+    "Línea de la Vida (24 h): *800 290 0024*\n\n"
+    "Respira conmigo: inhala 4 segundos, exhala 6. "
+    "No estás solo/a — el equipo de Inpulso también fue notificado."
+)
+
+COMANDOS_BIBLIOTECA = {
+    "RESPIRAR": "respirar",
+    "GROUNDING": "grounding",
+    "CRISIS": "crisis",
+}
+
+
+def comando_biblioteca(texto: str) -> str | None:
+    clave = texto.strip().upper()
+    if clave == "CRISIS":
+        return MENSAJE_CRISIS
+    tipo = COMANDOS_BIBLIOTECA.get(clave)
+    if tipo and tipo in MICRO_EJERCICIOS:
+        return MICRO_EJERCICIOS[tipo]
+    return None
 
 RINCON_MUSICAL = {
     "triste": ["Riverside — Agnes Obel", "Holocene — Bon Iver", "Fix You — Coldplay (suave)"],

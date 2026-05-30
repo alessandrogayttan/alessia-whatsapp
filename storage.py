@@ -72,6 +72,56 @@ def init_db():
                     telefono_nuevo TEXT NOT NULL,
                     creado_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS prep_sesion (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    telefono TEXT NOT NULL,
+                    event_id TEXT,
+                    tema TEXT,
+                    es_primera TEXT,
+                    animo INTEGER,
+                    creado_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS prep_pendiente (
+                    telefono TEXT PRIMARY KEY,
+                    event_id TEXT NOT NULL,
+                    creado_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS ritual_pendiente (
+                    telefono TEXT PRIMARY KEY,
+                    event_id TEXT NOT NULL,
+                    creado_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS notas_ritual (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    telefono TEXT NOT NULL,
+                    event_id TEXT,
+                    nota TEXT NOT NULL,
+                    creado_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS primera_cita (
+                    telefono TEXT PRIMARY KEY,
+                    fecha TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS aniversarios_enviados (
+                    telefono TEXT NOT NULL,
+                    anio INTEGER NOT NULL,
+                    enviado_at TEXT NOT NULL,
+                    PRIMARY KEY (telefono, anio)
+                );
+                CREATE TABLE IF NOT EXISTS taller_bienvenida (
+                    clave TEXT PRIMARY KEY,
+                    enviado_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS tareas_terapeuticas (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    telefono_paciente TEXT NOT NULL,
+                    telefono_terapeuta TEXT NOT NULL,
+                    descripcion TEXT NOT NULL,
+                    dias_semana TEXT NOT NULL,
+                    activa INTEGER DEFAULT 1,
+                    ultimo_envio TEXT,
+                    creado_at TEXT NOT NULL
+                );
                 """
             )
             conn.commit()
@@ -433,3 +483,213 @@ def obtener_ultimo_animo(telefono: str) -> int | None:
             (telefono,),
         ).fetchone()
         return row["ultimo_animo"] if row and row["ultimo_animo"] is not None else None
+
+
+def marcar_prep_pendiente(telefono: str, event_id: str):
+    with _transaction() as conn:
+        conn.execute(
+            """
+            INSERT INTO prep_pendiente (telefono, event_id, creado_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(telefono) DO UPDATE SET
+                event_id = excluded.event_id,
+                creado_at = excluded.creado_at
+            """,
+            (telefono, event_id, datetime.utcnow().isoformat()),
+        )
+
+
+def obtener_prep_pendiente(telefono: str) -> str | None:
+    with _transaction() as conn:
+        row = conn.execute(
+            "SELECT event_id FROM prep_pendiente WHERE telefono = ?",
+            (telefono,),
+        ).fetchone()
+        return row["event_id"] if row else None
+
+
+def limpiar_prep_pendiente(telefono: str):
+    with _transaction() as conn:
+        conn.execute("DELETE FROM prep_pendiente WHERE telefono = ?", (telefono,))
+
+
+def guardar_prep_sesion(
+    telefono: str,
+    event_id: str,
+    tema: str,
+    es_primera: str = "",
+    animo: int = 0,
+):
+    with _transaction() as conn:
+        conn.execute(
+            """
+            INSERT INTO prep_sesion (telefono, event_id, tema, es_primera, animo, creado_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                telefono,
+                event_id,
+                tema,
+                es_primera,
+                animo or None,
+                datetime.utcnow().isoformat(),
+            ),
+        )
+        conn.execute("DELETE FROM prep_pendiente WHERE telefono = ?", (telefono,))
+
+
+def obtener_prep_sesion_reciente(telefono: str) -> dict | None:
+    with _transaction() as conn:
+        row = conn.execute(
+            """
+            SELECT tema, es_primera, animo FROM prep_sesion
+            WHERE telefono = ? ORDER BY creado_at DESC LIMIT 1
+            """,
+            (telefono,),
+        ).fetchone()
+        if not row:
+            return None
+        return {
+            "tema": row["tema"] or "",
+            "es_primera": row["es_primera"] or "",
+            "animo": row["animo"],
+        }
+
+
+def marcar_ritual_pendiente(telefono: str, event_id: str):
+    with _transaction() as conn:
+        conn.execute(
+            """
+            INSERT INTO ritual_pendiente (telefono, event_id, creado_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(telefono) DO UPDATE SET
+                event_id = excluded.event_id,
+                creado_at = excluded.creado_at
+            """,
+            (telefono, event_id, datetime.utcnow().isoformat()),
+        )
+
+
+def obtener_ritual_pendiente(telefono: str) -> str | None:
+    with _transaction() as conn:
+        row = conn.execute(
+            "SELECT event_id FROM ritual_pendiente WHERE telefono = ?",
+            (telefono,),
+        ).fetchone()
+        return row["event_id"] if row else None
+
+
+def limpiar_ritual_pendiente(telefono: str):
+    with _transaction() as conn:
+        conn.execute("DELETE FROM ritual_pendiente WHERE telefono = ?", (telefono,))
+
+
+def guardar_nota_ritual(telefono: str, event_id: str, nota: str):
+    with _transaction() as conn:
+        conn.execute(
+            """
+            INSERT INTO notas_ritual (telefono, event_id, nota, creado_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (telefono, event_id, nota, datetime.utcnow().isoformat()),
+        )
+        conn.execute("DELETE FROM ritual_pendiente WHERE telefono = ?", (telefono,))
+
+
+def registrar_primera_cita_si_nueva(telefono: str, fecha: str):
+    with _transaction() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO primera_cita (telefono, fecha) VALUES (?, ?)",
+            (telefono, fecha[:10]),
+        )
+
+
+def listar_primeras_citas() -> list[tuple[str, str]]:
+    with _transaction() as conn:
+        rows = conn.execute("SELECT telefono, fecha FROM primera_cita").fetchall()
+        return [(r["telefono"], r["fecha"]) for r in rows]
+
+
+def aniversario_ya_enviado(telefono: str, anio: int) -> bool:
+    with _transaction() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM aniversarios_enviados WHERE telefono = ? AND anio = ?",
+            (telefono, anio),
+        ).fetchone()
+        return row is not None
+
+
+def marcar_aniversario_enviado(telefono: str, anio: int):
+    with _transaction() as conn:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO aniversarios_enviados (telefono, anio, enviado_at)
+            VALUES (?, ?, ?)
+            """,
+            (telefono, anio, datetime.utcnow().isoformat()),
+        )
+
+
+def taller_bienvenida_enviada(clave: str) -> bool:
+    with _transaction() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM taller_bienvenida WHERE clave = ?",
+            (clave,),
+        ).fetchone()
+        return row is not None
+
+
+def marcar_taller_bienvenida(clave: str):
+    with _transaction() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO taller_bienvenida (clave, enviado_at) VALUES (?, ?)",
+            (clave, datetime.utcnow().isoformat()),
+        )
+
+
+def crear_tarea_terapeutica(
+    telefono_paciente: str,
+    telefono_terapeuta: str,
+    descripcion: str,
+    dias_semana: str,
+) -> int:
+    with _transaction() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO tareas_terapeuticas
+            (telefono_paciente, telefono_terapeuta, descripcion, dias_semana, creado_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                telefono_paciente,
+                telefono_terapeuta,
+                descripcion,
+                dias_semana.lower(),
+                datetime.utcnow().isoformat(),
+            ),
+        )
+        return cur.lastrowid
+
+
+def tareas_pendientes_hoy(dia_nombre: str) -> list[dict]:
+    hoy = datetime.utcnow().strftime("%Y-%m-%d")
+    with _transaction() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, telefono_paciente AS telefono, descripcion
+            FROM tareas_terapeuticas
+            WHERE activa = 1
+              AND (ultimo_envio IS NULL OR ultimo_envio != ?)
+              AND dias_semana LIKE ?
+            """,
+            (hoy, f"%{dia_nombre.lower()}%"),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def marcar_tarea_enviada_hoy(tarea_id: int, fecha: str):
+    with _transaction() as conn:
+        conn.execute(
+            "UPDATE tareas_terapeuticas SET ultimo_envio = ? WHERE id = ?",
+            (fecha, tarea_id),
+        )

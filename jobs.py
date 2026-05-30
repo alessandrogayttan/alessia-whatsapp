@@ -71,18 +71,12 @@ def limpiar_inscripciones_pendientes_background():
 
 
 def _enviar_recordatorio_24h(telefono: str, hora_cita: datetime.datetime, event_id: str):
+    from experiencia import mensaje_recordatorio_24h
+
     if storage.recordatorio_ya_enviado(event_id, "24h"):
         return
     hora_txt = hora_cita.strftime("%H:%M")
-    msg = (
-        f"🗓️ *Confirmación de Cita*\n\n¡Hola! Te escribimos de Inpulso 43 para confirmar "
-        f"tu cita de mañana a las {hora_txt}.\n\n"
-        f"📍 {config.CLINICA_DIRECCION}\n"
-        f"🗺️ {config.CLINICA_MAPS_URL}\n\n"
-        f"💭 *Check-in emocional:* ¿Cómo te sientes hoy del 1 al 10? "
-        f"(1 = muy bajo, 10 = excelente). Tu respuesta ayuda a preparar tu sesión.\n\n"
-        f"¿Confirmas tu asistencia? Si no puedes, avísanos para ceder el espacio. ✨"
-    )
+    msg = mensaje_recordatorio_24h(hora_cita)
     if enviar_recordatorio(
         telefono,
         msg,
@@ -90,6 +84,7 @@ def _enviar_recordatorio_24h(telefono: str, hora_cita: datetime.datetime, event_
         [hora_txt, config.CLINICA_DIRECCION],
     ):
         storage.marcar_recordatorio_enviado(event_id, "24h")
+        storage.marcar_prep_pendiente(telefono, event_id)
 
 
 def _enviar_recordatorio_2h(telefono: str, hora_cita: datetime.datetime, event_id: str):
@@ -200,6 +195,9 @@ def alertas_citas_background():
                     _enviar_recordatorio_2h(telefono, hora_cita, event_id)
                 elif datetime.timedelta(minutes=25) <= diferencia <= datetime.timedelta(minutes=35):
                     _enviar_resumen_terapeuta(event, telefono, hora_cita, cal_id, event_id)
+                    _enviar_eta_salida(telefono, hora_cita, event_id)
+                elif datetime.timedelta(minutes=4) <= diferencia <= datetime.timedelta(minutes=6):
+                    _enviar_link_online(event, telefono, hora_cita, cal_id, event_id)
     except Exception as e:
         logger.error("Error alertas background: %s", e)
 
@@ -207,6 +205,7 @@ def alertas_citas_background():
 def _enviar_resumen_terapeuta(event, telefono: str, hora_cita, cal_id: str, event_id: str):
     if storage.recordatorio_ya_enviado(event_id, "pre30m"):
         return
+    from experiencia import texto_prep_para_terapeuta
     from tools import _resolver_whatsapp_terapeuta
 
     esp = _especialista_desde_calendario(cal_id)
@@ -217,6 +216,8 @@ def _enviar_resumen_terapeuta(event, telefono: str, hora_cita, cal_id: str, even
     nombre = storage.obtener_nombre_paciente(telefono) or event.get("summary", "Paciente")
     animo = storage.obtener_ultimo_animo(telefono)
     animo_txt = f"\nÚltimo check-in emocional: {animo}/10" if animo else ""
+    prep_txt = texto_prep_para_terapeuta(telefono)
+    prep_bloque = f"\n\n📝 Prep del paciente:\n{prep_txt}" if prep_txt else ""
     citas_prev = storage.citas_completadas(telefono)
     tipo = "Primera cita" if citas_prev == 0 else f"Cita #{citas_prev + 1}"
     msg = (
@@ -224,11 +225,55 @@ def _enviar_resumen_terapeuta(event, telefono: str, hora_cita, cal_id: str, even
         f"Paciente: {nombre}\n"
         f"Tel: {telefono}\n"
         f"Hora: {hora_cita.strftime('%H:%M')}\n"
-        f"Tipo: {tipo}{animo_txt}\n"
+        f"Tipo: {tipo}{animo_txt}{prep_bloque}\n"
         f"Servicio: {event.get('description', '')[:120]}"
     )
     if enviar_mensaje_whatsapp(whatsapp, msg):
         storage.marcar_recordatorio_enviado(event_id, "pre30m")
+
+
+def _enviar_eta_salida(telefono: str, hora_cita: datetime.datetime, event_id: str):
+    """Tier 4.14: sugiere salir en X minutos según ubicación y tráfico."""
+    if storage.recordatorio_ya_enviado(event_id, "eta30m"):
+        return
+    from experiencia import calcular_minutos_ruta
+
+    minutos = calcular_minutos_ruta(telefono)
+    if not minutos:
+        return
+    salir_en = max(minutos - 25, 5)
+    msg = (
+        f"🚗 *Hora de salir*\n\n"
+        f"Tu cita es a las {hora_cita.strftime('%H:%M')}. "
+        f"Con el tráfico actual, te sugiero salir en unos *{salir_en} minutos* "
+        f"(ruta ~{minutos} min).\n\n"
+        f"📍 {config.CLINICA_DIRECCION}\n"
+        f"🗺️ {config.CLINICA_MAPS_URL}"
+    )
+    if enviar_mensaje_whatsapp(telefono, msg):
+        storage.marcar_recordatorio_enviado(event_id, "eta30m")
+
+
+def _enviar_link_online(event, telefono: str, hora_cita, cal_id: str, event_id: str):
+    """Tier 4.15: envía link de videollamada 5 min antes si la cita es online."""
+    if storage.recordatorio_ya_enviado(event_id, "online5m"):
+        return
+    from experiencia import es_cita_online, link_sesion_online
+
+    if not es_cita_online(event):
+        return
+    esp = _especialista_desde_calendario(cal_id)
+    link = link_sesion_online(esp)
+    if not link:
+        return
+    msg = (
+        f"💻 *Tu sesión online empieza pronto*\n\n"
+        f"Tu cita es a las {hora_cita.strftime('%H:%M')}.\n"
+        f"Únete aquí:\n{link}\n\n"
+        f"Busca un lugar tranquilo y con buena conexión. Te esperamos ✨"
+    )
+    if enviar_mensaje_whatsapp(telefono, msg):
+        storage.marcar_recordatorio_enviado(event_id, "online5m")
 
 
 def seguimiento_post_cita_background():
@@ -260,10 +305,14 @@ def seguimiento_post_cita_background():
                 msg = (
                     "💙 *Seguimiento Inpulso*\n\n"
                     "Hace un par de días tuviste sesión con nosotros. "
-                    "¿Cómo te has sentido desde entonces? Estoy aquí si quieres platicar 😊"
+                    "¿Cómo te has sentido desde entonces?\n\n"
+                    "🌿 *Ritual de cierre* (opcional y privado): "
+                    "Si quieres, escribe en un mensaje qué te llevas de esa sesión "
+                    "— es solo para ti, no se comparte con tu terapeuta."
                 )
                 if enviar_mensaje_whatsapp(telefono, msg):
                     storage.marcar_recordatorio_enviado(event_id, "post48h")
+                    storage.marcar_ritual_pendiente(telefono, event_id)
                     total = storage.incrementar_citas_completadas(telefono)
                     if total >= 3 and not storage.nps_ya_enviado(telefono):
                         nps = (
@@ -340,6 +389,22 @@ def reporte_semanal_background():
 
 def dashboard_background():
     actualizar_dashboard()
+
+
+def experiencia_diaria_background():
+    """Aniversarios, bienvenida talleres y recordatorios de tareas terapéuticas."""
+    from experiencia import (
+        procesar_aniversarios,
+        procesar_bienvenida_talleres,
+        procesar_recordatorios_tareas,
+    )
+
+    ahora = datetime.datetime.now(ZONA)
+    if ahora.hour == 9 and ahora.minute <= 14:
+        procesar_recordatorios_tareas()
+    if ahora.hour == 10 and ahora.minute <= 14:
+        procesar_aniversarios()
+        procesar_bienvenida_talleres()
 
 
 def verificar_lista_espera_background():

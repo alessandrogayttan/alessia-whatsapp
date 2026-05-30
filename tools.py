@@ -739,6 +739,9 @@ def agendar_cita(
         storage.resetear_menciones_proactivas(telefono_paciente)
         if telefono_paciente:
             storage.guardar_nombre_paciente(telefono_paciente, nombre_paciente)
+            storage.registrar_primera_cita_si_nueva(
+                telefono_paciente, fecha_inicio.strftime("%Y-%m-%d")
+            )
 
         format_start = fecha_inicio.strftime("%Y%m%dT%H%M%S")
         format_end = fecha_fin.strftime("%Y%m%dT%H%M%S")
@@ -1222,3 +1225,29 @@ def actualizar_pago_paciente(telefono: str, estatus: str = "PAGADO"):
     except Exception as e:
         logger.error("Error actualizar pago: %s", e)
         return "INSTRUCCIÓN PARA LA IA: Fallo técnico al actualizar el pago."
+
+
+def reagendar_cita_inteligente(telefono_paciente: str):
+    """Cancela la próxima cita y ofrece hasta 3 horarios alternativos."""
+    from experiencia import reagendar_cita_inteligente as _reagendar
+
+    return _reagendar(telefono_paciente)
+
+
+def guardar_prep_sesion(
+    telefono: str,
+    tema: str,
+    es_primera_sesion: str = "",
+    animo: int = 0,
+):
+    """Guarda respuestas de prep de sesión (24 h antes) para el terapeuta."""
+    from experiencia import guardar_prep_sesion as _guardar
+
+    return _guardar(telefono, tema, es_primera_sesion, animo)
+
+
+def guardar_nota_ritual_cierre(telefono: str, nota: str):
+    """Guarda reflexión privada post-sesión del paciente."""
+    from experiencia import guardar_nota_ritual_cierre as _guardar
+
+    return _guardar(telefono, nota)

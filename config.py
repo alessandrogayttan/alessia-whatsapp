@@ -208,6 +208,18 @@ PALABRAS_PRIVACIDAD = (
 
 ZONA_MEXICO = "America/Mexico_City"
 
+# Sesiones online (Tier 4.15) — link por defecto o por terapeuta
+LINK_SESION_ONLINE_DEFAULT = os.getenv("LINK_SESION_ONLINE", "")
+_links_online_raw = os.getenv("LINKS_ONLINE_TERAPEUTAS_JSON", "").strip()
+LINKS_ONLINE_TERAPEUTAS: dict[str, str] = {}
+if _links_online_raw:
+    try:
+        LINKS_ONLINE_TERAPEUTAS = {
+            k.lower(): v for k, v in json.loads(_links_online_raw).items() if v
+        }
+    except json.JSONDecodeError:
+        pass
+
 
 def validar_config_minima():
     """Siempre valida lo mínimo para atender mensajes (local y producción)."""

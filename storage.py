@@ -14,6 +14,16 @@ def _connect():
     return conn
 
 
+def ping_db() -> bool:
+    """Verifica que la base SQLite responde."""
+    try:
+        with _transaction() as conn:
+            conn.execute("SELECT 1")
+        return True
+    except sqlite3.Error:
+        return False
+
+
 def init_db():
     with _lock:
         conn = _connect()

@@ -1,5 +1,7 @@
 import logging
 import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 
 from google import genai
 from google.genai import types
@@ -10,10 +12,11 @@ from terapeutas import (
     terapeuta_actualizar_taller,
     terapeuta_asignar_tarea,
     terapeuta_bloquear_horario,
-    terapeuta_consultar_agenda,
+    terapeuta_consultar_disponibilidad,
     terapeuta_desactivar,
     terapeuta_mi_catalogo,
     terapeuta_publicar_taller,
+    terapeuta_ver_citas_agendadas,
     terapeuta_ver_inscritos,
 )
 from tools import (
@@ -157,13 +160,20 @@ REGLAS MODO STAFF:
 3. Ayúdale a gestionar su catálogo en Google Sheets SIN que entre a Drive.
 4. Confirma siempre con un resumen claro lo que quedó publicado o cambiado.
 5. Respuestas breves y prácticas.
+6. FECHAS: En cada mensaje recibes el calendario de México. Si dice "el lunes", usa 'validar_fecha_cita' para la fecha exacta antes de consultar.
+7. CITAS vs DISPONIBILIDAD (REGLA CRÍTICA):
+   - "¿Tengo citas?", "¿quién tengo?", "¿pacientes agendados?" → 'ver_mis_citas_agendadas'
+   - "¿Qué horarios libres?", "¿disponibilidad?" → 'consultar_mi_disponibilidad'
+   - NUNCA confundas horarios libres con citas agendadas.
 
 QUÉ PUEDE HACER {nombre_terapeuta.upper()} POR WHATSAPP:
 - *Ver catálogo:* "¿Qué tengo publicado?" → mi_catalogo
 - *Publicar taller:* datos completos → publicar_taller
 - *Editar taller:* fechas, horario, temario, cupo → actualizar_taller (NO precios de consultas — eso es administración)
 - *Quitar taller:* → desactivar_catalogo
-- *Ver agenda:* fecha YYYY-MM-DD → consultar_mi_agenda
+- *Ver MIS CITAS con pacientes:* fecha YYYY-MM-DD → ver_mis_citas_agendadas
+- *Ver horarios LIBRES:* fecha YYYY-MM-DD → consultar_mi_disponibilidad
+- *Validar fecha:* "¿qué día es el lunes?" → validar_fecha_cita
 - *Bloquear horario:* "Bloquea viernes 2-7pm" → bloquear_horario
 - *Ver inscritos:* "¿Quién se inscribió a [taller]?" → ver_inscritos_taller
 - *Asignar tarea:* teléfono paciente + descripción + días → asignar_tarea
@@ -210,9 +220,17 @@ def _crear_herramientas_terapeuta(telefono: str):
         """Oculta un taller del catálogo."""
         return terapeuta_desactivar(telefono, nombre)
 
-    def consultar_mi_agenda(fecha: str):
-        """Consulta la agenda del terapeuta (YYYY-MM-DD)."""
-        return terapeuta_consultar_agenda(telefono, fecha)
+    def consultar_mi_disponibilidad(fecha: str):
+        """Horarios LIBRES para agendar (huecos vacíos). NO son citas con pacientes."""
+        return terapeuta_consultar_disponibilidad(telefono, fecha)
+
+    def ver_mis_citas_agendadas(fecha: str):
+        """Citas YA AGENDADAS con pacientes en una fecha (YYYY-MM-DD). Usar cuando pregunte si tiene citas."""
+        return terapeuta_ver_citas_agendadas(telefono, fecha)
+
+    def validar_fecha_staff(fecha: str):
+        """Devuelve qué día de la semana es una fecha YYYY-MM-DD."""
+        return validar_fecha_cita(fecha)
 
     def bloquear_horario(fecha_hora_inicio: str, fecha_hora_fin: str, motivo: str = "No disponible"):
         """Bloquea un rango horario en Google Calendar."""
@@ -235,7 +253,9 @@ def _crear_herramientas_terapeuta(telefono: str):
         publicar_taller,
         actualizar_taller,
         desactivar_catalogo,
-        consultar_mi_agenda,
+        ver_mis_citas_agendadas,
+        consultar_mi_disponibilidad,
+        validar_fecha_staff,
         bloquear_horario,
         ver_inscritos_taller,
         asignar_tarea,
@@ -297,10 +317,24 @@ def obtener_chat_paciente(numero_telefono: str):
     return memoria_pacientes[numero_telefono]
 
 
+def _gemini_send_message(chat, contenido, timeout: int = 90):
+    """Llama a Gemini con timeout para evitar hilos colgados sin respuesta."""
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(chat.send_message, contenido)
+        return future.result(timeout=timeout)
+
+
+MENSAJE_RESCATE = (
+    "Perdóname, tuve un pequeño tropiezo técnico 🙈 "
+    "¿Me repites tu mensaje? Estoy aquí contigo."
+)
+
+
 def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
     if numero_paciente not in cerrojos_pacientes:
         cerrojos_pacientes[numero_paciente] = threading.Lock()
 
+    enviado = False
     with cerrojos_pacientes[numero_paciente]:
         try:
             chat_alessia = obtener_chat_paciente(numero_paciente)
@@ -310,12 +344,43 @@ def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
                     f"[Sistema: MODO STAFF — Terapeuta autenticado: {nombre_terapeuta}]\n"
                     + contenido_para_ia
                 )
-            respuesta_ia = chat_alessia.send_message(contenido_para_ia)
-            enviar_mensaje_whatsapp(numero_paciente, respuesta_ia.text)
+
+            for intento in range(2):
+                try:
+                    respuesta_ia = _gemini_send_message(chat_alessia, contenido_para_ia)
+                    texto = (getattr(respuesta_ia, "text", None) or "").strip()
+                    if texto:
+                        enviar_mensaje_whatsapp(numero_paciente, texto)
+                        enviado = True
+                        break
+                    logger.warning(
+                        "Gemini respuesta vacía para %s (intento %s)",
+                        numero_paciente,
+                        intento + 1,
+                    )
+                except FuturesTimeout:
+                    logger.error(
+                        "Timeout Gemini para %s (intento %s)", numero_paciente, intento + 1
+                    )
+                    if intento == 0:
+                        time.sleep(2)
+                        continue
+                except Exception as e:
+                    logger.exception(
+                        "Error Gemini para %s (intento %s): %s",
+                        numero_paciente,
+                        intento + 1,
+                        e,
+                    )
+                    if intento == 0:
+                        time.sleep(2)
+                        continue
+                    break
         except Exception as e:
-            logger.exception("Error Gemini para %s: %s", numero_paciente, e)
-            mensaje_rescate = (
-                "Ay, perdóname, se me fue un poquito el internet y no me cargó bien "
-                "tu último mensaje 🙈 ¿Me lo podrías repetir por favor?"
-            )
-            enviar_mensaje_whatsapp(numero_paciente, mensaje_rescate)
+            logger.exception("Error fatal procesando mensaje de %s: %s", numero_paciente, e)
+        finally:
+            if not enviado:
+                for intento in range(3):
+                    if enviar_mensaje_whatsapp(numero_paciente, MENSAJE_RESCATE):
+                        break
+                    time.sleep(2)

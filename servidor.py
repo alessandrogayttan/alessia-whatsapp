@@ -33,6 +33,7 @@ from jobs import (
 )
 from whatsapp import (
     descargar_media_whatsapp,
+    enviar_ack_inmediato,
     enviar_mensaje_whatsapp,
     marcar_leido_y_escribiendo,
     verificar_firma_webhook,
@@ -78,6 +79,44 @@ def health():
     return {"status": "ok", "service": "alessia"}, 200
 
 
+@app.route("/health/ready", methods=["GET"])
+def health_ready():
+    """Readiness: falla si faltan piezas críticas para atender WhatsApp."""
+    from pathlib import Path
+
+    bloqueantes = []
+    if not config.TOKEN_WHATSAPP:
+        bloqueantes.append("TOKEN_WHATSAPP")
+    if not config.GEMINI_API_KEY:
+        bloqueantes.append("GEMINI_API_KEY")
+    if not config.ID_TELEFONO:
+        bloqueantes.append("ID_TELEFONO")
+    google_ok = bool(config.GOOGLE_SERVICE_ACCOUNT_JSON) or Path(
+        config.SERVICE_ACCOUNT_FILE
+    ).is_file()
+    if not google_ok:
+        bloqueantes.append("GOOGLE_CREDENTIALS")
+
+    db_ok = True
+    try:
+        Path(config.DATABASE_PATH).parent.mkdir(parents=True, exist_ok=True)
+        storage.init_db()
+        if not storage.ping_db():
+            raise RuntimeError("ping falló")
+    except Exception as e:
+        db_ok = False
+        bloqueantes.append(f"DATABASE ({e})")
+
+    listo = not bloqueantes and db_ok
+    payload = {
+        "ready": listo,
+        "scheduler": config.ENABLE_SCHEDULER and _scheduler_iniciado,
+        "bloqueantes": bloqueantes,
+        "advertencias": config.advertencias_lanzamiento(),
+    }
+    return payload, 200 if listo else 503
+
+
 @app.route("/health/config", methods=["GET"])
 def health_config():
     """Muestra qué variables tiene el servidor (sin revelar valores)."""
@@ -99,12 +138,15 @@ def health_config():
         "ID_HOJA_CALCULO": bool(config.ID_HOJA_CALCULO),
         "GOOGLE_CREDENTIALS": google_ok,
         "FLASK_ENV": config.FLASK_ENV,
+        "ENABLE_SCHEDULER": config.ENABLE_SCHEDULER,
+        "ENABLE_LAUNCH_ACK": config.ENABLE_LAUNCH_ACK,
     }
     faltantes = [k for k, v in checks.items() if k != "FLASK_ENV" and not v]
     return {
         "checks": checks,
         "listo_para_whatsapp": len(faltantes) == 0,
         "faltantes": faltantes,
+        "advertencias": config.advertencias_lanzamiento(),
     }, 200
 
 
@@ -142,12 +184,14 @@ def webhook():
 
         numero_remitente = mensaje_info["from"]
         marcar_leido_y_escribiendo(mensaje_id)
+        enviar_ack_inmediato(numero_remitente)
         contenido_con_citas = envolver_mensaje_con_contexto_paciente(
             numero_remitente, contenido_para_ia
         )
         threading.Thread(
             target=procesar_mensaje_ia,
             args=(numero_remitente, contenido_con_citas),
+            daemon=True,
         ).start()
 
     return "OK", 200

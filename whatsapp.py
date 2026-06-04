@@ -57,23 +57,53 @@ def _partir_mensaje(texto: str, max_len: int | None = None) -> list[str]:
     return partes
 
 
-def _enviar_payload(telefono_destino: str, payload: dict) -> bool:
+def _enviar_payload(telefono_destino: str, payload: dict, max_intentos: int | None = None) -> bool:
     telefono_destino = normalizar_telefono(telefono_destino)
+    if not config.TOKEN_WHATSAPP or not config.ID_TELEFONO:
+        logger.error("TOKEN_WHATSAPP o ID_TELEFONO no configurados")
+        return False
+
+    intentos = max_intentos or config.WHATSAPP_SEND_RETRIES
     url = f"https://graph.facebook.com/v19.0/{config.ID_TELEFONO}/messages"
     headers = {
         "Authorization": f"Bearer {config.TOKEN_WHATSAPP}",
         "Content-Type": "application/json",
     }
-    payload = {**payload, "messaging_product": "whatsapp", "to": telefono_destino}
-    try:
-        res = requests.post(url, headers=headers, data=json.dumps(payload), timeout=30)
-        if res.status_code != 200:
-            logger.error("WhatsApp API error %s: %s", res.status_code, res.text)
-            return False
-        return True
-    except requests.RequestException as e:
-        logger.error("Error enviando mensaje WhatsApp: %s", e)
+    body = {**payload, "messaging_product": "whatsapp", "to": telefono_destino}
+
+    for intento in range(1, intentos + 1):
+        try:
+            res = requests.post(url, headers=headers, data=json.dumps(body), timeout=30)
+            if res.status_code == 200:
+                return True
+            logger.error(
+                "WhatsApp API error %s (intento %s/%s): %s",
+                res.status_code,
+                intento,
+                intentos,
+                res.text[:500],
+            )
+        except requests.RequestException as e:
+            logger.error(
+                "Error enviando mensaje WhatsApp (intento %s/%s): %s",
+                intento,
+                intentos,
+                e,
+            )
+        if intento < intentos:
+            time.sleep(min(2 ** intento, 8))
+    return False
+
+
+def enviar_ack_inmediato(telefono: str) -> bool:
+    """Confirma recepción mientras la IA procesa (reduce percepción de silencio)."""
+    if not config.ENABLE_LAUNCH_ACK:
         return False
+    if config.identificar_terapeuta(telefono):
+        texto = config.MENSAJE_ACK_STAFF
+    else:
+        texto = config.MENSAJE_ACK_PACIENTE
+    return enviar_mensaje_whatsapp(telefono, texto)
 
 
 def marcar_leido_y_escribiendo(message_id: str) -> bool:

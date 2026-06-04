@@ -10,7 +10,7 @@ from catalogo import (
     listar_catalogo_terapeuta,
 )
 from google_client import get_sheets_service
-from tools import bloquear_horario_calendario, consultar_agenda
+from tools import bloquear_horario_calendario, consultar_agenda, listar_citas_agendadas_dia
 
 logger = logging.getLogger(__name__)
 
@@ -98,9 +98,20 @@ def terapeuta_desactivar(telefono: str, nombre: str):
     return f"ÉXITO: {msg}" if ok else f"ERROR: {msg}"
 
 
-def terapeuta_consultar_agenda(telefono: str, fecha: str):
-    """Consulta agenda del terapeuta (YYYY-MM-DD)."""
+def terapeuta_consultar_disponibilidad(telefono: str, fecha: str):
+    """Horarios LIBRES (huecos para agendar) — NO son citas con pacientes."""
     return consultar_agenda(fecha, _solo_terapeuta(telefono))
+
+
+def terapeuta_ver_citas_agendadas(telefono: str, fecha: str):
+    """Citas YA AGENDADAS con pacientes en una fecha (YYYY-MM-DD)."""
+    nombre = _solo_terapeuta(telefono)
+    return listar_citas_agendadas_dia(nombre, fecha)
+
+
+def terapeuta_consultar_agenda(telefono: str, fecha: str):
+    """Alias legacy — preferir terapeuta_ver_citas_agendadas o terapeuta_consultar_disponibilidad."""
+    return terapeuta_ver_citas_agendadas(telefono, fecha)
 
 
 def terapeuta_bloquear_horario(

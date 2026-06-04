@@ -81,11 +81,16 @@ gunicorn --bind 0.0.0.0:5000 --workers 2 --timeout 120 wsgi:app
 - `ELIMINAR DATOS` — borra datos locales del paciente
 - `HABLAR CON PERSONA` — escala a recepción
 
+## Lanzamiento en producción
+
+Guía paso a paso (Meta, DigitalOcean, pruebas): **[LAUNCH_PASOS.md](LAUNCH_PASOS.md)**
+
+Endpoints de salud:
+
+- `GET /health` — vivo
+- `GET /health/ready` — listo para WhatsApp (503 si falta algo crítico)
+- `GET /health/config?secret=...` — diagnóstico de variables (producción)
+
 ## Checklist antes del lanzamiento
 
-- [ ] Tokens rotados y guardados solo en `.env`
-- [ ] `FLASK_ENV=production` con todas las variables requeridas
-- [ ] HTTPS activo en el webhook
-- [ ] Plantillas de WhatsApp aprobadas para mensajes proactivos (recordatorios)
-- [ ] `API_KEY_MAPS` configurada (opcional, para alertas de tráfico)
-- [ ] Probar agendar, cancelar y recordatorios en entorno de prueba
+Ver **[LAUNCH_PASOS.md](LAUNCH_PASOS.md)** (lista completa).

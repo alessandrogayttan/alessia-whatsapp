@@ -39,6 +39,18 @@ PORT = int(os.getenv("PORT", "5000"))
 # Scheduler: solo un worker/proceso debe ejecutar tareas en segundo plano
 ENABLE_SCHEDULER = os.getenv("ENABLE_SCHEDULER", "1").strip().lower() in ("1", "true", "yes")
 
+# Ack inmediato al recibir mensaje (evita silencio mientras Gemini procesa)
+ENABLE_LAUNCH_ACK = os.getenv("ENABLE_LAUNCH_ACK", "1").strip().lower() in ("1", "true", "yes")
+MENSAJE_ACK_PACIENTE = os.getenv(
+    "MENSAJE_ACK_PACIENTE",
+    "Dame un momentito, ya te leo 😊",
+)
+MENSAJE_ACK_STAFF = os.getenv(
+    "MENSAJE_ACK_STAFF",
+    "Un momento, ya reviso eso.",
+)
+WHATSAPP_SEND_RETRIES = int(os.getenv("WHATSAPP_SEND_RETRIES", "3"))
+
 # WhatsApp — plantillas Meta (fuera de ventana 24 h). Déjalas vacías hasta aprobarlas en Meta.
 WHATSAPP_TEMPLATE_24H = os.getenv("WHATSAPP_TEMPLATE_24H", "")
 WHATSAPP_TEMPLATE_2H = os.getenv("WHATSAPP_TEMPLATE_2H", "")
@@ -240,12 +252,45 @@ def validar_config_minima():
         )
 
 
+def advertencias_lanzamiento() -> list[str]:
+    """Avisos no bloqueantes antes del go-live."""
+    avisos = []
+    if not WHATSAPP_APP_SECRET:
+        avisos.append(
+            "WHATSAPP_APP_SECRET vacío: el webhook no valida firmas (riesgo de seguridad)."
+        )
+    if not WHATSAPP_TEMPLATE_24H:
+        avisos.append(
+            "WHATSAPP_TEMPLATE_24H vacío: recordatorios 24h pueden fallar fuera de ventana Meta."
+        )
+    if not WHATSAPP_TEMPLATE_2H:
+        avisos.append(
+            "WHATSAPP_TEMPLATE_2H vacío: recordatorios 2h pueden fallar fuera de ventana Meta."
+        )
+    if not RECEPCION_WHATSAPP:
+        avisos.append("RECEPCION_WHATSAPP vacío: escalaciones HABLAR CON PERSONA sin destino.")
+    if not API_KEY_MAPS:
+        avisos.append("API_KEY_MAPS vacío: sin ETA/tráfico en recordatorios.")
+    if not LINK_SESION_ONLINE_DEFAULT and not LINKS_ONLINE_TERAPEUTAS:
+        avisos.append("LINK_SESION_ONLINE vacío: sesiones online sin link automático.")
+    terapeutas_sin_numero = [
+        k for k, v in TERAPEUTAS_WHATSAPP.items()
+        if k in ("juan", "patricia", "ivan", "nutricion", "sara") and not v
+    ]
+    if terapeutas_sin_numero:
+        avisos.append(
+            f"WhatsApp de terapeutas sin configurar: {', '.join(terapeutas_sin_numero)}"
+        )
+    return avisos
+
+
 def validar_config_produccion():
     """Validación extra en producción."""
     if not IS_PRODUCTION:
         return
     requeridas = {
         "WHATSAPP_VERIFY_TOKEN": WHATSAPP_VERIFY_TOKEN,
+        "WHATSAPP_APP_SECRET": WHATSAPP_APP_SECRET,
         "ID_HOJA_CALCULO": ID_HOJA_CALCULO,
     }
     faltantes = [k for k, v in requeridas.items() if not v]
@@ -253,3 +298,7 @@ def validar_config_produccion():
         raise RuntimeError(
             f"Variables de entorno faltantes en producción: {', '.join(faltantes)}"
         )
+    for aviso in advertencias_lanzamiento():
+        import logging
+
+        logging.getLogger(__name__).warning("Lanzamiento: %s", aviso)

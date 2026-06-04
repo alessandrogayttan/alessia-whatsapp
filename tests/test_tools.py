@@ -76,3 +76,31 @@ def test_identificar_terapeuta_sara():
 
     assert identificar_terapeuta("523310265936") == "Sara Rosales"
     assert identificar_terapeuta("5213310265936") == "Sara Rosales"
+
+
+def test_es_evento_bloqueo():
+    from tools import _es_evento_bloqueo
+
+    assert _es_evento_bloqueo({"summary": "BLOQUEADO — Vacaciones", "start": {"dateTime": "x"}})
+    assert _es_evento_bloqueo({"summary": "Paciente", "start": {"date": "2026-06-01"}})
+    assert not _es_evento_bloqueo(
+        {
+            "summary": "DIEGO",
+            "description": "Cita de Consulta. Teléfono: 523326505999",
+            "start": {"dateTime": "2026-06-01T09:00:00-06:00"},
+        }
+    )
+
+
+def test_formatear_evento_cita():
+    from tools import _formatear_evento_cita
+
+    evento = {
+        "summary": "MARÍA LÓPEZ",
+        "description": "Cita de Terapia con Sara Rosales. Teléfono: 523311122233",
+        "start": {"dateTime": "2026-06-01T10:00:00-06:00"},
+    }
+    texto = _formatear_evento_cita(evento)
+    assert "10:00" in texto
+    assert "MARÍA LÓPEZ" in texto
+    assert "523311122233" in texto

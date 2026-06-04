@@ -20,6 +20,10 @@ def db_temp(monkeypatch):
         pass
 
 
+def test_ping_db(db_temp):
+    assert storage.ping_db() is True
+
+
 def test_reservar_mensaje_deduplica(db_temp):
     assert storage.reservar_mensaje_para_procesar("msg-001") is True
     assert storage.reservar_mensaje_para_procesar("msg-001") is False

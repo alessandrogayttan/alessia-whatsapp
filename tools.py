@@ -513,6 +513,72 @@ def consultar_agenda(fecha: str, especialista: str):
     )
 
 
+def _es_evento_bloqueo(event: dict) -> bool:
+    summary = (event.get("summary") or "").upper()
+    if summary.startswith("BLOQUEADO"):
+        return True
+    if event.get("start", {}).get("date") and not event.get("start", {}).get("dateTime"):
+        return True
+    return False
+
+
+def _formatear_evento_cita(event: dict) -> str:
+    start_str = event["start"].get("dateTime") or event["start"].get("date", "")
+    if "T" in start_str:
+        hora = (
+            datetime.datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+            .astimezone(ZONA)
+            .strftime("%H:%M")
+        )
+    else:
+        hora = "Todo el día"
+
+    paciente = event.get("summary", "Sin nombre").strip()
+    desc = event.get("description", "")
+    servicio = _parsear_servicio_descripcion(desc) if desc else "Consulta"
+    phone_match = re.search(r"Teléfono:\s*(\+?\d+)", desc)
+    tel = phone_match.group(1) if phone_match else "sin teléfono"
+    return f"{hora} — {paciente} ({servicio}) — Tel: {tel}"
+
+
+def listar_citas_agendadas_dia(especialista: str, fecha: str) -> str:
+    """
+    Lista las citas YA AGENDADAS (pacientes confirmados) de un terapeuta en una fecha.
+    NO confundir con horarios disponibles — usar consultar_agenda para huecos libres.
+    """
+    nombre_clave = _resolver_especialista(especialista)
+    if not nombre_clave:
+        return f"No tengo calendario de {especialista}."
+
+    try:
+        datetime.datetime.strptime(fecha.strip()[:10], "%Y-%m-%d")
+    except ValueError:
+        return "ERROR: La fecha debe ser YYYY-MM-DD."
+
+    fecha = fecha.strip()[:10]
+    calendar_id = config.DIRECTORIO_CALENDARIOS[nombre_clave]
+    events = _obtener_eventos_dia(calendar_id, fecha)
+    citas = [e for e in events if not _es_evento_bloqueo(e)]
+
+    display = NOMBRES_TERAPEUTAS.get(nombre_clave, especialista.title())
+    dia_txt = validar_fecha_cita(fecha)
+
+    if not citas:
+        return (
+            f"CITAS AGENDADAS de {display} el {fecha} ({dia_txt}): "
+            f"NINGUNA — no tienes pacientes agendados ese día."
+        )
+
+    lineas = [f"CITAS AGENDADAS de {display} el {fecha} ({dia_txt}):"]
+    for event in citas:
+        lineas.append(f"- {_formatear_evento_cita(event)}")
+    lineas.append(
+        f"Total: {len(citas)} cita(s). INSTRUCCIÓN: Esto son citas confirmadas, "
+        "NO horarios libres."
+    )
+    return "\n".join(lineas)
+
+
 def _normalizar_telefono_digitos(telefono: str) -> str:
     target_digits = re.sub(r"\D", "", telefono)
     if target_digits.startswith("521") and len(target_digits) == 13:
@@ -671,10 +737,20 @@ def obtener_contexto_citas_paciente(telefono: str) -> str:
 
 
 def envolver_mensaje_con_contexto_paciente(telefono: str, contenido):
-    """Anteponer contexto de fecha y citas al mensaje que recibe la IA."""
+    """Anteponer contexto de fecha (y citas del paciente si no es staff)."""
     from google.genai import types
 
-    ctx = obtener_contexto_fecha_actual() + obtener_contexto_citas_paciente(telefono)
+    ctx = obtener_contexto_fecha_actual()
+    if config.identificar_terapeuta(telefono):
+        ctx += (
+            "[Sistema: MODO STAFF — El remitente es terapeuta.\n"
+            "- Si pregunta por *sus citas* / *quién tiene* / *pacientes agendados*: "
+            "usa ver_mis_citas_agendadas (NO consultar_mi_disponibilidad).\n"
+            "- consultar_mi_disponibilidad es SOLO para huecos LIBRES para agendar.\n"
+            "- Usa validar_fecha_cita para saber qué fecha es 'el lunes' u otro día.]\n"
+        )
+    else:
+        ctx += obtener_contexto_citas_paciente(telefono)
     if isinstance(contenido, str):
         return ctx + contenido
     if isinstance(contenido, list):

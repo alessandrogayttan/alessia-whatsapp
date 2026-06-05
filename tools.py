@@ -72,6 +72,18 @@ def _construir_enlace_google_calendar(
     )
 
 
+def _texto_recomendaciones_online(especialista_texto: str) -> str:
+    return (
+        f"\n\n💻 *Recomendaciones para tu sesión en línea*\n"
+        f"• Busca un lugar tranquilo y privado, con buena conexión 📶\n"
+        f"• Audífonos ayudan mucho para escuchar y hablar con calma 🎧\n"
+        f"• Ten agua cerca y silencia notificaciones que te distraigan\n"
+        f"• Conéctate 5 minutos antes de tu hora\n"
+        f"• *{especialista_texto}* te contactará *el día de tu cita* por aquí "
+        f"con el link de Zoom para que te conectes ✨"
+    )
+
+
 def _texto_pago_online() -> str:
     banorte = config.CUENTAS_OFICIALES["BANORTE"]
     banamex = config.CUENTAS_OFICIALES["BANAMEX"]
@@ -102,9 +114,9 @@ def _formatear_confirmacion_cita(
             f"💻 Sesión *en línea*\n"
             f"📅 {fecha_txt}, {hora}\n"
             f"👩‍⚕️ {especialista_texto}\n"
-            f"🩺 {servicio}\n"
-            f"💡 Conéctate 5 minutos antes — te enviaremos el link por aquí ✨"
+            f"🩺 {servicio}"
         )
+        cuerpo += _texto_recomendaciones_online(especialista_texto)
         cuerpo += _texto_pago_online()
     else:
         cuerpo = (
@@ -860,6 +872,7 @@ def agendar_cita(
     especialista: str,
     telefono_paciente: str = "",
 ):
+    """Agenda cita. Para sesiones en línea, servicio debe incluir 'online' (ej. 'Consulta online')."""
     nombre_clave = _resolver_especialista(especialista)
     if not nombre_clave:
         return "ERROR CRITICO: Especialista no encontrado."

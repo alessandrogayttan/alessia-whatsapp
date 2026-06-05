@@ -147,6 +147,9 @@ def test_formatear_confirmacion_cita_online_incluye_pago():
     assert "totalidad" in bloque.lower()
     assert "tarjeta" in bloque.lower()
     assert "botón" in bloque.lower()
+    assert "zoom" in bloque.lower()
+    assert "día de tu cita" in bloque.lower()
+    assert "audífonos" in bloque.lower()
 
 
 def test_formatear_evento_cita():

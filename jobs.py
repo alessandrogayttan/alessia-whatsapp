@@ -258,19 +258,17 @@ def _enviar_link_online(event, telefono: str, hora_cita, cal_id: str, event_id: 
     """Tier 4.15: envía link de videollamada 5 min antes si la cita es online."""
     if storage.recordatorio_ya_enviado(event_id, "online5m"):
         return
-    from experiencia import es_cita_online, link_sesion_online
+    from experiencia import es_cita_online
 
     if not es_cita_online(event):
         return
     esp = _especialista_desde_calendario(cal_id)
-    link = link_sesion_online(esp)
-    if not link:
-        return
+    nombre_esp = esp.title() if esp else "Tu terapeuta"
     msg = (
-        f"💻 *Tu sesión online empieza pronto*\n\n"
+        f"💻 *Tu sesión online es hoy*\n\n"
         f"Tu cita es a las {hora_cita.strftime('%H:%M')}.\n"
-        f"Únete aquí:\n{link}\n\n"
-        f"Busca un lugar tranquilo y con buena conexión. Te esperamos ✨"
+        f"*{nombre_esp}* te contactará por aquí con el link de Zoom para conectarte ✨\n\n"
+        f"Lugar tranquilo, buena conexión y audífonos si puedes 🎧"
     )
     if enviar_mensaje_whatsapp(telefono, msg):
         storage.marcar_recordatorio_enviado(event_id, "online5m")

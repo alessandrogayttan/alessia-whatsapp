@@ -1,0 +1,17 @@
+﻿scripts: 6
+
+=== SCRIPT 4 (31358 chars) ===
+python : Traceback (most recent call last):
+En C:\Users\aless\AppData\Local\Temp\ps-script-e5a521f2-3f86-4f4f-b8a4-718e6da9762b.ps1: 77 Carácter: 47
++ ... Desktop\ALESSIA"; python scripts/extraer_talleres_web.py 2>&1 | Out-F ...
++                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "C:\Users\aless\OneDrive\Desktop\ALESSIA\scripts\extraer_talleres_web.py", line 17, in <module>
+    print(s[:8000])
+    ~~~~~^^^^^^^^^^
+  File "C:\Users\aless\AppData\Local\Python\pythoncore-3.14-64\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\U0001f4f2' in position 1034: character maps to <undefined>

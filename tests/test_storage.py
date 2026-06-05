@@ -36,6 +36,23 @@ def test_resetear_menciones_proactivas(db_temp):
     assert not storage.ya_menciono_cita_proactiva("523326505999", "2026-06-01_10:00_Sara")
 
 
+def test_interes_talleres_y_notificacion(db_temp):
+    storage.registrar_interes_taller(
+        "523326505999", "Sara Rosales", "Taller ansiedad", "María"
+    )
+    lista = storage.listar_interes_talleres("Sara")
+    assert len(lista) == 1
+    assert lista[0]["telefono"] == "523326505999"
+
+    clave = "sara rosales|nuevo taller|junio"
+    assert not storage.notificacion_nuevo_taller_enviada("523326505999", clave)
+    storage.marcar_notificacion_nuevo_taller("523326505999", clave)
+    assert storage.notificacion_nuevo_taller_enviada("523326505999", clave)
+
+    storage.marcar_taller_catalogo_visto(clave)
+    assert storage.taller_catalogo_ya_visto(clave)
+
+
 def test_obtener_nombre_paciente(db_temp):
     storage.guardar_nombre_paciente("523326505999", "María")
     assert storage.obtener_nombre_paciente("523326505999") == "María"

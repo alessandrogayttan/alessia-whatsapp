@@ -473,11 +473,30 @@ def slot_disponible(fecha_hora: datetime.datetime, nombre_clave: str) -> bool:
 
 
 def consultar_precios_y_servicios(especialista: str = "todos"):
-    """Consulta precios: primero Google Sheets (Drive), luego precios.json local."""
+    """Consulta precios: Drive + inpulso43.com, catálogo web o precios.json local."""
     from catalogo import _leer_filas_catalogo
 
     if _leer_filas_catalogo():
         return consultar_catalogo_drive(especialista)
+
+    from catalogo_web import contexto_web_para_ia, filas_catalogo_dict
+
+    filas = filas_catalogo_dict()
+    if filas:
+        instruccion = (
+            f"INSTRUCCIÓN PARA LA IA: {contexto_web_para_ia()} "
+            "Todas las consultas y talleres (excepto mentoras) son presencial Y online."
+        )
+        esp_lower = especialista.lower()
+        if esp_lower != "todos":
+            filtradas = [
+                f
+                for f in filas
+                if esp_lower in f["terapeuta"].lower() or esp_lower in f["nombre"].lower()
+            ]
+            if filtradas:
+                return instruccion + " Catálogo: " + json.dumps(filtradas, ensure_ascii=False)
+        return instruccion + " Catálogo: " + json.dumps(filas, ensure_ascii=False)
 
     try:
         with open(PRECIOS_PATH, "r", encoding="utf-8") as f:
@@ -1464,3 +1483,19 @@ def guardar_nota_ritual_cierre(telefono: str, nota: str):
     from experiencia import guardar_nota_ritual_cierre as _guardar
 
     return _guardar(telefono, nota)
+
+
+def registrar_interes_taller(
+    telefono: str,
+    terapeuta: str,
+    taller_nombre: str = "",
+):
+    """Registra interés para avisar cuando ese terapeuta publique un nuevo taller."""
+    nombre = storage.obtener_nombre_paciente(telefono) or ""
+    storage.registrar_interes_taller(telefono, terapeuta, taller_nombre, nombre)
+    return (
+        f"ÉXITO: Interés registrado para talleres de {terapeuta}. "
+        f"INSTRUCCIÓN PARA LA IA: Avisa al paciente con calidez y emojis que "
+        f"le escribiremos por aquí cuando {terapeuta} publique un nuevo taller "
+        f"similar. No prometas fechas exactas."
+    )

@@ -405,6 +405,16 @@ def experiencia_diaria_background():
         procesar_bienvenida_talleres()
 
 
+def detectar_nuevos_talleres_background():
+    """Notifica interesados cuando aparece un taller nuevo en el catálogo."""
+    from experiencia import procesar_nuevos_talleres_catalogo
+
+    try:
+        procesar_nuevos_talleres_catalogo()
+    except Exception as e:
+        logger.error("Error detectando nuevos talleres: %s", e)
+
+
 def verificar_lista_espera_background():
     if not config.ID_HOJA_CALCULO:
         return

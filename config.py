@@ -161,6 +161,7 @@ PALABRAS_ANSIEDAD = (
 HEALTH_CONFIG_SECRET = os.getenv("HEALTH_CONFIG_SECRET", "")
 
 # Clínica
+CLINICA_WEB_URL = os.getenv("CLINICA_WEB_URL", "https://inpulso43.com")
 CLINICA_DIRECCION = "Av. Hidalgo 533, República, 45146 Zapopan, Jal."
 CLINICA_MAPS_URL = "https://maps.google.com/?q=Av.+Hidalgo+533,+Zapopan,+Jalisco"
 WHATSAPP_MAX_CHARS = 4000

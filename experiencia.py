@@ -266,3 +266,91 @@ def procesar_recordatorios_tareas():
         )
         if enviar_mensaje_whatsapp(tarea["telefono"], msg):
             storage.marcar_tarea_enviada_hoy(tarea["id"], hoy.strftime("%Y-%m-%d"))
+
+
+def clave_taller(fila: dict) -> str:
+    return "|".join(
+        (
+            (fila.get("terapeuta") or "").strip().lower(),
+            (fila.get("nombre") or "").strip().lower(),
+            (fila.get("fechas") or "").strip().lower(),
+        )
+    )
+
+
+def _mensaje_nuevo_taller(telefono: str, fila: dict) -> str:
+    from catalogo import estado_taller
+
+    primero = storage.primer_nombre(telefono)
+    saludo = f"¡Hola {primero}!" if primero else "¡Hola!"
+    terapeuta = fila.get("terapeuta", "el equipo")
+    estado = estado_taller(fila.get("fechas", ""))
+    aviso = estado.get("aviso_estado", "")
+    aviso_txt = f"\n{aviso}\n" if aviso else "\n"
+    return (
+        f"✨ {saludo}\n\n"
+        f"Te escribo porque habías mostrado interés en los talleres de "
+        f"*{terapeuta}* 💙\n\n"
+        f"¡Acaban de publicar uno nuevo!\n\n"
+        f"🎓 *{fila.get('nombre', 'Taller')}*\n"
+        f"📅 {fila.get('fechas', '')}\n"
+        f"🕐 {fila.get('horario', '')}\n"
+        f"💰 {fila.get('precio', '')}\n"
+        f"📍 {fila.get('modalidad', '')}"
+        f"{aviso_txt}\n"
+        f"¿Te gustaría que te cuente más o te ayude a inscribirte? 😊"
+    )
+
+
+def notificar_interesados_nuevo_taller(fila: dict) -> int:
+    """Avisa por WhatsApp a pacientes con interés registrado del mismo terapeuta."""
+    from whatsapp import enviar_mensaje_whatsapp
+
+    if fila.get("tipo", "taller") != "taller":
+        return 0
+    terapeuta = fila.get("terapeuta", "")
+    if not terapeuta:
+        return 0
+    clave = clave_taller(fila)
+    interesados = storage.listar_interes_talleres(terapeuta)
+    enviados = 0
+    for persona in interesados:
+        telefono = persona["telefono"]
+        if storage.notificacion_nuevo_taller_enviada(telefono, clave):
+            continue
+        msg = _mensaje_nuevo_taller(telefono, fila)
+        if enviar_mensaje_whatsapp(telefono, msg):
+            storage.marcar_notificacion_nuevo_taller(telefono, clave)
+            enviados += 1
+    return enviados
+
+
+def procesar_nuevos_talleres_catalogo():
+    """
+    Detecta talleres nuevos en el catálogo (p. ej. agregados directo en Sheets)
+    y notifica a quienes registraron interés.
+    """
+    from catalogo import _leer_filas_catalogo
+
+    filas = [f for f in _leer_filas_catalogo() if f.get("tipo") == "taller"]
+    if not filas:
+        return
+
+    if storage.contar_talleres_catalogo_vistos() == 0:
+        for fila in filas:
+            storage.marcar_taller_catalogo_visto(clave_taller(fila))
+        logger.info("Catálogo de talleres inicializado (%s entradas).", len(filas))
+        return
+
+    for fila in filas:
+        clave = clave_taller(fila)
+        if storage.taller_catalogo_ya_visto(clave):
+            continue
+        storage.marcar_taller_catalogo_visto(clave)
+        n = notificar_interesados_nuevo_taller(fila)
+        if n:
+            logger.info(
+                "Nuevo taller '%s': notificados %s interesados.",
+                fila.get("nombre"),
+                n,
+            )

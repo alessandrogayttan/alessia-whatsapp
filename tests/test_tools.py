@@ -152,6 +152,35 @@ def test_formatear_confirmacion_cita_online_incluye_pago():
     assert "audífonos" in bloque.lower()
 
 
+def test_normalizar_modalidad_presencial_y_online():
+    from catalogo import _normalizar_modalidad_fila
+
+    fila = _normalizar_modalidad_fila(
+        {"terapeuta": "Sara Rosales", "tipo": "servicio", "nombre": "Terapia individual", "modalidad": "Presencial"}
+    )
+    assert "online" in fila["modalidad"].lower()
+
+    mentora = _normalizar_modalidad_fila(
+        {"terapeuta": "Mentoras", "tipo": "servicio", "nombre": "Sesión", "modalidad": "Presencial"}
+    )
+    assert "únicamente" in mentora["modalidad"].lower() or "unicamente" in mentora["modalidad"].lower()
+
+
+def test_catalogo_web_talleres_completos():
+    from catalogo_web import PAGINAS_SITIO, TALLERES_WEB, filas_catalogo_dict
+
+    assert "talleres.php" in PAGINAS_SITIO["talleres"]
+    assert len(TALLERES_WEB) == 4
+    filas = filas_catalogo_dict()
+    talleres = [f for f in filas if f["tipo"] == "taller"]
+    assert len(talleres) == 4
+    nombres = " ".join(t["nombre"].lower() for t in talleres)
+    assert "ansiedad" in nombres
+    assert "principito" in nombres or "capítulos" in nombres or "capitulos" in nombres
+    assert "alianza" in nombres
+    assert "sexualidad" in nombres or "tabúes" in nombres or "tabues" in nombres
+
+
 def test_formatear_evento_cita():
     from tools import _formatear_evento_cita
 

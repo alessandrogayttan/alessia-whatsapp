@@ -28,6 +28,7 @@ from jobs import (
     reporte_semanal_background,
     seguimiento_post_cita_background,
     trivia_semanal_background,
+    detectar_nuevos_talleres_background,
     verificar_lista_espera_background,
     experiencia_diaria_background,
 )
@@ -62,6 +63,7 @@ def _iniciar_scheduler():
     scheduler.add_job(alertas_citas_background, "interval", minutes=15)
     scheduler.add_job(seguimiento_post_cita_background, "interval", minutes=30)
     scheduler.add_job(verificar_lista_espera_background, "interval", minutes=15)
+    scheduler.add_job(detectar_nuevos_talleres_background, "interval", minutes=10)
     scheduler.add_job(limpiar_inscripciones_pendientes_background, "interval", minutes=60)
     scheduler.add_job(frase_del_dia_background, "interval", minutes=15)
     scheduler.add_job(trivia_semanal_background, "interval", minutes=15)

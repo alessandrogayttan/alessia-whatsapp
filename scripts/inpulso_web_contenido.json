@@ -1,0 +1,359 @@
+{
+  "index.php": {
+    "url": "https://inpulso43.com/index.php",
+    "status": 200,
+    "title": "Inpulso 43 | Tu Mejor Versión",
+    "h1": [
+      "Un refugio<br>para tu mente."
+    ],
+    "h2": [
+      "Especialidades",
+      "No tratamos síntomas.<br>Tratamos a la persona completa.",
+      "El resultado de tu proceso",
+      "La base de Inpulso 43",
+      "<span class=\"mitty-char\">V</span><span class=\"mitty-char\">I</span><span class=\"mitty-char\">D</span><span class=\"mitty-char\">A</span>",
+      "Centro de Desarrollo Humano y Empresarial"
+    ],
+    "h3": [
+      "El cuerpo que aprendió a sobrevivir",
+      "Psicología",
+      "Nutrición",
+      "Talleres",
+      "Medicina",
+      "Escuchar para entender.",
+      "Crecimiento en Comunidad.",
+      "Claridad Mental"
+    ],
+    "h4": [
+      "Contacto",
+      "Síguenos"
+    ],
+    "precios": [
+      "$400 MXN"
+    ],
+    "fechas": [
+      "Lunes 1 de Junio · 6:00 PM</span>\n                <span>💳 $400 MXN · Cupos Limitados<"
+    ],
+    "listas": [
+      "Origen profundo y por qué sigue regresando.",
+      "Herramientas reales de regulación emocional.",
+      "<a href=\"https://www.instagram.com/inpulso43/\" target=\"_blank\">Instagram</a>",
+      "<a href=\"https://www.facebook.com/Inpulso43/?locale=es_LA\" target=\"_blank\">Facebook</a>",
+      "<a href=\"https://www.youtube.com/channel/UCQN8MoTwyHcgeUczMbqmH6g\" target=\"_blank\">YouTube</a>",
+      "<a href=\"https://www.tiktok.com/@inpulso43\" target=\"_blank\">TikTok</a>"
+    ],
+    "cards": [
+      "Próximo Taller Presencial y Online El cuerpo que aprendió a sobrevivir La ansiedad detrás del control · Impartido por Sara Rosales",
+      "¿La ansiedad es síntoma o el problema de fondo? Origen profundo y por qué sigue regresando. Herramientas reales de regulación emocional. 00 Días",
+      "📅 Lunes 1 de Junio · 6:00 PM 💳 $400 MXN · Cupos Limitados"
+    ],
+    "texto_muestra": "Inpulso 43 | Tu Mejor Versión ☰ Inicio Talleres Sobre Nosotros Blog Podcast y transmisiones Contacto Agendar Un refugio para tu mente. Acompañamiento clínico, nutricional y desarrollo integral. El primer paso hacia tu bienestar y evolución constante comienza aquí. Agendar Cita Próximo Taller Presencial y Online El cuerpo que aprendió a sobrevivir La ansiedad detrás del control · Impartido por Sara Rosales ¿La ansiedad es síntoma o el problema de fondo? Origen profundo y por qué sigue regresando. Herramientas reales de regulación emocional. 00 Días 00 Hrs 00 Min 00 Seg 📅 Lunes 1 de Junio · 6:00 PM 💳 $400 MXN · Cupos Limitados Inscribirme al Taller Especialidades Acompañamiento profesional y desarrollo integral. Psicología Acompañamiento clínico enfocado en superar la ansiedad y equilibrar tus emociones. Nutrición Planes alimenticios diseñados para adaptarse a ti y mejorar tu energía diaria. Talleres Sesiones grupales creadas para impulsar tu desarrollo y crecimiento continuo. Medicina Atención integral enfocada en la prevención y el cuidado profundo de la salud. No tratamos síntomas. Tratamos a la persona completa. Entendemos que el cuerpo y la mente no funcionan por separado. Nuestro modelo de salud integral une la ciencia de la medicina y la nutrición con la profundidad de la psicoterapia para crear transformaciones reales y duraderas. Escuchar para entender. Abordamos problemas como la ansiedad, el estrés crónico y la depresión desde una perspectiva profundamente humana. No ofrecemos soluciones \"de molde\", sino que analizamos tu contexto para brindarte herramientas emocionales que realmente puedas aplicar en tu día a día. Hablar con nosotros Crecimiento en Comunidad. Creemos que la sanación no siempre tiene que ser un proceso solitario. A través de nuestra iniciativa Amigas en la palabra y nuestros talleres grupales, creamos espacios seguros donde el aprendizaje es mutuo y el crecimiento es respaldado por especialistas y personas en tu mismo camino. Ver Talleres Tu transformación El resultado de tu proceso Seis pilares que se fortalecen cuando eliges acompañarte con Inpulso 43. 01 🧠 Claridad Mental Aprende a gestionar la sobrecarga emocional y toma decisiones desde un lugar de paz y consciencia. Desliza ↔ 01 / 06 ← → 01 🧠 Claridad Mental 02 🌱 Salud Sostenible 03 🤝 Vínculos Sanos 04 ✨ Autoconocimiento 05 🎯 Propósito Vital 06 ⚖️ Equilibrio Integral La base de Inpulso 43 El bienestar no es un destino al que se llega y punto; es una construcción constante. I"
+  },
+  "talleres.php": {
+    "url": "https://inpulso43.com/talleres.php",
+    "status": 200,
+    "title": "Tienda de Talleres | Inpulso 43",
+    "h1": [
+      "<span class=\"tch-line\"><span class=\"tch-line-inner\">Próximos</span></span> <span class=\"tch-line tch-line--accent\"><span class=\"tch-line-inner\">Talleres</span></span>"
+    ],
+    "h2": [
+      "Tu próximo capítulo",
+      "Título del taller",
+      "' + info.title + '"
+    ],
+    "h3": [
+      "Educar sin tabúes y sin culpa",
+      "El cuerpo que aprendió a sobrevivir",
+      "Mente en Capítulos",
+      "Alianza 360"
+    ],
+    "h4": [
+      "Centro de Desarrollo Humano y Empresarial",
+      "Contacto",
+      "Síguenos",
+      "CICLO 1 (Meses 1–4): Sanación de heridas de infancia / historia personal en el matrimonio",
+      "CICLO 2 (Meses 5–8): Reconciliación y reparación",
+      "CICLO 3 (Meses 9–12): Misión, propósito y legado"
+    ],
+    "precios": [
+      "$150 MXN",
+      "$400 MXN",
+      "$500 MXN",
+      "$750 MXN"
+    ],
+    "fechas": [],
+    "listas": [
+      "<a href=\"https://www.facebook.com/Inpulso43/?locale=es_LA\" target=\"_blank\">Facebook</a>",
+      "<a href=\"https://www.tiktok.com/@inpulso43\" target=\"_blank\">TikTok</a>",
+      "Actualidad en la educación sexual infantil",
+      "El peso de la charla emocional con niños",
+      "Rompiendo mitos de la educación sexual",
+      "Factores protectores: vínculos, autoestima y prevención",
+      "Herramientas prácticas para educar en casa",
+      "Ansiedad: ¿síntoma o problema?",
+      "Origen profundo de la ansiedad",
+      "La ansiedad en tu cuerpo y en tu mente",
+      "Errores para afrontar la realidad",
+      "Regulación emocional"
+    ],
+    "cards": [
+      "Marcela Pedraza · Magui Cárdenas Ver detalles"
+    ],
+    "texto_muestra": "﻿ Tienda de Talleres | Inpulso 43 ☰ Inicio Talleres Sobre Nosotros Blog Podcast y transmisiones Contacto Agendar Educar sin tabúes El cuerpo y la ansiedad Mente en capítulos Alianza 360 Biblioteca Inpulso 43 Próximos Talleres Cada taller es un volumen en nuestra biblioteca. Elige el tuyo y ábrelo. Educar sin tabúes Cuerpo y ansiedad Mente en capítulos Alianza 360 Desliza para ver los talleres → Cuatro historias · Cuatro caminos Explorar catálogo Tu próximo capítulo Cada taller es un volumen en nuestra biblioteca. Desliza y ábrelo como un libro. Educar sin tabúes y sin culpa 5 Junio Online · Zoom $150 MXN Educar sin tabúes y sin culpa Marcela Pedraza · Magui Cárdenas Ver detalles El cuerpo que aprendió a sobrevivir Lanzamiento Presencial / Online El cuerpo que aprendió a sobrevivir Sara Rosales Abrir como libro Mente en Capítulos Gratuito Club de lectura Mente en Capítulos Sara Rosales Abrir como libro Alianza 360 Matrimonios 12 meses Semanal Alianza 360 Juan Rosales Poner el disco Centro de Desarrollo Humano y Empresarial Contacto +52 33 1469 9772 +52 331 230 2221 Av. Hidalgo 533, Zapopan. Síguenos Instagram Facebook TikTok Talleres Sobre Nosotros Podcast y transmisiones Blog Contacto Detalle del taller × Inpulso 43 · Taller Un espacio para leer tu historia con nuevos ojos. Taller Título del taller Autora Sara Rosales Saltar animación 33⅓ RPM Alianza 360 Juan Rosales 33 · 45 Inpulso · Hi-Fi Saltar animación"
+  },
+  "nosotros.php": {
+    "url": "https://inpulso43.com/nosotros.php",
+    "status": 200,
+    "title": "Sobre Nosotros | Inpulso 43",
+    "h1": [
+      "Centro de <em>Desarrollo</em> Humano y Empresarial"
+    ],
+    "h2": [
+      "Un solo espacio, visión completa",
+      "Quienes te acompañan",
+      "Tu proceso empieza con una conversación",
+      "Centro de Desarrollo Humano y Empresarial"
+    ],
+    "h3": [
+      "Sara Rosales",
+      "Sara Rosales",
+      "Juan Rosales",
+      "Juan Rosales",
+      "Ivan Narro",
+      "Ivan Narro",
+      "Marcela Pedraza",
+      "Marcela Pedraza",
+      "Magui Cardénas",
+      "Magui Cardénas",
+      "Rebeca Torres",
+      "Rebeca Torres",
+      "Betty Martínez",
+      "Betty Martínez",
+      "Gabriela Sánchez",
+      "Gabriela Sánchez",
+      "Patricia Velázquez",
+      "Patricia Velázquez"
+    ],
+    "h4": [
+      "Contacto",
+      "Síguenos"
+    ],
+    "precios": [],
+    "fechas": [],
+    "listas": [
+      "Manejo de ansiedad",
+      "Comunicación asertiva",
+      "Relación familiar",
+      "Reestructuración de heridas del pasado",
+      "Atención a adolescentes y adultos",
+      "Relación de pareja",
+      "Comunicación asertiva",
+      "Implementación de límites",
+      "Relaciones familiares",
+      "Reestructuración de heridas del pasado",
+      "Atención a parejas y adultos",
+      "Relaciones de pareja sanas",
+      "Proyecto de vida",
+      "Manejo de ansiedad",
+      "Atención a adolescentes y adultos",
+      "Métodos de crianza responsable",
+      "Establecimiento de límites a hijos",
+      "Toma de acuerdos familiares",
+      "Efectos de la historia personal en la crianza",
+      "Atención a adultos",
+      "Autoestima familiar",
+      "Acuerdos familiares",
+      "Comunicación asertiva familiar",
+      "Efectos de la historia personal en la crianza",
+      "Atención a adultos"
+    ],
+    "cards": [],
+    "texto_muestra": "﻿ Sobre Nosotros | Inpulso 43 ☰ Inicio Talleres Sobre Nosotros Blog Podcast y transmisiones Contacto Agendar Inpulso 43 · Guadalajara Centro de Desarrollo Humano y Empresarial No creemos en soluciones de molde. Cada mente y cada cuerpo tienen una historia distinta; nuestro objetivo es darte las herramientas exactas para construir tu propia versión del bienestar. 360° Modelo integral 9 Especialistas 1 Espacio unificado Descubre Modelo 360° Mente · Cuerpo · Propósito Un solo espacio, visión completa Nuestra metodología nace de una verdad absoluta: la psicología y la fisiología están irremediablemente conectadas. Tratar la ansiedad sin revisar tus hábitos alimenticios es hacer el trabajo a medias. Hemos reunido a terapeutas y especialistas en nutrición en un solo lugar para ofrecerte un acompañamiento integral frente al estrés crónico de la vida moderna. Psicología clínica Desarrollo humano Nutrición integral Quienes te acompañan Desliza el carrusel y pasa el cursor o toca cada foto para ver las áreas de atención. Psicóloga Sara Rosales Psicóloga Sara Rosales Presencial y en línea Autoestima Manejo de ansiedad Comunicación asertiva Relación familiar Reestructuración de heridas del pasado Atención a adolescentes y adultos Toca de nuevo para cerrar Psicólogo Juan Rosales Psicólogo Juan Rosales Presencial y en línea Relación de pareja Comunicación asertiva Implementación de límites Relaciones familiares Reestructuración de heridas del pasado Atención a parejas y adultos Toca de nuevo para cerrar Psicólogo Ivan Narro Psicólogo Ivan Narro Presencial y en línea Relaciones de pareja sanas Proyecto de vida Autoestima Manejo de ansiedad Atención a adolescentes y adultos Toca de nuevo para cerrar Psicóloga Marcela Pedraza Psicóloga Marcela Pedraza En línea Métodos de crianza responsable Establecimiento de límites a hijos Toma de acuerdos familiares Efectos de la historia personal en la crianza Atención a adultos Toca de nuevo para cerrar Psicóloga Magui Cardénas Psicóloga Magui Cardénas En línea Autoestima familiar Acuerdos familiares Comunicación asertiva familiar Efectos de la historia personal en la crianza Atención a adultos Toca de nuevo para cerrar Psicóloga Rebeca Torres Psicóloga Rebeca Torres Presencial y en línea Manejo de adicciones Trabajo con familiares de personas con adicción Creación de nuevos hábitos Manejo emocional sin adicciones Atención a adultos Toca de nuevo para cerrar Tanatóloga Betty Martínez Tanatóloga Betty Martínez Presencial y en línea Man"
+  },
+  "blog.php": {
+    "url": "https://inpulso43.com/blog.php",
+    "status": 200,
+    "title": "Blog de Psicología | Inpulso 43",
+    "h1": [
+      "Blog de Psicología"
+    ],
+    "h2": [
+      "Estrategias de relajación y manejo del estrés",
+      "Depresión estacional",
+      "Cambios emocionales en el embarazo",
+      "Comparación en redes sociales y salud mental",
+      "Estrés crónico y somatización",
+      "Ataques de pánico",
+      "Bullying y salud mental: cómo saber si tu hijo lo sufre",
+      "¿Qué es el ego?",
+      "Relación a distancia",
+      "Estrés laboral y burnout",
+      "Distimia o depresión leve",
+      "Duelo perinatal",
+      "Amistades tóxicas",
+      "Identificar adicción a las redes sociales",
+      "El síndrome del impostor"
+    ],
+    "h3": [
+      "Estrategias de relajación y manejo del estrés",
+      "Depresión estacional",
+      "Cambios emocionales en el embarazo",
+      "Comparación en redes sociales y salud mental",
+      "Estrés crónico y somatización",
+      "Ataques de pánico",
+      "Bullying y salud mental: cómo saber si tu hijo lo sufre",
+      "¿Qué es el ego?",
+      "Relación a distancia",
+      "Estrés laboral y burnout",
+      "Distimia o depresión leve",
+      "Duelo perinatal",
+      "Amistades tóxicas",
+      "Identificar adicción a las redes sociales",
+      "El síndrome del impostor"
+    ],
+    "h4": [
+      "¿Qué es el estrés?",
+      "Tipos de estrés",
+      "¿Por qué es importante aprender el manejo del estrés?",
+      "Herramientas y estrategias",
+      "Para el cuerpo:",
+      "Para la mente:",
+      "¿Cuándo acudir a un profesional?",
+      "¿Qué es la depresión estacional o TAE?",
+      "¿Por qué aparece en otoño e invierno?",
+      "Síntomas de la depresión estacional",
+      "Estrategias para prevenir y afrontar el \"bajón\"",
+      "¿Cuándo pedir ayuda profesional?",
+      "Cuidarte también los meses más difíciles",
+      "Por qué aparecen los cambios emocionales",
+      "Ansiedad y cambios emocionales en el embarazo"
+    ],
+    "precios": [],
+    "fechas": [],
+    "listas": [
+      "Relajación muscular progresiva",
+      "Mindfulness: conectar con el presente",
+      "Anclaje kinestésico",
+      "Sensación de inferioridad después de usar redes sociales",
+      "Ansiedad leve o tristeza sin causa clara tras ver contenido",
+      "Pensamientos recurrentes de “no estoy avanzando”",
+      "Comparaciones automáticas con personas desconocidas",
+      "Dificultad para disfrutar de logros propios",
+      "No publicar por miedo a la evaluación externa",
+      "Sensación de vacío tras el uso prolongado de redes",
+      "Autoexigencia elevada",
+      "Sensación de estancamiento vital",
+      "Insatisfacción persistente",
+      "Deterioro progresivo de la autoestima",
+      "Dependencia emocional de la validación externa",
+      "Identificación de patrones de pensamiento automático",
+      "Análisis funcional del uso de redes sociales",
+      "Reestructuración cognitiva",
+      "Trabajo de autoestima estable",
+      "Regulación emocional",
+      "Sensación de agotamiento constante",
+      "Problemas gastrointestinales (como el síndrome del intestino irritable)",
+      "Tensión en cuello y espalda",
+      "Mareos o sensación de inestabilidad",
+      "Palpitaciones o presión en el pecho"
+    ],
+    "cards": [],
+    "texto_muestra": "Blog de Psicología | Inpulso 43 ☰ Inicio Talleres Sobre Nosotros Blog Podcast y transmisiones Contacto Agendar Recursos · Salud mental Blog de Psicología Cada texto es un capítulo que puedes abrir, subrayar en silencio y cerrar cuando quieras — como un libro que te acompaña, no que te apura. Estrategias de relajación y manejo del estrés Bienestar 6 min lectura María González González-Alemán Estrategias de relajación y manejo del estrés Descubre estrategias de relajación y técnicas efectivas para el manejo del estrés y mejora tu bienestar cada día fácilmente. Leer artículo Depresión estacional Salud mental 6 min lectura Violeta Villegas Depresión estacional La depresión estacional puede afectar a tu energía y estado de ánimo. Descubre sus síntomas, causas y cómo afrontarla con ayuda profesional Leer artículo Cambios emocionales en el embarazo Maternidad 6 min lectura Flora Villegas Cambios emocionales en el embarazo Los cambios emocionales en el embarazo son una experiencia muy común y forman parte natural de esta etapa vital. Leer artículo Comparación en redes sociales y salud mental Salud mental 6 min lectura Esther Rodríguez Díaz Comparación en redes sociales y salud mental Cómo las tendencias en redes sociales afectan a tu salud mental y el riesgo de la comparación en redes sociales en tu bienestar Leer artículo Estrés crónico y somatización Cuerpo y mente 6 min lectura María De la Fuente Estrés crónico y somatización Descubre cómo el estrés crónico y somatización pueden afectar a tu cuerpo con síntomas como dolor o fatiga y qué hacer para sentirte mejor Leer artículo Ataques de pánico Ansiedad 6 min lectura Julia Lara Ataques de pánico Vivir ataques de pánico lo describen como una sensación repentina de peligro, aunque en realidad no exista una amenaza real en ese momento. Leer artículo Bullying y salud mental: cómo saber si tu hijo lo sufre Familia 6 min lectura Carmen Márquez Bullying y salud mental: cómo saber si tu hijo lo sufre El bullying es una de las situaciones que más preocupa a madres y padres, y con razón, aprende a detectar el bullying y a cómo ayudarle. Leer artículo ¿Qué es el ego? Autoconocimiento 6 min lectura Elena Romero ¿Qué es el ego? Descubre qué es el ego, cómo actúa en la vida cotidiana y las diferencias clave con la autoestima, con ejemplos prácticos. Leer artículo Relación a distancia Relaciones 6 min lectura María De la Fuente Relación a distancia Descubre cómo mantener la conexión emocional en una relación a distancia con co"
+  },
+  "podcast.php": {
+    "url": "https://inpulso43.com/podcast.php",
+    "status": 200,
+    "title": "Podcast y transmisiones | Inpulso 43",
+    "h1": [
+      "Cómo reparar heridas de la comunciación"
+    ],
+    "h2": [
+      "Podcast y transmisiones",
+      "Juan Rosales · 90 segundos",
+      "Juan Rosales · Podcast",
+      "Juan Rosales · Diálogos con el niño interior",
+      "Juan Rosales · Juan Rosales",
+      "In-pulso 43 · Entre el cuerpo y la mente",
+      "In-pulso 43 · De tal padre, tal hija",
+      "In-pulso 43 · Cápsulas para informarte",
+      "In-pulso 43 · Más del canal",
+      "Centro de Desarrollo Humano y Empresarial"
+    ],
+    "h3": [
+      "⏰90 segundos: límites sin explosión",
+      "🎙️La ventana de 90 segundos (donde se gana o pierde el control)",
+      "90 segundos. Primer episodio",
+      "Podcast 🎙️ Sanación de heridas de infancia y los manipuladores",
+      "Podcast🎙 La paradoja del CHIMPANCÉ 🙈🙉🙊",
+      "Podcast 🎙️ Herida de ABANDONO paterna",
+      "Podcast 🎙️ Angry Bird y heridas de infancia",
+      "🎙️Podcast de la película Respect: heridas de infancia y la vida de Aretha Franklin 🎤🎷",
+      "Diálogos con el niño interior: Donde la herida se vuelve pincel.",
+      "Cómo reparar heridas de la comunciación",
+      "El ego que se defiende",
+      "De víctima a responsable",
+      "Cómo tener conversaciones difíciles",
+      "Emoción vs Necesidad",
+      "Del impulso a la elección: cómo crear un freno interno consciente",
+      "Tu mente 🧠 no es el problema….hata que lo crees",
+      "No TODOS reaccionamos igual",
+      "🚨ATENCIÓN",
+      "Entre el caos y la calma: Claves para cuidar tu equilibrio emocional",
+      "Entre la mente y el cuerpo. Episodio 2: Insomnio recurrente"
+    ],
+    "h4": [
+      "Contacto",
+      "Síguenos"
+    ],
+    "precios": [],
+    "fechas": [],
+    "listas": [
+      "<a href=\"https://www.facebook.com/Inpulso43/?locale=es_LA\" target=\"_blank\" rel=\"noopener\">Facebook</a>",
+      "<a href=\"https://www.youtube.com/channel/UCQN8MoTwyHcgeUczMbqmH6g\" target=\"_blank\" rel=\"noopener\">YouTube</a>",
+      "<a href=\"https://www.tiktok.com/@inpulso43\" target=\"_blank\" rel=\"noopener\">TikTok</a>"
+    ],
+    "cards": [
+      "⏰90 segundos: límites sin explosión 588 vistas · hace 1 mes",
+      "🎙️La ventana de 90 segundos (donde se gana o pierde el control) 1.4 K vistas · hace 3 meses",
+      "90 segundos. Primer episodio 1.3 K vistas · hace 3 meses",
+      "Podcast 🎙️ Sanación de heridas de infancia y los manipuladores 1.4 K vistas · hace 1 año",
+      "Podcast🎙 La paradoja del CHIMPANCÉ 🙈🙉🙊 1.5 K vistas · hace 1 año",
+      "Podcast 🎙️ Herida de ABANDONO paterna 2.1 K vistas · hace 2 años",
+      "Podcast 🎙️ Angry Bird y heridas de infancia 1 K vistas · hace 2 años",
+      "🎙️Podcast de la película Respect: heridas de infancia y la vida de Aretha Franklin 🎤🎷 1.7 K vistas · hace 2 años",
+      "Diálogos con el niño interior: Donde la herida se vuelve pincel. 643 vistas · hace 7 meses",
+      "Cómo reparar heridas de la comunciación 403 vistas · hace 2 semanas"
+    ],
+    "texto_muestra": "Podcast y transmisiones | Inpulso 43 ☰ Inicio Talleres Sobre Nosotros Blog Podcast y transmisiones Contacto Agendar Juan Rosales · Juan Rosales Cómo reparar heridas de la comunciación 22:01 403 vistas hace 2 semanas ▶ Reproducir Suscribirse Podcast y transmisiones ⏱ Juan Rosales · 90 segundos 🎙️ Juan Rosales · Podcast 🎨 Juan Rosales · Diálogos con el niño interior 💬 Juan Rosales · Juan Rosales 🎙 In-pulso 43 · Entre el cuerpo y la mente 👨‍👩‍👧 In-pulso 43 · De tal padre, tal hija 💡 In-pulso 43 · Cápsulas para informarte ✦ In-pulso 43 · Más del canal Juan Rosales · 90 segundos 3 episodios · Comunicación, Autocontrol, Psicología Ver canal → ‹ ▶ 18:02 ⏰90 segundos: límites sin explosión 588 vistas · hace 1 mes ▶ 24:18 🎙️La ventana de 90 segundos (donde se gana o pierde el control) 1.4 K vistas · hace 3 meses ▶ 22:14 90 segundos. Primer episodio 1.3 K vistas · hace 3 meses › Juan Rosales · Podcast 5 episodios · Psicología, Heridas de infancia, Desarrollo personal Ver canal → ‹ ▶ 22:22 Podcast 🎙️ Sanación de heridas de infancia y los manipuladores 1.4 K vistas · hace 1 año ▶ 29:31 Podcast🎙 La paradoja del CHIMPANCÉ 🙈🙉🙊 1.5 K vistas · hace 1 año ▶ 28:49 Podcast 🎙️ Herida de ABANDONO paterna 2.1 K vistas · hace 2 años ▶ 28:59 Podcast 🎙️ Angry Bird y heridas de infancia 1 K vistas · hace 2 años ▶ 29:53 🎙️Podcast de la película Respect: heridas de infancia y la vida de Aretha Franklin 🎤🎷 1.7 K vistas · hace 2 años › Juan Rosales · Diálogos con el niño interior 1 episodios · Psicología, Sanación emocional, Desarrollo personal Ver canal → ‹ ▶ 16:20 Diálogos con el niño interior: Donde la herida se vuelve pincel. 643 vistas · hace 7 meses › Juan Rosales · Juan Rosales 21 episodios · Psicología, Bienestar, Desarrollo personal Ver canal → ‹ ▶ 22:01 Cómo reparar heridas de la comunciación 403 vistas · hace 2 semanas ▶ 28:25 El ego que se defiende 414 vistas · hace 2 semanas ▶ 26:06 De víctima a responsable 1 K vistas · hace 1 mes ▶ 19:18 Cómo tener conversaciones difíciles 489 vistas · hace 1 mes ▶ 18:02 Emoción vs Necesidad 627 vistas · hace 2 meses ▶ 25:59 Del impulso a la elección: cómo crear un freno interno consciente 911 vistas · hace 2 meses ▶ 23:50 Tu mente 🧠 no es el problema….hata que lo crees 961 vistas · hace 3 meses ▶ 22:56 No TODOS reaccionamos igual 1 K vistas · hace 3 meses ▶ 2:21 🚨ATENCIÓN 421 vistas · hace 6 meses ▶ 23:33 Entre el caos y la calma: Claves para cuidar tu equilibrio emocional 1.1 K vistas · hace 7 meses ▶ 39:55 Entre la mente y el cuerpo. Ep"
+  },
+  "contacto.php": {
+    "url": "https://inpulso43.com/contacto.php",
+    "status": 200,
+    "title": "Contacto | Inpulso 43",
+    "h1": [
+      "Hable<em>mos.</em>"
+    ],
+    "h2": [
+      "Envíanos un mensaje",
+      "Preguntas <em>frecuentes</em>"
+    ],
+    "h3": [],
+    "h4": [
+      "Dirección",
+      "Teléfonos Directos",
+      "Centro de Desarrollo Humano y Empresarial",
+      "Contacto",
+      "Síguenos"
+    ],
+    "precios": [],
+    "fechas": [],
+    "listas": [
+      "<a href=\"https://www.facebook.com/Inpulso43/?locale=es_LA\" target=\"_blank\" rel=\"noopener\">Facebook</a>",
+      "<a href=\"https://www.tiktok.com/@inpulso43\" target=\"_blank\" rel=\"noopener\">TikTok</a>"
+    ],
+    "cards": [
+      "Envíanos un mensaje Te responderemos lo antes posible. Nombre Completo"
+    ],
+    "texto_muestra": "Contacto | Inpulso 43 ☰ Inicio Talleres Sobre Nosotros Blog Podcast y transmisiones Contacto Agendar Contacto · Inpulso 43 Hable mos. Escríbenos para agendar tu primera sesión o resolver dudas. Tu proceso comienza aquí. Envíanos un mensaje Te responderemos lo antes posible. Nombre Completo Correo Electrónico Teléfono / WhatsApp Mensaje Enviar Mensaje Abrir en Google Maps Dirección Av. Hidalgo 533, República, 45146. Zapopan, Jalisco. Teléfonos Directos +52 33 1469 9772 +52 331 230 2221 ? Resolvemos tus dudas Preguntas frecuentes Lo esencial sobre citas, servicios y tu proceso en Inpulso 43. 01 ¿Cómo agendo mi primera cita? Puedes escribirnos por WhatsApp al +52 33 1469 9772, llenar el formulario de esta página o visitarnos en Av. Hidalgo 533, Zapopan. Te orientamos sobre el especialista ideal y los horarios disponibles sin compromiso. 02 ¿Qué servicios ofrecen en Inpulso 43? Somos un centro de salud integral: psicología clínica, nutrición, medicina familiar y talleres de desarrollo humano. Trabajamos mente y cuerpo de forma conectada para lograr cambios sostenibles, no parches temporales. 03 ¿Las consultas son presenciales o también en línea? Ofrecemos ambas modalidades según el servicio y tu preferencia. Muchas sesiones de psicología y nutrición pueden realizarse en línea; otros procesos y talleres presenciales se imparten en nuestras instalaciones en Zapopan. 04 ¿Cuánto cuesta una sesión? El costo varía según la especialidad y el tipo de acompañamiento (individual, pareja, paquete, etc.). Escríbenos indicando qué servicio te interesa y te compartimos tarifas actualizadas y opciones de pago. 05 ¿Aceptan seguros médicos o reembolsos? No trabajamos directamente con aseguradoras, pero emitimos factura para que gestiones reembolso con tu seguro si tu póliza lo permite. Te explicamos el proceso al agendar. 06 ¿Qué son los talleres y cómo me inscribo? Son espacios grupales —presenciales u online— para temas como ansiedad, regulación emocional y crecimiento personal. Publicamos fechas en la landing y redes. Puedes inscribirte por WhatsApp o desde el enlace del taller activo. 07 ¿Cuánto dura una sesión y con qué frecuencia se recomienda? Las sesiones individuales suelen durar entre 50 y 60 minutos. La frecuencia (semanal, quincenal o mensual) la define tu especialista según tus objetivos y el ritmo de tu proceso. 08 ¿Cómo sé si necesito psicología, nutrición o medicina? No tienes que decidirlo solo. En la primera orientación evaluamos tu situación y te recomendamo"
+  }
+}

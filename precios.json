@@ -1,63 +1,81 @@
 {
+  "clinica": {
+    "nombre": "Inpulso 43",
+    "web": "https://inpulso43.com",
+    "modalidad_consultas": "Presencial en Inpulso 43 y online",
+    "especialidades": {
+      "psicologia": "Acompañamiento clínico enfocado en superar la ansiedad y equilibrar tus emociones.",
+      "nutricion": "Planes alimenticios diseñados para adaptarse a ti y mejorar tu energía diaria.",
+      "talleres": "Sesiones grupales creadas para impulsar tu desarrollo y crecimiento continuo.",
+      "medicina": "Atención integral enfocada en la prevención y el cuidado profundo de la salud."
+    },
+    "iniciativas": ["Amigas en la palabra"]
+  },
   "sara": {
     "individual": "$800",
     "pareja": "$900",
     "familiar": "$1200",
+    "modalidad": "Presencial en Inpulso 43 y online",
     "taller_ansiedad": {
       "nombre": "El cuerpo que aprendió a sobrevivir: la ansiedad después del control",
-      "fechas": "Lunes 1 de junio y lunes 8 de junio (Consta de dos sesiones)",
+      "nombre_web": "El cuerpo que aprendió a sobrevivir",
+      "subtitulo_web": "La ansiedad detrás del control",
+      "fechas": "Lunes 1 y 8 de junio (2 sesiones)",
       "horario": "6:00 PM",
       "modalidad": "Presencial en Inpulso 43 y online",
       "costos": "Online $400 MXN / Presencial $500 MXN",
       "cupo": "Cupo limitado",
       "temario": [
-        "Ansiedad: ¿síntoma o problema?",
-        "Origen profundo de la ansiedad",
+        "¿La ansiedad es síntoma o el problema de fondo?",
+        "Origen profundo y por qué sigue regresando",
         "La ansiedad en tu cuerpo y en tu mente",
         "Errores para afrontar la realidad",
-        "Regulación emocional"
+        "Herramientas reales de regulación emocional"
       ]
     }
-  },
-  "paty": {
-    "individual": "$800",
-    "pareja": "$900",
-    "familiar": "$1200"
   },
   "patricia": {
     "individual": "$800",
     "pareja": "$900",
-    "familiar": "$1200"
+    "familiar": "$1200",
+    "modalidad": "Presencial en Inpulso 43 y online"
   },
   "ivan": {
     "individual": "$800",
     "pareja": "$900",
-    "familiar": "$1200"
+    "familiar": "$1200",
+    "modalidad": "Presencial en Inpulso 43 y online"
   },
   "juan": {
     "individual": "$1000",
     "pareja": "$1100",
-    "familiar": "$1300"
+    "familiar": "$1300",
+    "modalidad": "Presencial en Inpulso 43 y online"
   },
   "nutricionista": {
-    "general": "$450"
+    "general": "$450",
+    "modalidad": "Presencial en Inpulso 43 y online"
+  },
+  "medicina": {
+    "consulta": "Consultar disponibilidad",
+    "modalidad": "Presencial en Inpulso 43 y online"
   },
   "mentoras": {
     "nota_importante": "Los servicios con las mentoras son ÚNICAMENTE en línea."
   },
   "taller": {
-    "nombre": "El cuerpo que aprendió a sobrevivir: la ansiedad después del control (Impartido por Sara Rosales)",
-    "fechas": "Lunes 1 de junio y lunes 8 de junio (Consta de dos sesiones)",
+    "nombre": "El cuerpo que aprendió a sobrevivir: la ansiedad después del control (Sara Rosales)",
+    "fechas": "Lunes 1 y 8 de junio (2 sesiones)",
     "horario": "6:00 PM",
     "modalidad": "Presencial en Inpulso 43 y online",
     "costos": "Online $400 MXN / Presencial $500 MXN",
     "cupo": "Cupo limitado",
     "temario": [
-      "Ansiedad: ¿síntoma o problema?",
-      "Origen profundo de la ansiedad",
+      "¿La ansiedad es síntoma o el problema de fondo?",
+      "Origen profundo y por qué sigue regresando",
       "La ansiedad en tu cuerpo y en tu mente",
       "Errores para afrontar la realidad",
-      "Regulación emocional"
+      "Herramientas reales de regulación emocional"
     ]
   }
 }

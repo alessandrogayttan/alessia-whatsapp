@@ -64,17 +64,19 @@ def _leer_filas_catalogo() -> list[dict]:
         if activo not in ("SI", "SÍ", "S", "YES", "1", "TRUE"):
             continue
         filas.append(
-            {
-                "terapeuta": row[0].strip() if len(row) > 0 else "",
-                "tipo": row[1].strip().lower() if len(row) > 1 else "",
-                "nombre": row[2].strip() if len(row) > 2 else "",
-                "fechas": row[3].strip() if len(row) > 3 else "",
-                "horario": row[4].strip() if len(row) > 4 else "",
-                "modalidad": row[5].strip() if len(row) > 5 else "",
-                "precio": row[6].strip() if len(row) > 6 else "",
-                "cupo": row[7].strip() if len(row) > 7 else "",
-                "temario": row[8].strip() if len(row) > 8 else "",
-            }
+            _normalizar_modalidad_fila(
+                {
+                    "terapeuta": row[0].strip() if len(row) > 0 else "",
+                    "tipo": row[1].strip().lower() if len(row) > 1 else "",
+                    "nombre": row[2].strip() if len(row) > 2 else "",
+                    "fechas": row[3].strip() if len(row) > 3 else "",
+                    "horario": row[4].strip() if len(row) > 4 else "",
+                    "modalidad": row[5].strip() if len(row) > 5 else "",
+                    "precio": row[6].strip() if len(row) > 6 else "",
+                    "cupo": row[7].strip() if len(row) > 7 else "",
+                    "temario": row[8].strip() if len(row) > 8 else "",
+                }
+            )
         )
 
     _cache = {"rows": filas, "ts": ahora}
@@ -164,10 +166,69 @@ def estado_taller(fechas_txt: str) -> dict:
     }
 
 
+def _es_solo_online(fila: dict) -> bool:
+    texto = (
+        (fila.get("terapeuta") or "")
+        + (fila.get("nombre") or "")
+        + (fila.get("modalidad") or "")
+    ).lower()
+    return "mentora" in texto or "únicamente en línea" in texto or "unicamente en linea" in texto
+
+
+def _normalizar_modalidad_fila(fila: dict) -> dict:
+    """Todas las citas y talleres aceptan presencial y online (excepto mentoras)."""
+    from catalogo_web import MODALIDAD_PRESENCIAL_ONLINE, MODALIDAD_SOLO_ONLINE
+
+    fila = dict(fila)
+    if _es_solo_online(fila):
+        fila["modalidad"] = MODALIDAD_SOLO_ONLINE
+        return fila
+    modalidad = (fila.get("modalidad") or "").strip().lower()
+    if fila.get("tipo") in ("taller", "servicio") and (
+        not modalidad
+        or modalidad == "presencial"
+        or "solo presencial" in modalidad
+    ):
+        fila["modalidad"] = MODALIDAD_PRESENCIAL_ONLINE
+    return fila
+
+
 def _enriquecer_fila_catalogo(fila: dict) -> dict:
+    from catalogo_web import contexto_web_para_ia
+
+    fila = _normalizar_modalidad_fila(fila)
+    fila["url_web"] = config.CLINICA_WEB_URL
     if fila.get("tipo") == "taller" and fila.get("fechas"):
         fila = {**fila, **estado_taller(fila["fechas"])}
+    if not fila.get("descripcion_web"):
+        from catalogo_web import ESPECIALIDADES_INPULSO, TALLER_WEB
+
+        if fila.get("tipo") == "taller":
+            fila["descripcion_web"] = TALLER_WEB.get("descripcion_web", "")
+            fila["nombre_corto_web"] = TALLER_WEB.get("nombre_corto_web", "")
+        elif "nutric" in (fila.get("nombre") or "").lower():
+            fila["descripcion_web"] = ESPECIALIDADES_INPULSO["nutricion"]
+        elif "medicina" in (fila.get("nombre") or "").lower():
+            fila["descripcion_web"] = ESPECIALIDADES_INPULSO["medicina"]
+        elif fila.get("tipo") == "servicio":
+            fila["descripcion_web"] = ESPECIALIDADES_INPULSO["psicologia"]
+    fila["contexto_sitio_web"] = contexto_web_para_ia()
     return fila
+
+
+def _fusionar_catalogo_web(filas: list[dict]) -> list[dict]:
+    """Completa Drive con entradas de inpulso43.com que falten."""
+    from catalogo_web import filas_catalogo_dict
+
+    claves = {
+        (f.get("terapeuta", "").lower(), f.get("nombre", "").lower()) for f in filas
+    }
+    fusionadas = [_enriquecer_fila_catalogo(f) for f in filas]
+    for base in filas_catalogo_dict():
+        clave = (base.get("terapeuta", "").lower(), base.get("nombre", "").lower())
+        if clave not in claves:
+            fusionadas.append(_enriquecer_fila_catalogo(base))
+    return fusionadas
 
 
 def _filas_crudas_catalogo() -> list[list]:
@@ -227,7 +288,7 @@ def agregar_entrada_catalogo(
     nombre: str,
     fechas: str = "",
     horario: str = "",
-    modalidad: str = "Presencial",
+    modalidad: str = "Presencial en Inpulso 43 y online",
     precio: str = "",
     cupo: str = "",
     temario: str = "",
@@ -310,17 +371,23 @@ def consultar_catalogo_drive(especialista: str = "todos"):
     """
     Consulta talleres y servicios publicados por terapeutas en Google Sheets.
     Los terapeutas editan la hoja 'Catalogo' del archivo en Drive.
+    Se fusiona con el catálogo de inpulso43.com para mantener coherencia con la web.
     """
-    filas = [_enriquecer_fila_catalogo(f) for f in _leer_filas_catalogo()]
-    if not filas:
-        return (
-            "INSTRUCCIÓN PARA LA IA: No hay catálogo en Drive todavía o la hoja "
-            "'Catalogo' está vacía. Usa consultar_precios_y_servicios como respaldo."
-        )
+    from catalogo_web import contexto_web_para_ia, filas_catalogo_dict
+
+    filas_drive = _leer_filas_catalogo()
+    if filas_drive:
+        filas = _fusionar_catalogo_web(filas_drive)
+    else:
+        filas = [_enriquecer_fila_catalogo(f) for f in filas_catalogo_dict()]
 
     instruccion = (
-        "INSTRUCCIÓN PARA LA IA: En talleres usa SIEMPRE aviso_estado y estado_taller "
-        "(en_curso, por_iniciar, finalizado) sin que el paciente pregunte si ya empezó."
+        "INSTRUCCIÓN PARA LA IA: Catálogo alineado con inpulso43.com. "
+        f"{contexto_web_para_ia()} "
+        "Todas las consultas y talleres (excepto mentoras) son presencial Y online. "
+        "En talleres usa SIEMPRE aviso_estado y estado_taller "
+        "(en_curso, por_iniciar, finalizado) sin que el paciente pregunte si ya empezó. "
+        "Puedes mencionar la página web si el paciente quiere más contexto."
     )
     esp_lower = especialista.lower()
     if esp_lower != "todos":

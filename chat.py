@@ -39,6 +39,7 @@ from tools import (
     obtener_ruta_inpulso,
     recordar_nombre_paciente,
     reagendar_cita_inteligente,
+    registrar_interes_taller,
     registrar_paciente_taller,
     validar_fecha_cita,
 )
@@ -51,7 +52,7 @@ memoria_pacientes = {}
 memoria_terapeutas = {}
 cerrojos_pacientes = {}
 # Al cambiar el prompt, sube la versión para refrescar chats en RAM tras deploy.
-PROMPT_VERSION = "warm-2026-06-c"
+PROMPT_VERSION = "warm-2026-06-f"
 _chat_prompt_version: dict[str, str] = {}
 
 
@@ -115,8 +116,21 @@ REGLAS DE COMUNICACIÓN Y TONO:
 25. RITUAL DE CIERRE: Tras seguimiento post-cita, si escribe reflexión privada, usa 'guardar_nota_ritual_cierre' (no se comparte con terapeuta).
 26. BIBLIOTECA: Comandos *RESPIRAR*, *GROUNDING*, *CRISIS* envían ejercicios al instante; CRISIS también alerta al equipo.
 27. TALLERES — ESTADO EN CURSO: Al consultar talleres, el catálogo trae *estado_taller* y *aviso_estado*. SIEMPRE menciónalo sin que pregunten: si ya empezó, dilo claro (qué sesión pasó y cuál sigue); si ya terminó, dilo; si aún no empieza, también. Si está EN_CURSO y aún aceptan inscripción a sesiones restantes, explícalo con honestidad.
+28. INTERÉS EN TALLERES (lista de espera de talleres): Si un taller ya está *en curso* o *finalizado* y el paciente muestra interés pero no puede unirse ahora, o pide que le avisen de próximos talleres del mismo terapeuta, usa 'registrar_interes_taller' con el terapeuta y el nombre del taller que consultó. Avisa con calidez que *le escribiremos automáticamente* cuando ese terapeuta publique uno nuevo. Cuando el paciente reciba esa notificación proactiva, platica con empatía y pregunta si le interesa inscribirse (sin presión).
 
 INFORMACIÓN DE LA CLÍNICA Y PAGOS:
+- SITIO WEB OFICIAL: {config.CLINICA_WEB_URL} — Sitio multi-página (NO es una sola landing). Alessia debe coincidir con la web.
+  * Inicio: {config.CLINICA_WEB_URL}/index.php
+  * Talleres (catálogo completo): {config.CLINICA_WEB_URL}/talleres.php
+  * Equipo: {config.CLINICA_WEB_URL}/nosotros.php
+  * Blog: {config.CLINICA_WEB_URL}/blog.php
+  * Podcast: {config.CLINICA_WEB_URL}/podcast.php
+  * Contacto: {config.CLINICA_WEB_URL}/contacto.php
+- ESPECIALIDADES (como en la web): Psicología, Nutrición, Talleres grupales y Medicina. Iniciativa: *Amigas en la palabra*.
+- TALLERES EN LA WEB (talleres.php — Biblioteca Inpulso): (1) Educación en sexualidad infantil — Marcela Pedraza y Magui Cárdenas, 5 jun 2026, online $150; (2) El cuerpo que aprendió a sobrevivir — Sara Rosales, presencial/online; (3) Mente en Capítulos: El Principito — Sara, gratuito 23 jun; (4) Alianza 360 — Juan Rosales, programa matrimonial 12 meses.
+- EQUIPO (nosotros.php): Sara, Juan, Ivan, Patricia Velázquez, Marcela y Magui (estas dos solo en línea), Rebeca, Betty (tanatología), Gabriela.
+
+- MODALIDAD DE CONSULTAS: Casi todos los servicios y talleres están disponibles *presencial en Inpulso 43* y *en línea*. EXCEPCIÓN: las *mentoras* son únicamente en línea.
 - HORARIO DE CITAS (agendar): Lunes a viernes, 7:00 am a 7:00 pm. Solo se pueden agendar citas en ese horario.
 - ATENCIÓN POR WHATSAPP: Tú (Alessia) respondes 24 horas para información, precios y dudas. NUNCA digas que estás "fuera de horario" para chatear.
 - UBICACIÓN: {config.CLINICA_DIRECCION} — Mapa: {config.CLINICA_MAPS_URL}
@@ -158,10 +172,14 @@ PASOS DE ATENCIÓN Y HERRAMIENTAS:
    - Si la cita es ONLINE y el bloque no incluyó el aviso de pago, recuérdalo con amabilidad.
    - LLEGADA: Si dice que ya llegó → 'notificar_llegada_paciente' con teléfono {numero_telefono}.
    - EMERGENCIA/CRISIS → 'notificar_emergencia_paciente' con teléfono y descripción breve.
-2. TALLERES Y PRECIOS (GOOGLE DRIVE):
+2. TALLERES Y PRECIOS (CONECTADO A inpulso43.com + GOOGLE DRIVE):
    - Usa 'consultar_talleres_y_servicios' o 'consultar_precios_y_servicios' para info actualizada.
-   - El catálogo lo editan los terapeutas en Google Sheets (hoja "Catalogo"); SIEMPRE consulta ahí primero.
+   - El catálogo está alineado con {config.CLINICA_WEB_URL} y la hoja "Catalogo" en Drive.
+   - Catálogo de talleres completo en {config.CLINICA_WEB_URL}/talleres.php — consulta SIEMPRE el catálogo (Drive/web) antes de responder.
+   - Al describir talleres, usa temario, fechas, precios, modalidad y estado_taller; invita a ver más en talleres.php si quieren detalle.
+
 3. INSCRIPCIONES A TALLERES: Usa 'registrar_paciente_taller'. Pide nombre COMPLETO (nombre y apellidos) y teléfono solo al inscribir. Correo es OPCIONAL.
+   - Si el taller ya empezó y no pueden entrar, ofrece registrar su interés con 'registrar_interes_taller' para avisarles del siguiente.
 4. COMPROBANTES DE PAGO (INTERNO — no lo expliques al paciente):
    - Si el paciente envía comprobante (imagen/PDF), analiza: monto en MXN, cuenta destino, estatus COMPLETADO.
    - Cuentas válidas: BANORTE CLABE 072320003548248000 o BANAMEX CLABE 002320700928855166.
@@ -219,7 +237,7 @@ def _crear_herramientas_terapeuta(telefono: str):
         fechas: str,
         horario: str,
         precio: str,
-        modalidad: str = "Presencial en Inpulso 43",
+        modalidad: str = "Presencial en Inpulso 43 y online",
         cupo: str = "Cupo limitado",
         temario: str = "",
     ):
@@ -333,6 +351,7 @@ def obtener_chat_paciente(numero_telefono: str):
                     consultar_precios_y_servicios,
                     consultar_talleres_y_servicios,
                     registrar_paciente_taller,
+                    registrar_interes_taller,
                     confirmar_pago_comprobante,
                     actualizar_pago_paciente,
                     agregar_lista_espera,

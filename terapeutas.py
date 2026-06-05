@@ -48,7 +48,7 @@ def terapeuta_publicar_taller(
     fechas: str,
     horario: str,
     precio: str,
-    modalidad: str = "Presencial en Inpulso 43",
+    modalidad: str = "Presencial en Inpulso 43 y online",
     cupo: str = "Cupo limitado",
     temario: str = "",
 ):
@@ -66,7 +66,27 @@ def terapeuta_publicar_taller(
         temario=temario,
     )
     if ok:
-        return f"ÉXITO: Taller publicado. {msg}"
+        from experiencia import clave_taller, notificar_interesados_nuevo_taller
+
+        fila = {
+            "terapeuta": nombre,
+            "tipo": "taller",
+            "nombre": nombre_taller,
+            "fechas": fechas,
+            "horario": horario,
+            "modalidad": modalidad,
+            "precio": precio,
+            "cupo": cupo,
+            "temario": temario,
+        }
+        storage.marcar_taller_catalogo_visto(clave_taller(fila))
+        notificados = notificar_interesados_nuevo_taller(fila)
+        extra = (
+            f" Se notificó a {notificados} persona(s) con interés registrado."
+            if notificados
+            else ""
+        )
+        return f"ÉXITO: Taller publicado. {msg}{extra}"
     return f"ERROR: {msg}"
 
 

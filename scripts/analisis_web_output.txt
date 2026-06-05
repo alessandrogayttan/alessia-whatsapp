@@ -1,0 +1,52 @@
+﻿============================================================
+AN┴LISIS inpulso43.com
+============================================================
+
+Home: 200 -> https://inpulso43.com/ (91300 bytes)
+
+--- ENLACES INTERNOS (7) ---
+  https://inpulso43.com/blog.php
+  https://inpulso43.com/contacto.php
+  https://inpulso43.com/header.css
+  https://inpulso43.com/index.php
+  https://inpulso43.com/nosotros.php
+  https://inpulso43.com/podcast.php
+  https://inpulso43.com/talleres.php
+
+--- NAVEGACIËN ---
+  Inicio
+  Talleres
+  Sobre Nosotros
+  Blog
+  Podcast y transmisiones
+  Contacto
+  Agendar
+  01
+  Claridad Mental
+  02
+  Salud Sostenible
+  03
+  VÝnculos Sanos
+  04
+  Autoconocimiento
+  05
+  Prop¾sito Vital
+  06
+python : Traceback (most recent call last):
+En C:\Users\aless\AppData\Local\Temp\ps-script-b5b619f8-e551-4d6c-820b-12031995162a.ps1: 77 Carácter: 47
++ ... Desktop\ALESSIA"; python scripts/analizar_inpulso_web.py 2>&1 | Out-F ...
++                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "C:\Users\aless\OneDrive\Desktop\ALESSIA\scripts\analizar_inpulso_web.py", line 220, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\aless\OneDrive\Desktop\ALESSIA\scripts\analizar_inpulso_web.py", line 161, in main
+    print(" ", item)
+    ~~~~~^^^^^^^^^^^
+  File "C:\Users\aless\AppData\Local\Python\pythoncore-3.14-64\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode characters in position 0-1: character maps to <undefined>
+  

@@ -132,6 +132,25 @@ def init_db():
                     ultimo_envio TEXT,
                     creado_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS interes_talleres (
+                    telefono TEXT NOT NULL,
+                    terapeuta TEXT NOT NULL,
+                    nombre TEXT,
+                    taller_origen TEXT,
+                    creado_at TEXT NOT NULL,
+                    activo INTEGER DEFAULT 1,
+                    PRIMARY KEY (telefono, terapeuta)
+                );
+                CREATE TABLE IF NOT EXISTS catalogo_talleres_vistos (
+                    clave TEXT PRIMARY KEY,
+                    visto_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS notificaciones_nuevo_taller (
+                    telefono TEXT NOT NULL,
+                    taller_clave TEXT NOT NULL,
+                    enviado_at TEXT NOT NULL,
+                    PRIMARY KEY (telefono, taller_clave)
+                );
                 """
             )
             conn.commit()
@@ -721,6 +740,106 @@ def tareas_pendientes_hoy(dia_nombre: str) -> list[dict]:
             (hoy, f"%{dia_nombre.lower()}%"),
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+def registrar_interes_taller(
+    telefono: str,
+    terapeuta: str,
+    taller_origen: str = "",
+    nombre: str = "",
+):
+    with _transaction() as conn:
+        conn.execute(
+            """
+            INSERT INTO interes_talleres (telefono, terapeuta, nombre, taller_origen, creado_at, activo)
+            VALUES (?, ?, ?, ?, ?, 1)
+            ON CONFLICT(telefono, terapeuta) DO UPDATE SET
+                nombre = excluded.nombre,
+                taller_origen = excluded.taller_origen,
+                activo = 1
+            """,
+            (
+                telefono,
+                terapeuta.strip(),
+                nombre or None,
+                taller_origen or None,
+                datetime.utcnow().isoformat(),
+            ),
+        )
+
+
+def listar_interes_talleres(terapeuta: str) -> list[dict]:
+    t_lower = terapeuta.lower().strip()
+    with _transaction() as conn:
+        rows = conn.execute(
+            """
+            SELECT telefono, nombre, terapeuta, taller_origen
+            FROM interes_talleres WHERE activo = 1
+            """
+        ).fetchall()
+    resultado = []
+    for r in rows:
+        row = dict(r)
+        esp = (row.get("terapeuta") or "").lower()
+        if t_lower in esp or esp in t_lower or _coincide_terapeuta(t_lower, esp):
+            resultado.append(row)
+    return resultado
+
+
+def _coincide_terapeuta(a: str, b: str) -> bool:
+    """Compara por primer nombre si los apellidos varían (Sara vs Sara Rosales)."""
+    pa = a.split()
+    pb = b.split()
+    return bool(pa and pb and pa[0] == pb[0])
+
+
+def contar_talleres_catalogo_vistos() -> int:
+    with _transaction() as conn:
+        row = conn.execute("SELECT COUNT(*) AS n FROM catalogo_talleres_vistos").fetchone()
+        return int(row["n"]) if row else 0
+
+
+def taller_catalogo_ya_visto(clave: str) -> bool:
+    with _transaction() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM catalogo_talleres_vistos WHERE clave = ?",
+            (clave,),
+        ).fetchone()
+        return row is not None
+
+
+def marcar_taller_catalogo_visto(clave: str):
+    with _transaction() as conn:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO catalogo_talleres_vistos (clave, visto_at)
+            VALUES (?, ?)
+            """,
+            (clave, datetime.utcnow().isoformat()),
+        )
+
+
+def notificacion_nuevo_taller_enviada(telefono: str, taller_clave: str) -> bool:
+    with _transaction() as conn:
+        row = conn.execute(
+            """
+            SELECT 1 FROM notificaciones_nuevo_taller
+            WHERE telefono = ? AND taller_clave = ?
+            """,
+            (telefono, taller_clave),
+        ).fetchone()
+        return row is not None
+
+
+def marcar_notificacion_nuevo_taller(telefono: str, taller_clave: str):
+    with _transaction() as conn:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO notificaciones_nuevo_taller (telefono, taller_clave, enviado_at)
+            VALUES (?, ?, ?)
+            """,
+            (telefono, taller_clave, datetime.utcnow().isoformat()),
+        )
 
 
 def marcar_tarea_enviada_hoy(tarea_id: int, fecha: str):

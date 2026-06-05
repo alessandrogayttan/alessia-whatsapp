@@ -35,24 +35,88 @@ def _formatear_fecha_español(fecha: datetime.datetime) -> str:
     return f"{dia.capitalize()} {fecha.day} de {mes} de {fecha.year}"
 
 
+def _es_servicio_online(servicio: str) -> bool:
+    texto = (servicio or "").lower()
+    return any(
+        k in texto
+        for k in ("online", "en línea", "en linea", "virtual", "zoom", "meet", "videollamada")
+    )
+
+
+def _construir_enlace_google_calendar(
+    fecha_inicio: datetime.datetime,
+    fecha_fin: datetime.datetime,
+    especialista_texto: str,
+    servicio: str,
+    es_online: bool,
+) -> str:
+    format_start = fecha_inicio.strftime("%Y%m%dT%H%M%S")
+    format_end = fecha_fin.strftime("%Y%m%dT%H%M%S")
+    texto_link = urllib.parse.quote(f"Cita en Inpulso con {especialista_texto}")
+    detalles = (
+        f"Tu sesión online de {servicio} en Inpulso está confirmada."
+        if es_online
+        else f"Tu cita de {servicio} en Inpulso está confirmada."
+    )
+    detalles_link = urllib.parse.quote(detalles)
+    ubicacion = (
+        "Sesión online — Inpulso 43"
+        if es_online
+        else "Av. Hidalgo 533, República, 45146 Zapopan, Jal."
+    )
+    ubicacion_link = urllib.parse.quote(ubicacion)
+    return (
+        f"https://calendar.google.com/calendar/render?action=TEMPLATE"
+        f"&text={texto_link}&dates={format_start}/{format_end}"
+        f"&details={detalles_link}&location={ubicacion_link}&ctz=America/Mexico_City"
+    )
+
+
+def _texto_pago_online() -> str:
+    banorte = config.CUENTAS_OFICIALES["BANORTE"]
+    banamex = config.CUENTAS_OFICIALES["BANAMEX"]
+    return (
+        f"\n\n💳 *Pago de tu sesión online*\n"
+        f"Para confirmar tu cita, el pago debe hacerse en su *totalidad* al confirmar "
+        f"(a más tardar 24 horas antes de la sesión) 🙏\n\n"
+        f"Puedes pagar con:\n"
+        f"• Transferencia BANORTE (CLABE {banorte['clabe']})\n"
+        f"• Transferencia BANAMEX (CLABE {banamex['clabe']})\n"
+        f"• Efectivo o tarjeta en recepción de Inpulso 43 💳\n\n"
+        f"Envía tu comprobante por aquí cuando lo tengas — con gusto te ayudamos 😊"
+    )
+
+
 def _formatear_confirmacion_cita(
     fecha_inicio: datetime.datetime,
     especialista_texto: str,
     servicio: str,
-    enlace_corto: str,
+    *,
+    es_online: bool = False,
 ) -> str:
     hora = fecha_inicio.strftime("%I:%M %p").lstrip("0").replace("AM", "a.m.").replace("PM", "p.m.")
     fecha_txt = _formatear_fecha_español(fecha_inicio)
-    return (
-        f"✅ *Cita confirmada*\n"
-        f"📅 {fecha_txt}, {hora}\n"
-        f"👩‍⚕️ {especialista_texto}\n"
-        f"🩺 {servicio}\n"
-        f"📍 {config.CLINICA_DIRECCION}\n"
-        f"🗺️ {config.CLINICA_MAPS_URL}\n"
-        f"💡 Llega 10 minutos antes\n\n"
-        f"Agrega a tu calendario: {enlace_corto}"
-    )
+    if es_online:
+        cuerpo = (
+            f"✅ *Cita confirmada*\n"
+            f"💻 Sesión *en línea*\n"
+            f"📅 {fecha_txt}, {hora}\n"
+            f"👩‍⚕️ {especialista_texto}\n"
+            f"🩺 {servicio}\n"
+            f"💡 Conéctate 5 minutos antes — te enviaremos el link por aquí ✨"
+        )
+        cuerpo += _texto_pago_online()
+    else:
+        cuerpo = (
+            f"✅ *Cita confirmada*\n"
+            f"📅 {fecha_txt}, {hora}\n"
+            f"👩‍⚕️ {especialista_texto}\n"
+            f"🩺 {servicio}\n"
+            f"📍 {config.CLINICA_DIRECCION}\n"
+            f"🗺️ {config.CLINICA_MAPS_URL}\n"
+            f"💡 Llega 10 minutos antes 🌿"
+        )
+    return cuerpo + "\n\n📅 Toca el botón de abajo para agregarla a tu calendario 🙌"
 
 
 def _extraer_montos_de_texto(texto: str) -> list[float]:
@@ -820,13 +884,20 @@ def agendar_cita(
         service = get_calendar_service()
 
         especialista_texto = NOMBRES_TERAPEUTAS.get(nombre_clave, especialista.title())
+        es_online = _es_servicio_online(servicio)
 
-        event = {
-            "summary": nombre_paciente.upper(),
-            "description": (
+        descripcion_cita = (
+            f"Cita ONLINE de {servicio} con {especialista_texto}. "
+            f"Teléfono: {telefono_paciente}"
+            if es_online
+            else (
                 f"Cita de {servicio} con {especialista_texto}. "
                 f"Teléfono: {telefono_paciente}"
-            ),
+            )
+        )
+        event = {
+            "summary": nombre_paciente.upper(),
+            "description": descripcion_cita,
             "start": {
                 "dateTime": fecha_inicio.isoformat(),
                 "timeZone": config.ZONA_MEXICO,
@@ -836,6 +907,8 @@ def agendar_cita(
                 "timeZone": config.ZONA_MEXICO,
             },
         }
+        if es_online:
+            event["location"] = "Sesión online — Inpulso 43"
 
         evento_creado = service.events().insert(calendarId=calendar_id, body=event).execute()
         if not evento_creado.get("id"):
@@ -850,34 +923,51 @@ def agendar_cita(
                 telefono_paciente, fecha_inicio.strftime("%Y-%m-%d")
             )
 
-        format_start = fecha_inicio.strftime("%Y%m%dT%H%M%S")
-        format_end = fecha_fin.strftime("%Y%m%dT%H%M%S")
-        texto_link = urllib.parse.quote(f"Cita en Inpulso con {especialista_texto}")
-        detalles_link = urllib.parse.quote(
-            f"Tu cita de {servicio} en Inpulso está confirmada."
+        enlace_calendario = _construir_enlace_google_calendar(
+            fecha_inicio, fecha_fin, especialista_texto, servicio, es_online
         )
-        ubicacion_link = urllib.parse.quote("Av. Hidalgo 533, República, 45146 Zapopan, Jal.")
-        enlace_gigante = (
-            f"https://calendar.google.com/calendar/render?action=TEMPLATE"
-            f"&text={texto_link}&dates={format_start}/{format_end}"
-            f"&details={detalles_link}&location={ubicacion_link}&ctz=America/Mexico_City"
-        )
-
-        try:
-            enlace_corto = requests.get(
-                f"http://tinyurl.com/api-create.php?url={enlace_gigante}",
-                timeout=10,
-            ).text
-        except requests.RequestException:
-            enlace_corto = enlace_gigante
-
         bloque = _formatear_confirmacion_cita(
-            fecha_inicio, especialista_texto, servicio, enlace_corto
+            fecha_inicio, especialista_texto, servicio, es_online=es_online
         )
+
+        confirmacion_enviada = False
+        if telefono_paciente:
+            from whatsapp import enviar_mensaje_con_boton_url, enviar_mensaje_whatsapp
+
+            confirmacion_enviada = enviar_mensaje_con_boton_url(
+                telefono_paciente,
+                bloque,
+                "Agregar calendario",
+                enlace_calendario,
+            )
+            if not confirmacion_enviada:
+                bloque_fallback = bloque.replace(
+                    "\n\n📅 Toca el botón de abajo para agregarla a tu calendario 🙌",
+                    f"\n\n📅 Agregar a tu calendario:\n{enlace_calendario}",
+                )
+                confirmacion_enviada = enviar_mensaje_whatsapp(
+                    telefono_paciente, bloque_fallback
+                )
+
+        if confirmacion_enviada:
+            extra_online = (
+                " Recuerda con calidez el pago total al confirmar (máx. 24 h antes) "
+                "si aún no lo mencionaste."
+                if es_online
+                else ""
+            )
+            return (
+                f"ÉXITO: Cita guardada correctamente. INSTRUCCIÓN PARA LA IA: "
+                f"La confirmación con *botón de calendario* ya fue enviada al paciente "
+                f"por WhatsApp.{extra_online} "
+                f"Responde solo con 1-2 frases cálidas de seguimiento (emojis bienvenidos). "
+                f"PROHIBIDO repetir fecha, hora, terapeuta ni el bloque de confirmación."
+            )
+
         return (
             f"ÉXITO: Cita guardada correctamente. INSTRUCCIÓN PARA LA IA: "
-            f"Envía al paciente EXACTAMENTE este bloque de confirmación (puedes añadir "
-            f"una frase cálida antes o después, pero conserva el bloque completo):\n\n{bloque}"
+            f"Envía al paciente EXACTAMENTE este bloque de confirmación "
+            f"(puedes añadir una frase cálida antes o después, pero conserva el bloque completo):\n\n{bloque}"
         )
     except Exception as e:
         logger.error("Error al agendar cita: %s", e)

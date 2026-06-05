@@ -342,6 +342,7 @@ def obtener_cuentas_pago_texto() -> str:
     banorte = config.CUENTAS_OFICIALES["BANORTE"]
     banamex = config.CUENTAS_OFICIALES["BANAMEX"]
     return (
+        f"Efectivo o tarjeta en recepción Inpulso 43 | "
         f"BANORTE CLABE {banorte['clabe']} ({banorte['titular']}) | "
         f"BANAMEX CLABE {banamex['clabe']} ({banamex['titular']})"
     )

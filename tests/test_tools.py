@@ -126,6 +126,29 @@ def test_estado_taller_por_iniciar(monkeypatch):
     assert estado["estado_taller"] == "por_iniciar"
 
 
+def test_es_servicio_online():
+    from tools import _es_servicio_online
+
+    assert _es_servicio_online("Consulta online")
+    assert _es_servicio_online("Terapia en línea")
+    assert not _es_servicio_online("Consulta presencial")
+
+
+def test_formatear_confirmacion_cita_online_incluye_pago():
+    import datetime
+
+    from tools import _formatear_confirmacion_cita
+
+    fecha = datetime.datetime(2026, 6, 10, 10, 0)
+    bloque = _formatear_confirmacion_cita(
+        fecha, "Sara Rosales", "Consulta online", es_online=True
+    )
+    assert "en línea" in bloque.lower() or "en línea" in bloque
+    assert "totalidad" in bloque.lower()
+    assert "tarjeta" in bloque.lower()
+    assert "botón" in bloque.lower()
+
+
 def test_formatear_evento_cita():
     from tools import _formatear_evento_cita
 

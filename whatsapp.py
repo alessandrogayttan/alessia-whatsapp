@@ -143,6 +143,36 @@ def enviar_mensaje_whatsapp(telefono_destino: str, texto: str) -> bool:
     return ok
 
 
+def enviar_mensaje_con_boton_url(
+    telefono_destino: str,
+    texto_cuerpo: str,
+    texto_boton: str,
+    url: str,
+) -> bool:
+    """Mensaje interactivo con botón CTA que abre una URL (p. ej. Google Calendar)."""
+    if len(texto_boton) > 20:
+        texto_boton = texto_boton[:20]
+    if len(texto_cuerpo) > 1024:
+        texto_cuerpo = texto_cuerpo[:1021] + "..."
+    return _enviar_payload(
+        telefono_destino,
+        {
+            "type": "interactive",
+            "interactive": {
+                "type": "cta_url",
+                "body": {"text": texto_cuerpo},
+                "action": {
+                    "name": "cta_url",
+                    "parameters": {
+                        "display_text": texto_boton,
+                        "url": url,
+                    },
+                },
+            },
+        },
+    )
+
+
 def enviar_plantilla_whatsapp(
     telefono_destino: str,
     nombre_plantilla: str,

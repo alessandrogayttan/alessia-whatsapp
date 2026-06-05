@@ -92,6 +92,40 @@ def test_es_evento_bloqueo():
     )
 
 
+def _fijar_fecha_catalogo(monkeypatch, anio: int, mes: int, dia: int):
+    import datetime
+
+    import catalogo
+    import pytz
+
+    fijo = datetime.datetime(anio, mes, dia, 12, 0, tzinfo=pytz.timezone("America/Mexico_City"))
+
+    class FakeDatetime(datetime.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fijo
+
+    monkeypatch.setattr(catalogo.datetime, "datetime", FakeDatetime)
+
+
+def test_estado_taller_en_curso(monkeypatch):
+    import catalogo
+
+    _fijar_fecha_catalogo(monkeypatch, 2026, 6, 4)
+    estado = catalogo.estado_taller("Lunes 1 y 8 de junio")
+    assert estado["estado_taller"] == "en_curso"
+    assert "YA ESTÁ EN CURSO" in estado["aviso_estado"]
+    assert "08/06/2026" in estado["aviso_estado"]
+
+
+def test_estado_taller_por_iniciar(monkeypatch):
+    import catalogo
+
+    _fijar_fecha_catalogo(monkeypatch, 2026, 5, 20)
+    estado = catalogo.estado_taller("Lunes 1 y 8 de junio")
+    assert estado["estado_taller"] == "por_iniciar"
+
+
 def test_formatear_evento_cita():
     from tools import _formatear_evento_cita
 

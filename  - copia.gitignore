@@ -1,0 +1,14 @@
+.env
+digitalocean_env.txt
+*.db
+__pycache__/
+*.py[cod]
+*.json.bak
+agente-inpulso-*.json
+.venv/
+venv/
+env/
+.idea/
+.vscode/
+*.log
+data/

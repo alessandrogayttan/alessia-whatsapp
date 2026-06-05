@@ -41,6 +41,16 @@ def test_obtener_nombre_paciente(db_temp):
     assert storage.obtener_nombre_paciente("523326505999") == "María"
 
 
+def test_memoria_nombre_por_telefono(db_temp):
+    storage.guardar_nombre_casual("523326505999", "Alessandro")
+    assert storage.primer_nombre("523326505999") == "Alessandro"
+    assert not storage.tiene_nombre_completo("523326505999")
+    storage.guardar_nombre_paciente("523326505999", "Alessandro Gaytán")
+    assert storage.tiene_nombre_completo("523326505999")
+    storage.guardar_nombre_casual("523326505999", "Alex")
+    assert storage.obtener_nombre_paciente("523326505999") == "Alessandro Gaytán"
+
+
 def test_prep_sesion_y_pendiente(db_temp):
     storage.marcar_prep_pendiente("523326505999", "evt-1")
     assert storage.obtener_prep_pendiente("523326505999") == "evt-1"

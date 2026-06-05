@@ -195,6 +195,24 @@ def webhook():
     return "OK", 200
 
 
+def _extraer_nombre_del_mensaje(texto: str) -> str | None:
+    """Detecta presentación casual: 'me llamo X', 'soy X', 'mi nombre es X'."""
+    patrones = [
+        r"(?:me llamo|mi nombre es)\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,50})",
+        r"^soy\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,50})$",
+    ]
+    texto_limpio = texto.strip()
+    for patron in patrones:
+        m = re.search(patron, texto_limpio, re.IGNORECASE)
+        if m:
+            nombre = " ".join(m.group(1).strip().split()[:4])
+            if len(nombre) >= 2 and nombre.lower() not in (
+                "alessia", "inpulso", "hola", "buenas", "buenos", "noches", "tardes", "dias",
+            ):
+                return nombre
+    return None
+
+
 def _extraer_mensajes_whatsapp(datos: dict):
     """Recorre todo el payload de Meta (puede traer varios mensajes)."""
     for entry in datos.get("entry", []):
@@ -219,6 +237,10 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
         if es_terapeuta:
             return texto_contexto + f"[Modo staff: {es_terapeuta}]\n" + texto_paciente
 
+        nombre_detectado = _extraer_nombre_del_mensaje(texto_paciente)
+        if nombre_detectado:
+            storage.guardar_nombre_casual(numero_remitente, nombre_detectado)
+
         if storage.es_primera_vez(numero_remitente):
             storage.marcar_no_primera_vez(numero_remitente)
             storage.obtener_o_crear_codigo_referido(numero_remitente)
@@ -229,15 +251,24 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
                 saludo_hora = "buenas tardes"
             else:
                 saludo_hora = "buenas noches"
+            conocido = storage.primer_nombre(numero_remitente)
+            if conocido:
+                extra = (
+                    f"Paciente recurrente (nombre guardado: {conocido}). "
+                    f"Salúdalo por su nombre. NO preguntes cómo se llama."
+                )
+            else:
+                extra = (
+                    "Paciente nuevo sin nombre guardado. "
+                    "NO pidas nombre para charlar; solo al agendar o inscribir a taller."
+                )
             return (
                 texto_contexto
-                + f"[Sistema: PRIMERA VEZ — Primer contacto por WhatsApp. "
-                f"Saluda con '{saludo_hora}', preséntate solo como 'Alessia, de Inpulso 43'. "
-                f"Habla como persona real del equipo (recepción). "
-                f"PROHIBIDO decir virtual, IA, bot o automatizado. "
-                f"Si el mensaje ya incluye una pregunta (taller, cita, precios), respóndela en el mismo mensaje. "
-                f"Si no dio su nombre, pregúntalo al final con naturalidad. "
-                f"No envíes bloque largo de bienvenida con dirección/estacionamiento salvo que lo pidan.]\n"
+                + f"[Sistema: PRIMER CONTACTO EN SISTEMA — Saluda con '{saludo_hora}', "
+                f"preséntate como 'Alessia, de Inpulso 43'. {extra} "
+                f"Tono MUY cálido y humano, con emojis (😊 ✨). PROHIBIDO ser cortante, seca o fría. "
+                f"PROHIBIDO decir virtual, IA o bot. "
+                f"Si el mensaje incluye una pregunta, respóndela en el mismo mensaje con cariño.]\n"
                 + texto_paciente
             )
 

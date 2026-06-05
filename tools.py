@@ -706,6 +706,37 @@ def consultar_mis_citas(telefono: str):
     return "CITAS DEL PACIENTE: " + " | ".join(resumen)
 
 
+def obtener_contexto_perfil_paciente(telefono: str) -> str:
+    """Memoria permanente: nombre asociado al número de WhatsApp."""
+    nombre = storage.obtener_nombre_paciente(telefono)
+    if not nombre:
+        return (
+            "[Sistema: PERFIL PACIENTE — Sin nombre guardado para este número. "
+            "NO pidas nombre para charlar; solo si agendará cita o se inscribirá a taller "
+            "pide nombre COMPLETO (nombre y apellidos). Si se presenta casualmente, "
+            "usa recordar_nombre_paciente. Mantén tono cálido con emojis.]\n"
+        )
+    primero = nombre.strip().split()[0]
+    completo = "sí" if storage.tiene_nombre_completo(telefono) else "no"
+    return (
+        f"[Sistema: PERFIL PACIENTE — Memoria permanente por teléfono. "
+        f"Nombre guardado: {nombre} (primer nombre: {primero}). "
+        f"Nombre completo en archivo: {completo}. "
+        f"Salúdalo por '{primero}' con calidez y emojis. PROHIBIDO preguntar cómo se llama para platicar. "
+        f"Solo pide nombre y apellidos al agendar cita o inscribir a taller si aún no es completo.]\n"
+    )
+
+
+def recordar_nombre_paciente(telefono: str, nombre: str):
+    """Guarda el nombre del paciente asociado a su teléfono (memoria permanente)."""
+    storage.guardar_nombre_casual(telefono, nombre)
+    primero = storage.primer_nombre(telefono) or nombre.strip().split()[0]
+    return (
+        f"ÉXITO: Nombre guardado ({primero}). INSTRUCCIÓN PARA LA IA: "
+        f"Dirígete a {primero} por su primer nombre. No vuelvas a preguntar su nombre para charlar."
+    )
+
+
 def obtener_contexto_citas_paciente(telefono: str) -> str:
     """
     Contexto automático para inyectar en cada mensaje del paciente.
@@ -740,7 +771,7 @@ def envolver_mensaje_con_contexto_paciente(telefono: str, contenido):
     """Anteponer contexto de fecha (y citas del paciente si no es staff)."""
     from google.genai import types
 
-    ctx = obtener_contexto_fecha_actual()
+    ctx = obtener_contexto_fecha_actual() + obtener_contexto_perfil_paciente(telefono)
     if config.identificar_terapeuta(telefono):
         ctx += (
             "[Sistema: MODO STAFF — El remitente es terapeuta.\n"
@@ -1222,6 +1253,9 @@ def registrar_paciente_taller(
         match = re.search(r"A(\d+):", updated_range)
         if match:
             colorear_celda_pago(service, sheet_id, int(match.group(1)) - 1, "PENDIENTE")
+
+        if telefono and nombre:
+            storage.guardar_nombre_paciente(telefono, nombre)
 
         return (
             "INSTRUCCIÓN PARA LA IA: Confírmale al paciente de forma muy alegre, humana "

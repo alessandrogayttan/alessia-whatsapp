@@ -293,6 +293,32 @@ def obtener_nombre_paciente(telefono: str) -> str | None:
         return None
 
 
+def primer_nombre(telefono: str) -> str | None:
+    """Primer nombre guardado (memoria permanente por teléfono)."""
+    nombre = obtener_nombre_paciente(telefono)
+    if not nombre:
+        return None
+    return nombre.strip().split()[0]
+
+
+def tiene_nombre_completo(telefono: str) -> bool:
+    nombre = obtener_nombre_paciente(telefono)
+    return bool(nombre and len(nombre.split()) >= 2)
+
+
+def guardar_nombre_casual(telefono: str, nombre: str):
+    """Guarda primer nombre; no sobrescribe un nombre completo ya registrado."""
+    nombre = " ".join(nombre.strip().split())
+    if not nombre or len(nombre) < 2:
+        return
+    actual = obtener_nombre_paciente(telefono)
+    if actual and len(actual.split()) >= 2:
+        return
+    if actual and len(nombre.split()) <= len(actual.split()):
+        return
+    guardar_nombre_paciente(telefono, nombre)
+
+
 def _ensure_extra(conn, telefono: str):
     conn.execute(
         "INSERT OR IGNORE INTO paciente_extra (telefono) VALUES (?)",

@@ -59,8 +59,10 @@ El servicio escucha en el puerto 5000. Coloca un proxy inverso (nginx/Caddy) con
 
 ```bash
 set FLASK_ENV=production
-gunicorn --bind 0.0.0.0:5000 --workers 2 --timeout 120 wsgi:app
+gunicorn --bind 0.0.0.0:5000 --workers 1 --timeout 120 wsgi:app
 ```
+
+Usa un solo worker/proceso mientras el scheduler viva dentro de la app web; si escalas a más workers o instancias, mueve `jobs.py` a un worker separado para evitar recordatorios duplicados.
 
 ## Estructura del proyecto
 
@@ -74,7 +76,7 @@ gunicorn --bind 0.0.0.0:5000 --workers 2 --timeout 120 wsgi:app
 | `config.py` | Variables de entorno |
 | `precios.json` | Catálogo de servicios |
 
-> **Nota:** `Agente.py` es una versión anterior. Usa `servidor.py` como entrada principal.
+La entrada oficial es `wsgi.py` en producción y `servidor.py` en desarrollo local.
 
 ## Comandos especiales para pacientes
 
@@ -89,7 +91,7 @@ Endpoints de salud:
 
 - `GET /health` — vivo
 - `GET /health/ready` — listo para WhatsApp (503 si falta algo crítico)
-- `GET /health/config?secret=...` — diagnóstico de variables (producción)
+- `GET /health/config?secret=...` — diagnóstico de variables (en producción requiere `HEALTH_CONFIG_SECRET`; si no existe, queda deshabilitado)
 
 ## Checklist antes del lanzamiento
 

@@ -34,6 +34,7 @@ from jobs import (
 )
 from whatsapp import (
     descargar_media_whatsapp,
+    enviar_ack_inmediato,
     enviar_mensaje_whatsapp,
     marcar_leido_y_escribiendo,
     verificar_firma_webhook,
@@ -121,7 +122,9 @@ def health_ready():
 @app.route("/health/config", methods=["GET"])
 def health_config():
     """Muestra qué variables tiene el servidor (sin revelar valores)."""
-    if config.IS_PRODUCTION and config.HEALTH_CONFIG_SECRET:
+    if config.IS_PRODUCTION and not config.HEALTH_CONFIG_SECRET:
+        return {"error": "Not configured"}, 404
+    if config.IS_PRODUCTION:
         token = request.args.get("secret") or request.headers.get("X-Health-Secret", "")
         if token != config.HEALTH_CONFIG_SECRET:
             return {"error": "Forbidden"}, 403
@@ -185,6 +188,7 @@ def webhook():
 
         numero_remitente = mensaje_info["from"]
         marcar_leido_y_escribiendo(mensaje_id)
+        enviar_ack_inmediato(numero_remitente)
         contenido_con_citas = envolver_mensaje_con_contexto_paciente(
             numero_remitente, contenido_para_ia
         )

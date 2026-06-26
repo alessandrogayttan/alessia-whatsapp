@@ -257,6 +257,16 @@ def eliminar_datos_paciente(telefono: str):
         conn.execute("DELETE FROM menciones_cita_proactiva WHERE telefono = ?", (telefono,))
         conn.execute("DELETE FROM paciente_extra WHERE telefono = ?", (telefono,))
         conn.execute("DELETE FROM checkins_emocionales WHERE telefono = ?", (telefono,))
+        conn.execute("DELETE FROM prep_sesion WHERE telefono = ?", (telefono,))
+        conn.execute("DELETE FROM prep_pendiente WHERE telefono = ?", (telefono,))
+        conn.execute("DELETE FROM ritual_pendiente WHERE telefono = ?", (telefono,))
+        conn.execute("DELETE FROM notas_ritual WHERE telefono = ?", (telefono,))
+        conn.execute("DELETE FROM primera_cita WHERE telefono = ?", (telefono,))
+        conn.execute("DELETE FROM aniversarios_enviados WHERE telefono = ?", (telefono,))
+        conn.execute("DELETE FROM tareas_terapeuticas WHERE telefono_paciente = ?", (telefono,))
+        conn.execute("DELETE FROM interes_talleres WHERE telefono = ?", (telefono,))
+        conn.execute("DELETE FROM notificaciones_nuevo_taller WHERE telefono = ?", (telefono,))
+        conn.execute("DELETE FROM referidos_log WHERE telefono_nuevo = ?", (telefono,))
 
 
 def ya_menciono_cita_proactiva(telefono: str, cita_clave: str) -> bool:

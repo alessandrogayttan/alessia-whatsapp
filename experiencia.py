@@ -10,7 +10,6 @@ import config
 import storage
 from catalogo import _leer_filas_catalogo
 from tools import (
-    cancelar_cita_paciente,
     consultar_agenda,
     listar_citas_futuras_por_telefono,
 )
@@ -77,7 +76,7 @@ def link_sesion_online(especialista: str = "") -> str:
 
 
 def reagendar_cita_inteligente(telefono_paciente: str):
-    """Cancela la próxima cita y ofrece hasta 3 horarios alternativos."""
+    """Ofrece hasta 3 horarios alternativos sin cancelar la cita actual."""
     citas = listar_citas_futuras_por_telefono(telefono_paciente)
     if not citas:
         return (
@@ -88,10 +87,6 @@ def reagendar_cita_inteligente(telefono_paciente: str):
     proxima = citas[0]
     esp = proxima["especialista"]
     detalle_viejo = f"{proxima['fecha']} a las {proxima['hora']} con {esp}"
-
-    resultado_cancel = cancelar_cita_paciente(telefono_paciente)
-    if "cancelada exitosamente" not in resultado_cancel.lower() and "ÉXITO" not in resultado_cancel:
-        return f"{resultado_cancel} INSTRUCCIÓN: No se pudo reagendar; ofrece ayuda humana."
 
     opciones = []
     hoy = datetime.datetime.now(ZONA).replace(tzinfo=None)
@@ -112,15 +107,17 @@ def reagendar_cita_inteligente(telefono_paciente: str):
 
     if not opciones:
         return (
-            f"INSTRUCCIÓN PARA LA IA: Se canceló la cita del {detalle_viejo} pero no hay "
-            f"espacios próximos con {esp}. Ofrece lista de espera con agregar_lista_espera."
+            f"INSTRUCCIÓN PARA LA IA: No cancelé la cita actual ({detalle_viejo}) porque "
+            f"no hay espacios próximos con {esp}. Ofrece lista de espera con agregar_lista_espera "
+            f"o escalación humana."
         )
 
     lista = "\n".join(f"• {o}" for o in opciones)
     return (
-        f"INSTRUCCIÓN PARA LA IA: Cita cancelada ({detalle_viejo}). "
-        f"Ofrece estos horarios alternativos:\n{lista}\n"
-        f"Cuando el paciente elija, usa agendar_cita con teléfono {telefono_paciente}."
+        f"INSTRUCCIÓN PARA LA IA: La cita actual ({detalle_viejo}) sigue reservada. "
+        f"Ofrece estos horarios alternativos para reagendar:\n{lista}\n"
+        f"Cuando el paciente elija, agenda primero la nueva cita con agendar_cita y después "
+        f"cancela la cita anterior con cancelar_cita_paciente usando el teléfono {telefono_paciente}."
     )
 
 

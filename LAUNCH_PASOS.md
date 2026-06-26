@@ -6,6 +6,19 @@ Código listo con: ack inmediato, reintentos de envío WhatsApp, health `/health
 
 ---
 
+## Gate final — NO lanzar si falta algo de esto
+
+- El número conectado en Meta debe ser el número oficial de Inpulso, no el `+1 555...` de prueba.
+- `ID_TELEFONO` en DigitalOcean debe ser el Phone Number ID del número oficial.
+- `TOKEN_WHATSAPP`, `WHATSAPP_APP_SECRET`, `GEMINI_API_KEY` y la llave Google deben estar rotados si estuvieron expuestos.
+- `RECEPCION_WHATSAPP` debe apuntar a recepción para que *HABLAR CON PERSONA* avise a alguien.
+- `WHATSAPP_TEMPLATE_24H` y `WHATSAPP_TEMPLATE_2H` deben estar aprobadas en Meta para recordatorios fuera de 24 h.
+- `HEALTH_CONFIG_SECRET` debe existir; si no, `/health/config` queda deshabilitado en producción.
+- Calendarios y Google Sheet deben estar compartidos como Editor con la cuenta de servicio.
+- La prueba de fuego de la Parte E debe pasar con el número oficial.
+
+---
+
 ## Parte A — Subir código (15 min)
 
 ### 1. Commit y push a GitHub
@@ -70,9 +83,12 @@ Copia/pega y completa **cada una** (las SECRET no deben ir en GitHub):
 | `DATABASE_PATH` | `/data/alessia.db` | Sí |
 | `WEBHOOK_CALLBACK_URL` | `https://alessia-whatsapp-jbems.ondigitalocean.app/webhook` | Sí |
 | `WHATSAPP_SARA` | `523310265936` | Sí |
-| `WHATSAPP_JUAN` | WhatsApp de Juan (52 + 10 dígitos) | Recomendado |
-| `WHATSAPP_PATRICIA` | … | Recomendado |
-| `WHATSAPP_IVAN` | … | Recomendado |
+| `WHATSAPP_MAGUI` | `13476240818` | Recomendado |
+| `WHATSAPP_JUAN` | `523331706274` | Recomendado |
+| `WHATSAPP_PATRICIA` | `523314995220` | Recomendado |
+| `WHATSAPP_REBECA` | `523313837376` | Recomendado |
+| `WHATSAPP_BETTY` | `523310122705` | Recomendado |
+| `WHATSAPP_IVAN` | `523312212406` | Recomendado |
 | `WHATSAPP_NUTRICION` | … | Recomendado |
 | `RECEPCION_WHATSAPP` | WhatsApp de recepción para escalaciones | Recomendado |
 | `WHATSAPP_TEMPLATE_24H` | Nombre plantilla aprobada (sin espacios) | Ver Parte C |
@@ -209,6 +225,7 @@ Haz estas pruebas **después** del deploy:
 | Reintentos WhatsApp (3x) | Menos silencios por fallo de red |
 | Rescate + reintentos en IA | Si Gemini falla, siempre llega mensaje de rescate |
 | `WHATSAPP_APP_SECRET` obligatorio en prod | Webhook más seguro |
+| `/health/config` protegido | Solo responde con `HEALTH_CONFIG_SECRET`; si falta, se deshabilita |
 | `/health/ready` | DO puede reiniciar si la app no está lista |
 | Volumen `/data` | La base de datos sobrevive redeploys |
 

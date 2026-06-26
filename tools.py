@@ -689,10 +689,10 @@ def _invalidar_cache_citas(telefono: str):
 
 
 NOMBRES_TERAPEUTAS = {
-    "juan": "Juan",
+    "juan": "Juan Rosales",
     "sara": "Sara Rosales",
-    "patricia": "Patricia",
-    "ivan": "Iván",
+    "patricia": "Paty Velázquez",
+    "ivan": "Ivan Navarro",
     "nutricion": "Nutricionista",
     "mentoras": "Mentoras",
     "talleres": "Talleres",

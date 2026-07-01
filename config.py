@@ -192,6 +192,10 @@ HEALTH_CONFIG_SECRET = os.getenv("HEALTH_CONFIG_SECRET", "")
 
 # Clínica
 CLINICA_WEB_URL = os.getenv("CLINICA_WEB_URL", "https://inpulso43.com")
+AVISO_PRIVACIDAD_URL = os.getenv(
+    "AVISO_PRIVACIDAD_URL",
+    f"{CLINICA_WEB_URL}/contacto.php",
+)
 CLINICA_DIRECCION = "Av. Hidalgo 533, República, 45146 Zapopan, Jal."
 CLINICA_MAPS_URL = "https://maps.google.com/?q=Av.+Hidalgo+533,+Zapopan,+Jalisco"
 WHATSAPP_MAX_CHARS = 4000
@@ -236,6 +240,7 @@ AVISO_PRIVACIDAD = (
     "🔒 *Aviso de privacidad*\n"
     "Inpulso 43 usa tus datos (nombre, teléfono y citas) solo para darte atención y "
     "agendar servicios. No los compartimos con terceros ajenos a la clínica.\n"
+    f"Más información: {AVISO_PRIVACIDAD_URL}\n"
     "Puedes solicitar la eliminación de tus datos escribiendo *ELIMINAR DATOS*."
 )
 
@@ -250,6 +255,13 @@ PALABRAS_PRIVACIDAD = (
 )
 
 ZONA_MEXICO = "America/Mexico_City"
+
+# Observabilidad y operaciones
+SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+ALERTA_FALLOS_UMBRAL = int(os.getenv("ALERTA_FALLOS_UMBRAL", "5"))
+BACKUP_DIR = os.getenv("BACKUP_DIR", str(DATA_DIR / "backups"))
+WEBHOOK_RATE_LIMIT = int(os.getenv("WEBHOOK_RATE_LIMIT", "120"))  # req/min por IP
+ESCALACION_REAVISO_MINUTOS = int(os.getenv("ESCALACION_REAVISO_MINUTOS", "15"))
 
 # Sesiones online (Tier 4.15) — link por defecto o por terapeuta
 LINK_SESION_ONLINE_DEFAULT = os.getenv("LINK_SESION_ONLINE", "")

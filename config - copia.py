@@ -73,9 +73,24 @@ def _cargar_terapeutas_whatsapp() -> dict[str, str]:
         "sara": _normalizar_whatsapp(os.getenv("WHATSAPP_SARA", "523310265936")),
         "sara rosales": _normalizar_whatsapp(os.getenv("WHATSAPP_SARA", "523310265936")),
         "juan": _normalizar_whatsapp(os.getenv("WHATSAPP_JUAN", "")),
+        "juan rosales": _normalizar_whatsapp(os.getenv("WHATSAPP_JUAN", "")),
         "patricia": _normalizar_whatsapp(os.getenv("WHATSAPP_PATRICIA", "")),
+        "paty": _normalizar_whatsapp(os.getenv("WHATSAPP_PATRICIA", "")),
+        "paty velazquez": _normalizar_whatsapp(os.getenv("WHATSAPP_PATRICIA", "")),
+        "patricia velazquez": _normalizar_whatsapp(os.getenv("WHATSAPP_PATRICIA", "")),
+        "patricia velázquez": _normalizar_whatsapp(os.getenv("WHATSAPP_PATRICIA", "")),
         "ivan": _normalizar_whatsapp(os.getenv("WHATSAPP_IVAN", "")),
         "iván": _normalizar_whatsapp(os.getenv("WHATSAPP_IVAN", "")),
+        "ivan navarro": _normalizar_whatsapp(os.getenv("WHATSAPP_IVAN", "")),
+        "iván navarro": _normalizar_whatsapp(os.getenv("WHATSAPP_IVAN", "")),
+        "magui": _normalizar_whatsapp(os.getenv("WHATSAPP_MAGUI", "")),
+        "magui cardenas": _normalizar_whatsapp(os.getenv("WHATSAPP_MAGUI", "")),
+        "magui cárdenas": _normalizar_whatsapp(os.getenv("WHATSAPP_MAGUI", "")),
+        "rebeca": _normalizar_whatsapp(os.getenv("WHATSAPP_REBECA", "")),
+        "rebeca torres": _normalizar_whatsapp(os.getenv("WHATSAPP_REBECA", "")),
+        "betty": _normalizar_whatsapp(os.getenv("WHATSAPP_BETTY", "")),
+        "betty martinez": _normalizar_whatsapp(os.getenv("WHATSAPP_BETTY", "")),
+        "betty martínez": _normalizar_whatsapp(os.getenv("WHATSAPP_BETTY", "")),
         "nutricion": _normalizar_whatsapp(os.getenv("WHATSAPP_NUTRICION", "")),
         "nutricionista": _normalizar_whatsapp(os.getenv("WHATSAPP_NUTRICION", "")),
     }
@@ -96,10 +111,25 @@ TERAPEUTAS_WHATSAPP = _cargar_terapeutas_whatsapp()
 TERAPEUTA_NOMBRES = {
     "sara": "Sara Rosales",
     "sara rosales": "Sara Rosales",
-    "juan": "Juan",
-    "patricia": "Patricia",
-    "ivan": "Iván",
-    "iván": "Iván",
+    "juan": "Juan Rosales",
+    "juan rosales": "Juan Rosales",
+    "patricia": "Paty Velázquez",
+    "paty": "Paty Velázquez",
+    "paty velazquez": "Paty Velázquez",
+    "patricia velazquez": "Paty Velázquez",
+    "patricia velázquez": "Paty Velázquez",
+    "ivan": "Ivan Navarro",
+    "iván": "Ivan Navarro",
+    "ivan navarro": "Ivan Navarro",
+    "iván navarro": "Ivan Navarro",
+    "magui": "Magui Cárdenas",
+    "magui cardenas": "Magui Cárdenas",
+    "magui cárdenas": "Magui Cárdenas",
+    "rebeca": "Rebeca Torres",
+    "rebeca torres": "Rebeca Torres",
+    "betty": "Betty Martínez",
+    "betty martinez": "Betty Martínez",
+    "betty martínez": "Betty Martínez",
     "nutricion": "Nutrición",
     "nutricionista": "Nutrición",
 }
@@ -161,6 +191,11 @@ PALABRAS_ANSIEDAD = (
 HEALTH_CONFIG_SECRET = os.getenv("HEALTH_CONFIG_SECRET", "")
 
 # Clínica
+CLINICA_WEB_URL = os.getenv("CLINICA_WEB_URL", "https://inpulso43.com")
+AVISO_PRIVACIDAD_URL = os.getenv(
+    "AVISO_PRIVACIDAD_URL",
+    f"{CLINICA_WEB_URL}/contacto.php",
+)
 CLINICA_DIRECCION = "Av. Hidalgo 533, República, 45146 Zapopan, Jal."
 CLINICA_MAPS_URL = "https://maps.google.com/?q=Av.+Hidalgo+533,+Zapopan,+Jalisco"
 WHATSAPP_MAX_CHARS = 4000
@@ -205,6 +240,7 @@ AVISO_PRIVACIDAD = (
     "🔒 *Aviso de privacidad*\n"
     "Inpulso 43 usa tus datos (nombre, teléfono y citas) solo para darte atención y "
     "agendar servicios. No los compartimos con terceros ajenos a la clínica.\n"
+    f"Más información: {AVISO_PRIVACIDAD_URL}\n"
     "Puedes solicitar la eliminación de tus datos escribiendo *ELIMINAR DATOS*."
 )
 
@@ -219,6 +255,13 @@ PALABRAS_PRIVACIDAD = (
 )
 
 ZONA_MEXICO = "America/Mexico_City"
+
+# Observabilidad y operaciones
+SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+ALERTA_FALLOS_UMBRAL = int(os.getenv("ALERTA_FALLOS_UMBRAL", "5"))
+BACKUP_DIR = os.getenv("BACKUP_DIR", str(DATA_DIR / "backups"))
+WEBHOOK_RATE_LIMIT = int(os.getenv("WEBHOOK_RATE_LIMIT", "120"))  # req/min por IP
+ESCALACION_REAVISO_MINUTOS = int(os.getenv("ESCALACION_REAVISO_MINUTOS", "15"))
 
 # Sesiones online (Tier 4.15) — link por defecto o por terapeuta
 LINK_SESION_ONLINE_DEFAULT = os.getenv("LINK_SESION_ONLINE", "")
@@ -273,9 +316,21 @@ def advertencias_lanzamiento() -> list[str]:
         avisos.append("API_KEY_MAPS vacío: sin ETA/tráfico en recordatorios.")
     if not LINK_SESION_ONLINE_DEFAULT and not LINKS_ONLINE_TERAPEUTAS:
         avisos.append("LINK_SESION_ONLINE vacío: sesiones online sin link automático.")
+    if IS_PRODUCTION and not HEALTH_CONFIG_SECRET:
+        avisos.append("HEALTH_CONFIG_SECRET vacío: /health/config queda deshabilitado.")
+    staff_requerido = {
+        "sara": os.getenv("WHATSAPP_SARA", "523310265936"),
+        "juan": os.getenv("WHATSAPP_JUAN", ""),
+        "paty": os.getenv("WHATSAPP_PATRICIA", ""),
+        "ivan": os.getenv("WHATSAPP_IVAN", ""),
+        "magui": os.getenv("WHATSAPP_MAGUI", ""),
+        "rebeca": os.getenv("WHATSAPP_REBECA", ""),
+        "betty": os.getenv("WHATSAPP_BETTY", ""),
+        "nutricion": os.getenv("WHATSAPP_NUTRICION", ""),
+    }
     terapeutas_sin_numero = [
-        k for k, v in TERAPEUTAS_WHATSAPP.items()
-        if k in ("juan", "patricia", "ivan", "nutricion", "sara") and not v
+        nombre for nombre, numero in staff_requerido.items()
+        if not _normalizar_whatsapp(numero)
     ]
     if terapeutas_sin_numero:
         avisos.append(

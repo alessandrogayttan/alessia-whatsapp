@@ -3,6 +3,8 @@ import logging
 import re
 import sys
 import threading
+import time
+from collections import defaultdict
 
 import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -14,7 +16,10 @@ import storage
 from bienestar import comando_biblioteca, micro_ejercicio_para_texto
 from chat import procesar_mensaje_ia, reiniciar_chat_paciente
 from experiencia import calcular_minutos_ruta, guardar_nota_ritual_cierre, guardar_prep_sesion
+from message_queue import encolar_mensaje_texto, procesar_cola
+from observability import init_sentry, metricas_fallos
 from tools import (
+    eliminar_datos_arco,
     envolver_mensaje_con_contexto_paciente,
     notificar_emergencia_paciente,
     notificar_llegada_paciente,
@@ -22,17 +27,23 @@ from tools import (
 )
 from jobs import (
     alertas_citas_background,
+    backup_db_background,
     dashboard_background,
     frase_del_dia_background,
     limpiar_inscripciones_pendientes_background,
+    procesar_cola_background,
     reporte_semanal_background,
+    renotificar_escalaciones_background,
     seguimiento_post_cita_background,
+    sincronizar_web_background,
     trivia_semanal_background,
+    detectar_nuevos_talleres_background,
     verificar_lista_espera_background,
     experiencia_diaria_background,
 )
 from whatsapp import (
     descargar_media_whatsapp,
+    enviar_ack_inmediato,
     enviar_mensaje_whatsapp,
     marcar_leido_y_escribiendo,
     verificar_firma_webhook,
@@ -46,6 +57,19 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+_webhook_hits: dict[str, list[float]] = defaultdict(list)
+
+
+def _rate_limit_ok(ip: str) -> bool:
+    ahora = time.time()
+    ventana = ahora - 60
+    hits = [t for t in _webhook_hits[ip] if t > ventana]
+    _webhook_hits[ip] = hits
+    if len(hits) >= config.WEBHOOK_RATE_LIMIT:
+        return False
+    hits.append(ahora)
+    return True
 
 
 _scheduler_iniciado = False
@@ -62,12 +86,17 @@ def _iniciar_scheduler():
     scheduler.add_job(alertas_citas_background, "interval", minutes=15)
     scheduler.add_job(seguimiento_post_cita_background, "interval", minutes=30)
     scheduler.add_job(verificar_lista_espera_background, "interval", minutes=15)
+    scheduler.add_job(detectar_nuevos_talleres_background, "interval", minutes=10)
     scheduler.add_job(limpiar_inscripciones_pendientes_background, "interval", minutes=60)
     scheduler.add_job(frase_del_dia_background, "interval", minutes=15)
     scheduler.add_job(trivia_semanal_background, "interval", minutes=15)
     scheduler.add_job(reporte_semanal_background, "interval", minutes=15)
     scheduler.add_job(dashboard_background, "interval", hours=6)
     scheduler.add_job(experiencia_diaria_background, "interval", minutes=15)
+    scheduler.add_job(procesar_cola_background, "interval", seconds=5)
+    scheduler.add_job(renotificar_escalaciones_background, "interval", minutes=5)
+    scheduler.add_job(backup_db_background, "interval", hours=24)
+    scheduler.add_job(sincronizar_web_background, "interval", hours=24)
     scheduler.start()
     _scheduler_iniciado = True
     logger.info("Scheduler de tareas en segundo plano iniciado")
@@ -116,10 +145,25 @@ def health_ready():
     return payload, 200 if listo else 503
 
 
+@app.route("/health/metrics", methods=["GET"])
+def health_metrics():
+    """Métricas operativas básicas (sin PII)."""
+    if config.IS_PRODUCTION and config.HEALTH_CONFIG_SECRET:
+        token = request.args.get("secret") or request.headers.get("X-Health-Secret", "")
+        if token != config.HEALTH_CONFIG_SECRET:
+            return {"error": "Forbidden"}, 403
+    return {
+        "cola_pendiente": storage.contar_cola_pendiente(),
+        "fallos": metricas_fallos(),
+    }, 200
+
+
 @app.route("/health/config", methods=["GET"])
 def health_config():
     """Muestra qué variables tiene el servidor (sin revelar valores)."""
-    if config.IS_PRODUCTION and config.HEALTH_CONFIG_SECRET:
+    if config.IS_PRODUCTION and not config.HEALTH_CONFIG_SECRET:
+        return {"error": "Not configured"}, 404
+    if config.IS_PRODUCTION:
         token = request.args.get("secret") or request.headers.get("X-Health-Secret", "")
         if token != config.HEALTH_CONFIG_SECRET:
             return {"error": "Forbidden"}, 403
@@ -165,9 +209,17 @@ def webhook():
         logger.warning("Webhook POST con firma inválida")
         return "Forbidden", 403
 
+    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")
+    client_ip = client_ip.split(",")[0].strip()
+    if not _rate_limit_ok(client_ip):
+        logger.warning("Rate limit webhook excedido: %s", client_ip)
+        return "Too Many Requests", 429
+
     datos = request.get_json(silent=True)
     if not datos:
         return "OK", 200
+
+    _procesar_estados_whatsapp(datos)
 
     for mensaje_info in _extraer_mensajes_whatsapp(datos):
         mensaje_id = mensaje_info.get("id")
@@ -183,16 +235,60 @@ def webhook():
 
         numero_remitente = mensaje_info["from"]
         marcar_leido_y_escribiendo(mensaje_id)
+        enviar_ack_inmediato(numero_remitente)
+        _registrar_consentimiento_si_aplica(numero_remitente)
         contenido_con_citas = envolver_mensaje_con_contexto_paciente(
             numero_remitente, contenido_para_ia
         )
-        threading.Thread(
-            target=procesar_mensaje_ia,
-            args=(numero_remitente, contenido_con_citas),
-            daemon=True,
-        ).start()
+        if isinstance(contenido_con_citas, str):
+            encolar_mensaje_texto(numero_remitente, contenido_con_citas)
+        else:
+            threading.Thread(
+                target=procesar_mensaje_ia,
+                args=(numero_remitente, contenido_con_citas),
+                daemon=True,
+            ).start()
 
     return "OK", 200
+
+
+def _registrar_consentimiento_si_aplica(numero: str):
+    if config.identificar_terapeuta(numero):
+        return
+    if storage.necesita_consentimiento(numero):
+        storage.registrar_consentimiento(numero)
+
+
+def _procesar_estados_whatsapp(datos: dict):
+    """Registra entregas/fallos de mensajes salientes (statuses de Meta)."""
+    for entry in datos.get("entry", []):
+        for change in entry.get("changes", []):
+            for status in change.get("value", {}).get("statuses", []):
+                estado = status.get("status", "")
+                msg_id = status.get("id", "")
+                if estado == "failed":
+                    errors = status.get("errors", [])
+                    logger.error("WhatsApp falló msg=%s errors=%s", msg_id, errors)
+                elif estado in ("delivered", "read"):
+                    logger.debug("WhatsApp %s msg=%s", estado, msg_id)
+
+
+def _extraer_nombre_del_mensaje(texto: str) -> str | None:
+    """Detecta presentación casual: 'me llamo X', 'soy X', 'mi nombre es X'."""
+    patrones = [
+        r"(?:me llamo|mi nombre es)\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,50})",
+        r"^soy\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,50})$",
+    ]
+    texto_limpio = texto.strip()
+    for patron in patrones:
+        m = re.search(patron, texto_limpio, re.IGNORECASE)
+        if m:
+            nombre = " ".join(m.group(1).strip().split()[:4])
+            if len(nombre) >= 2 and nombre.lower() not in (
+                "alessia", "inpulso", "hola", "buenas", "buenos", "noches", "tardes", "dias",
+            ):
+                return nombre
+    return None
 
 
 def _extraer_mensajes_whatsapp(datos: dict):
@@ -219,9 +315,14 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
         if es_terapeuta:
             return texto_contexto + f"[Modo staff: {es_terapeuta}]\n" + texto_paciente
 
+        nombre_detectado = _extraer_nombre_del_mensaje(texto_paciente)
+        if nombre_detectado:
+            storage.guardar_nombre_casual(numero_remitente, nombre_detectado)
+
         if storage.es_primera_vez(numero_remitente):
             storage.marcar_no_primera_vez(numero_remitente)
             storage.obtener_o_crear_codigo_referido(numero_remitente)
+            enviar_mensaje_whatsapp(numero_remitente, config.AVISO_PRIVACIDAD)
             hora = datetime.datetime.now(zona_mexico).hour
             if hora < 12:
                 saludo_hora = "buenos días"
@@ -229,15 +330,25 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
                 saludo_hora = "buenas tardes"
             else:
                 saludo_hora = "buenas noches"
+            conocido = storage.primer_nombre(numero_remitente)
+            if conocido:
+                extra = (
+                    f"Paciente recurrente (nombre guardado: {conocido}). "
+                    f"Salúdalo por su nombre. NO preguntes cómo se llama."
+                )
+            else:
+                extra = (
+                    "Paciente nuevo sin nombre guardado. "
+                    "NO pidas nombre para charlar; solo al agendar o inscribir a taller."
+                )
             return (
                 texto_contexto
-                + f"[Sistema: PRIMERA VEZ — Primer contacto por WhatsApp. "
-                f"Saluda con '{saludo_hora}', preséntate solo como 'Alessia, de Inpulso 43'. "
-                f"Habla como persona real del equipo (recepción). "
-                f"PROHIBIDO decir virtual, IA, bot o automatizado. "
-                f"Si el mensaje ya incluye una pregunta (taller, cita, precios), respóndela en el mismo mensaje. "
-                f"Si no dio su nombre, pregúntalo al final con naturalidad. "
-                f"No envíes bloque largo de bienvenida con dirección/estacionamiento salvo que lo pidan.]\n"
+                + f"[Sistema: PRIMER CONTACTO EN SISTEMA — Saluda con '{saludo_hora}', "
+                f"preséntate como 'Alessia, de Inpulso 43'. {extra} "
+                f"Tono MUY cálido y humano, con emojis (😊 ✨). PROHIBIDO ser cortante, seca o fría. "
+                f"PROHIBIDO decir virtual, IA o bot. "
+                f"Si el mensaje incluye una pregunta, respóndela en el mismo mensaje con cariño. "
+                f"El aviso de privacidad ya fue enviado automáticamente.]\n"
                 + texto_paciente
             )
 
@@ -305,13 +416,14 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
             enviar_mensaje_whatsapp(numero_remitente, ejercicio)
 
         if texto_paciente.upper() == "ELIMINAR DATOS":
-            storage.eliminar_datos_paciente(numero_remitente)
+            resultado = eliminar_datos_arco(numero_remitente)
             reiniciar_chat_paciente(numero_remitente)
             enviar_mensaje_whatsapp(
                 numero_remitente,
-                "Tus datos locales han sido eliminados de nuestro sistema. "
-                "Si tienes citas activas en calendario, contacta a recepción para cancelarlas.",
+                "Tus datos han sido eliminados de nuestros sistemas automatizados. "
+                "Si necesitas confirmación escrita, contacta a recepción. 🙏",
             )
+            logger.info("ARCO eliminación: %s — %s", numero_remitente, resultado[:120])
             return None
 
         if texto_paciente.upper() == "HABLAR CON PERSONA":
@@ -404,10 +516,14 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
 
 
 def create_app():
+    init_sentry()
     config.validar_config_minima()
     config.validar_config_produccion()
     storage.init_db()
     _iniciar_scheduler()
+    procesados = procesar_cola(max_items=20)
+    if procesados:
+        logger.info("Cola recuperada al arranque: %s mensajes", procesados)
     logger.info(
         "Alessia lista — WhatsApp:%s Gemini:%s VerifyToken:%s AppSecret:%s GoogleJSON:%s",
         "OK" if config.TOKEN_WHATSAPP else "FALTA",

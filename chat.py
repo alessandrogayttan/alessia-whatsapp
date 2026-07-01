@@ -38,12 +38,15 @@ from tools import (
     obtener_mi_codigo_referido,
     obtener_ruta_inpulso,
     recordar_nombre_paciente,
+    reagendar_cita_atomica,
     reagendar_cita_inteligente,
     registrar_interes_taller,
     registrar_paciente_taller,
+    registrar_solicitud_facturacion,
     validar_fecha_cita,
 )
 from whatsapp import enviar_mensaje_whatsapp
+from observability import registrar_fallo_gemini
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +55,7 @@ memoria_pacientes = {}
 memoria_terapeutas = {}
 cerrojos_pacientes = {}
 # Al cambiar el prompt, sube la versión para refrescar chats en RAM tras deploy.
-PROMPT_VERSION = "warm-2026-06-f"
+PROMPT_VERSION = "warm-2026-06-10"
 _chat_prompt_version: dict[str, str] = {}
 
 
@@ -112,11 +115,12 @@ REGLAS DE COMUNICACIÓN Y TONO:
 21. CHECK-IN EMOCIONAL: Si responden un número del 1-10 tras recordatorio, acoge su respuesta con empatía.
 22. NPS: Si responden del 1-10 tras encuesta de recomendación, agradece sinceramente.
 23. PREP DE SESIÓN: Tras recordatorio 24 h, si el paciente responde qué quiere trabajar, usa 'guardar_prep_sesion'.
-24. REAGENDAR: Si quiere cambiar horario sin buscar manualmente, usa 'reagendar_cita_inteligente' — ofrece alternativas sin cancelar todavía. Cuando el paciente elija una opción, agenda primero la nueva cita y después cancela la anterior.
+24. REAGENDAR: Si quiere cambiar horario sin buscar manualmente, usa 'reagendar_cita_inteligente' — ofrece alternativas sin cancelar todavía. Cuando el paciente elija una opción, usa 'reagendar_cita_atomica' (agenda nueva + cancela vieja en un paso).
 25. RITUAL DE CIERRE: Tras seguimiento post-cita, si escribe reflexión privada, usa 'guardar_nota_ritual_cierre' (no se comparte con terapeuta).
 26. BIBLIOTECA: Comandos *RESPIRAR*, *GROUNDING*, *CRISIS* envían ejercicios al instante; CRISIS también alerta al equipo.
 27. TALLERES — ESTADO EN CURSO: Al consultar talleres, el catálogo trae *estado_taller* y *aviso_estado*. SIEMPRE menciónalo sin que pregunten: si ya empezó, dilo claro (qué sesión pasó y cuál sigue); si ya terminó, dilo; si aún no empieza, también. Si está EN_CURSO y aún aceptan inscripción a sesiones restantes, explícalo con honestidad.
 28. INTERÉS EN TALLERES (lista de espera de talleres): Si un taller ya está *en curso* o *finalizado* y el paciente muestra interés pero no puede unirse ahora, o pide que le avisen de próximos talleres del mismo terapeuta, usa 'registrar_interes_taller' con el terapeuta y el nombre del taller que consultó. Avisa con calidez que *le escribiremos automáticamente* cuando ese terapeuta publique uno nuevo. Cuando el paciente reciba esa notificación proactiva, platica con empatía y pregunta si le interesa inscribirse (sin presión).
+29. FACTURACIÓN CFDI: Cuando tengas TODOS los datos (razón social, RFC, domicilio fiscal, día/horario cita, método pago, uso CFDI), llama 'registrar_solicitud_facturacion'. Pide CSF si falta.
 
 INFORMACIÓN DE LA CLÍNICA Y PAGOS:
 - SITIO WEB OFICIAL: {config.CLINICA_WEB_URL} — Sitio multi-página (NO es una sola landing). Alessia debe coincidir con la web.
@@ -126,9 +130,11 @@ INFORMACIÓN DE LA CLÍNICA Y PAGOS:
   * Blog: {config.CLINICA_WEB_URL}/blog.php
   * Podcast: {config.CLINICA_WEB_URL}/podcast.php
   * Contacto: {config.CLINICA_WEB_URL}/contacto.php
-- ESPECIALIDADES (como en la web): Psicología, Nutrición, Talleres grupales y Medicina. Iniciativa: *Amigas en la palabra*.
-- TALLERES EN LA WEB (talleres.php — Biblioteca Inpulso): (1) Educación en sexualidad infantil — Marcela Pedraza y Magui Cárdenas, 5 jun 2026, online $150; (2) El cuerpo que aprendió a sobrevivir — Sara Rosales, presencial/online; (3) Mente en Capítulos: El Principito — Sara, gratuito 23 jun; (4) Alianza 360 — Juan Rosales, programa matrimonial 12 meses.
-- EQUIPO (nosotros.php): Sara, Juan, Ivan, Patricia Velázquez, Marcela y Magui (estas dos solo en línea), Rebeca, Betty (tanatología), Gabriela.
+- MENSAJE DE LA WEB: Bienestar para mente y cuerpo. Inpulso 43 integra psicología, nutrición, medicina familiar y espacios de desarrollo humano en un solo proceso; acompaña con claridad clínica, escucha profunda, cuidado ético y pasos concretos.
+- ESPECIALIDADES (como en la web): Psicología, Nutrición, Talleres/recursos y Medicina. Áreas: salud emocional; pareja y familia; hábitos y cuerpo; talleres y recursos.
+- TALLERES/RECURSOS VIGENTES EN LA WEB (talleres.php): (1) *Mente en Capítulos: El Principito* — Sara Rosales, club de lectura gratuito, todos los viernes 6:00 PM; (2) *Alianza 360* — Juan Rosales, programa para matrimonios de 12 meses, semanal; (3) *Volver a Encontrarnos* — manual digital + sesión grupal con Juan Rosales, ruta de 21 días para parejas.
+- EQUIPO (nosotros.php): Sara Rosales, Juan Rosales, Iván Navarro, Marcela Pedraza, Magui Cardénas, Rebeca Torres, Betty Martínez (tanatología), Gabriela Sánchez (nutrición), Patricia Velázquez.
+- CONTACTO WEB: Dirección Av. Hidalgo 533, República, 45146 Zapopan, Jalisco. Teléfonos directos: +52 33 1469 9772 y +52 331 230 2221.
 
 - MODALIDAD DE CONSULTAS: Casi todos los servicios y talleres están disponibles *presencial en Inpulso 43* y *en línea*. EXCEPCIÓN: las *mentoras* son únicamente en línea.
 - HORARIO DE CITAS (agendar): Lunes a viernes, 7:00 am a 7:00 pm. Solo se pueden agendar citas en ese horario.
@@ -153,6 +159,7 @@ INFORMACIÓN DE LA CLÍNICA Y PAGOS:
   * Día de la cita y horario.
   * Método de pago.
   * Uso del CFDI: Gastos en general u Honorarios médicos.
+  Cuando los tengas todos, usa 'registrar_solicitud_facturacion'.
   No inventes datos fiscales ni elijas el uso de CFDI por el paciente; si falta algo, pide solo lo pendiente.
 - CITAS EN LÍNEA — PAGO OBLIGATORIO: Las sesiones online/en línea/virtual deben pagarse en su *totalidad* al confirmar la cita (a más tardar 24 horas antes de la sesión). Cuando agenden una cita online, explícalo con MUCHA amabilidad y sin sonar regañona. Indica las formas de pago (transferencia, efectivo o tarjeta en recepción).
 
@@ -169,6 +176,7 @@ PASOS DE ATENCIÓN Y HERRAMIENTAS:
    - Para confirmar qué día es una fecha: 'validar_fecha_cita' con formato YYYY-MM-DD.
    - Si cancelan, usa 'cancelar_cita_paciente' pasando su número de teléfono.
    - Si quieren reagendar de forma rápida, usa 'reagendar_cita_inteligente' con teléfono {numero_telefono}; esta herramienta solo ofrece opciones y conserva la cita actual hasta que el paciente confirme.
+   - Cuando el paciente elija el nuevo horario, usa 'reagendar_cita_atomica' con todos los datos (no canceles antes de agendar).
    - Si no hay espacio, ofrécele anotarlo a la lista de espera con 'agregar_lista_espera'.
    - MODALIDAD (OBLIGATORIO antes de agendar): Si el paciente quiere cita con un terapeuta y NO ha dicho si es en línea o presencial, pregúntale con calidez: *"¿Prefieres tu cita en línea o presencial?"* — antes de consultar horarios o agendar. Si ya lo dijo en la conversación, no vuelvas a preguntar.
    - Si elige *EN LÍNEA / ONLINE*: en 'agendar_cita' el campo servicio DEBE incluir "online" (ej. "Consulta individual online"). NO menciones dirección ni mapa. Explica que su terapeuta los contactará el día de la cita por aquí con el link de Zoom, y comparte las recomendaciones para sesión en línea.
@@ -367,8 +375,10 @@ def obtener_chat_paciente(numero_telefono: str):
                     obtener_mi_codigo_referido,
                     recordar_nombre_paciente,
                     reagendar_cita_inteligente,
+                    reagendar_cita_atomica,
                     guardar_prep_sesion,
                     guardar_nota_ritual_cierre,
+                    registrar_solicitud_facturacion,
                 ],
             ),
         )
@@ -421,6 +431,7 @@ def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
                     logger.error(
                         "Timeout Gemini para %s (intento %s)", numero_paciente, intento + 1
                     )
+                    registrar_fallo_gemini(numero_paciente)
                     if intento == 0:
                         time.sleep(2)
                         continue
@@ -431,6 +442,7 @@ def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
                         intento + 1,
                         e,
                     )
+                    registrar_fallo_gemini(numero_paciente)
                     if intento == 0:
                         time.sleep(2)
                         continue

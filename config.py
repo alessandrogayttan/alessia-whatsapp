@@ -66,6 +66,13 @@ WHATSAPP_BTN_CONFIRMAR_ASISTENCIA = os.getenv(
     "WHATSAPP_BTN_CONFIRMAR_ASISTENCIA", "Confirmo asistencia"
 )
 WHATSAPP_BTN_REAGENDAR = os.getenv("WHATSAPP_BTN_REAGENDAR", "Necesito reagendar")
+# Catálogo de productos WhatsApp (Commerce Manager). WABA ≠ Phone Number ID.
+WHATSAPP_BUSINESS_ACCOUNT_ID = os.getenv("WHATSAPP_BUSINESS_ACCOUNT_ID", "")
+WHATSAPP_CATALOG_ID = os.getenv("WHATSAPP_CATALOG_ID", "")
+CATALOGO_PRODUCT_IMAGE_URL = os.getenv(
+    "CATALOGO_PRODUCT_IMAGE_URL",
+    f"{os.getenv('CLINICA_WEB_URL', 'https://inpulso43.com')}/logo.png",
+)
 
 # Escalación humana — WhatsApp de recepción (opcional, ej. 5233XXXXXXXX)
 RECEPCION_WHATSAPP = os.getenv("RECEPCION_WHATSAPP", "")

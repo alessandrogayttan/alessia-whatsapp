@@ -1,5 +1,4 @@
-"""Crecimiento y marca: referidos, blog Inpulso, contexto para la IA."""
-import config
+"""Crecimiento y marca: blog Inpulso, contexto para la IA."""
 
 ARTICULOS_BLOG = [
     {
@@ -43,34 +42,6 @@ ARTICULOS_BLOG = [
         "keywords": ("síndrome del impostor", "sindrome del impostor", "no soy suficiente"),
     },
 ]
-
-
-def mensaje_codigo_referido(telefono: str) -> str:
-    import storage
-
-    codigo = storage.obtener_o_crear_codigo_referido(telefono)
-    nombre = storage.primer_nombre(telefono)
-    saludo = f"¡Hola {nombre}! " if nombre else ""
-    return (
-        f"{saludo}💜 *Invita a alguien a Inpulso 43*\n\n"
-        f"Tu código personal: *{codigo}*\n\n"
-        f"Si un amigo escribe ese código al contactarnos, recibe "
-        f"*{config.REFERIDO_DESCUENTO}* (aplican políticas en recepción).\n\n"
-        f"🌐 {config.CLINICA_WEB_URL}"
-    )
-
-
-def mensaje_referido_tras_nps_alto(telefono: str) -> str:
-    import storage
-
-    codigo = storage.obtener_o_crear_codigo_referido(telefono)
-    return (
-        f"💜 *Gracias por tu confianza*\n\n"
-        f"Si conoces a alguien que podría beneficiarse de Inpulso 43, "
-        f"comparte tu código: *{codigo}*\n\n"
-        f"Tu amigo recibe {config.REFERIDO_DESCUENTO} y tú ayudas a que más "
-        f"personas cuiden su bienestar ✨"
-    )
 
 
 def contexto_blog_si_aplica(texto: str) -> str:

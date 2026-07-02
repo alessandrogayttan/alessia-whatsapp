@@ -23,7 +23,7 @@ from experiencia import (
     procesar_boton_recordatorio,
     respuesta_seguimiento_nps,
 )
-from marca import contexto_blog_si_aplica, mensaje_codigo_referido
+from marca import contexto_blog_si_aplica
 from message_queue import encolar_mensaje_texto, procesar_cola
 from observability import init_sentry, metricas_fallos
 from tools import (
@@ -45,6 +45,7 @@ from jobs import (
     renotificar_escalaciones_background,
     seguimiento_post_cita_background,
     sincronizar_catalogo_web_background,
+    sincronizar_catalogo_whatsapp_background,
     sincronizar_web_background,
     trivia_semanal_background,
     detectar_nuevos_talleres_background,
@@ -109,6 +110,7 @@ def _iniciar_scheduler():
     scheduler.add_job(renotificar_escalaciones_background, "interval", minutes=5)
     scheduler.add_job(backup_db_background, "interval", hours=24)
     scheduler.add_job(sincronizar_catalogo_web_background, "interval", minutes=30)
+    scheduler.add_job(sincronizar_catalogo_whatsapp_background, "interval", minutes=30)
     scheduler.add_job(sincronizar_web_background, "interval", hours=24)
     scheduler.start()
     _scheduler_iniciado = True
@@ -449,10 +451,6 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
         texto_cmd = texto_paciente.strip().upper().replace("_", " ")
         if texto_cmd in ("MI CITA", "MICITA", "MIS CITAS"):
             enviar_mensaje_whatsapp(numero_remitente, mensaje_mi_cita(numero_remitente))
-            return None
-
-        if texto_cmd in ("MI CODIGO", "MI CÓDIGO", "REFIERE", "REFERIDO", "REFERIDOS"):
-            enviar_mensaje_whatsapp(numero_remitente, mensaje_codigo_referido(numero_remitente))
             return None
 
         if storage.obtener_ritual_pendiente(numero_remitente) and len(texto_paciente) > 3:

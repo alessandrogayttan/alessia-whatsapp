@@ -550,6 +550,20 @@ def backup_db_background():
         logger.error("Error backup DB: %s", e)
 
 
+def sincronizar_catalogo_whatsapp_background():
+    """Publica talleres vigentes en el catálogo de WhatsApp Business (Meta)."""
+    if not config.WHATSAPP_CATALOG_ID and not config.WHATSAPP_BUSINESS_ACCOUNT_ID:
+        return
+    try:
+        from whatsapp_catalogo import sincronizar_talleres_a_catalogo
+
+        resultado = sincronizar_talleres_a_catalogo(forzar_web=False)
+        if not resultado.get("ok"):
+            logger.warning("Sync catálogo WhatsApp: %s", resultado.get("error"))
+    except Exception as e:
+        logger.error("Error sync catálogo WhatsApp: %s", e)
+
+
 def sincronizar_catalogo_web_background():
     """Sincroniza pestaña Catalogo en Google Sheets con inpulso43.com."""
     try:

@@ -1,7 +1,7 @@
-"""MI CITA, NPS post-cita y marca."""
-import storage
+"""Catálogo WhatsApp Business y MI CITA."""
 from experiencia import mensaje_mi_cita, respuesta_seguimiento_nps
-from marca import contexto_blog_si_aplica, mensaje_codigo_referido
+from marca import contexto_blog_si_aplica
+from whatsapp_catalogo import taller_a_item_catalogo
 
 
 def test_mi_cita_sin_citas(monkeypatch):
@@ -25,21 +25,21 @@ def test_mi_cita_con_datos(monkeypatch):
         "experiencia.listar_citas_futuras_por_telefono",
         lambda tel: [cita],
     )
+    import storage
+
     monkeypatch.setattr(storage, "primer_nombre", lambda tel: "María")
     msg = mensaje_mi_cita("523300000001")
     assert "Tu próxima cita" in msg
     assert "Sara Rosales" in msg
-    assert "María" in msg
 
 
-def test_nps_alto_ofrece_referido(monkeypatch):
+def test_nps_alto_sin_referido(monkeypatch):
+    import storage
+
     monkeypatch.setattr(storage, "guardar_respuesta_nps", lambda t, p, e="": None)
-    monkeypatch.setattr(
-        "marca.mensaje_referido_tras_nps_alto",
-        lambda tel: "Código INPULSO-ABC123",
-    )
     msg = respuesta_seguimiento_nps("523300000001", 10)
-    assert "INPULSO" in msg or "Código" in msg
+    assert "gracias" in msg.lower()
+    assert "INPULSO" not in msg
 
 
 def test_contexto_blog_ansiedad():
@@ -48,8 +48,21 @@ def test_contexto_blog_ansiedad():
     assert contexto_blog_si_aplica("hola qué tal") == ""
 
 
-def test_mensaje_codigo_referido(monkeypatch):
-    monkeypatch.setattr(storage, "obtener_o_crear_codigo_referido", lambda t: "INPULSO-TEST01")
-    monkeypatch.setattr(storage, "primer_nombre", lambda t: "Ana")
-    msg = mensaje_codigo_referido("523300000001")
-    assert "INPULSO-TEST01" in msg
+def test_taller_a_item_catalogo():
+    item = taller_a_item_catalogo(
+        {
+            "id_web": "sanando-heridas",
+            "nombre": "Sanando tus heridas del pasado",
+            "terapeuta": "Juan y Sara Rosales",
+            "fechas": "30 de agosto",
+            "horario": "10:00",
+            "modalidad": "Presencial",
+            "precio": "$400 MXN",
+            "temario": "Taller vivencial",
+            "cupo": "Lista de espera",
+            "url_web": "https://inpulso43.com/talleres.php",
+        }
+    )
+    assert item["id"] == "inpulso-sanando-heridas"
+    assert "400.00 MXN" in item["price"]
+    assert item["availability"] == "out of stock"

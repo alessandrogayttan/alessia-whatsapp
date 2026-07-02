@@ -308,11 +308,9 @@ def respuesta_seguimiento_nps(telefono: str, puntaje: int) -> str:
     """Procesa la calificación NPS 1-10 tras seguimiento post-cita."""
     storage.guardar_respuesta_nps(telefono, puntaje)
     if puntaje >= 9:
-        from marca import mensaje_referido_tras_nps_alto
-
         return (
-            f"¡Muchas gracias! Tu calificación ({puntaje}/10) nos alegra muchísimo 💜\n\n"
-            + mensaje_referido_tras_nps_alto(telefono)
+            f"¡Muchas gracias! Tu calificación ({puntaje}/10) nos alegra muchísimo 💜 "
+            "Gracias por confiar en Inpulso 43."
         )
     if puntaje >= 7:
         return (

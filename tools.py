@@ -452,18 +452,31 @@ def _respuesta_fallo_calendario(especialista: str, fecha: str, error: Exception)
     )
 
 
-def verificar_acceso_calendarios() -> list[str]:
+_health_calendario_cache: dict = {"ts": 0.0, "fallos": []}
+
+
+def verificar_acceso_calendarios(*, rapido: bool = False) -> list[str]:
     """Prueba lectura de calendarios críticos. Devuelve lista de errores."""
+    global _health_calendario_cache
+    if rapido and time.time() - _health_calendario_cache["ts"] < 120:
+        return list(_health_calendario_cache["fallos"])
+
     errores = []
     hoy = datetime.datetime.now(ZONA).strftime("%Y-%m-%d")
     cuenta = email_cuenta_servicio()
+    max_wait = 4 if rapido else config.CALENDAR_MAX_WAIT_BACKGROUND_SECONDS
     for nombre in config.CALENDARIOS_CRITICOS:
         calendar_id = config.DIRECTORIO_CALENDARIOS.get(nombre)
         if not calendar_id:
             errores.append(f"calendar:{nombre} (sin ID configurado)")
             continue
         try:
-            _obtener_eventos_dia(calendar_id, hoy, usar_cache=False)
+            _obtener_eventos_dia(
+                calendar_id,
+                hoy,
+                usar_cache=not rapido,
+                max_wait_seconds=max_wait,
+            )
         except GoogleCalendarError as e:
             hint = (
                 f" Comparte el calendario con {cuenta} como Editor."
@@ -473,16 +486,33 @@ def verificar_acceso_calendarios() -> list[str]:
             errores.append(f"calendar:{nombre} ({e.http_status or 'error'}){hint}")
         except Exception as e:
             errores.append(f"calendar:{nombre} ({type(e).__name__})")
+
+    if rapido:
+        _health_calendario_cache = {"ts": time.time(), "fallos": errores}
     return errores
 
 
-def _obtener_eventos_dia(calendar_id: str, fecha: str, *, usar_cache: bool = True):
-    """Lee eventos del día con reintentos automáticos (sin escalar a recepción)."""
+def _obtener_eventos_dia(
+    calendar_id: str,
+    fecha: str,
+    *,
+    usar_cache: bool = True,
+    max_wait_seconds: float | None = None,
+):
+    """Lee eventos del día con reintentos automáticos acotados en tiempo."""
     cache_key = f"{calendar_id}:{fecha}"
     ultimo_error: Exception | None = None
     ciclos = config.CALENDAR_CONSULTA_REINTENTOS
+    max_wait = (
+        max_wait_seconds
+        if max_wait_seconds is not None
+        else config.CALENDAR_MAX_WAIT_SECONDS
+    )
+    deadline = time.monotonic() + max_wait
 
     for ciclo in range(ciclos):
+        if time.monotonic() >= deadline:
+            break
         if usar_cache and ciclo == 0:
             hit = _agenda_cache.get(cache_key)
             if hit and time.time() - hit["ts"] < config.CITAS_CACHE_TTL:
@@ -507,7 +537,9 @@ def _obtener_eventos_dia(calendar_id: str, fecha: str, *, usar_cache: bool = Tru
 
         try:
             events_result = ejecutar_con_reintento(
-                _listar, f"calendar.list {calendar_id} {fecha}"
+                _listar,
+                f"calendar.list {calendar_id} {fecha}",
+                deadline=deadline,
             )
             items = events_result.get("items", [])
             _agenda_cache[cache_key] = {"items": items, "ts": time.time()}
@@ -524,6 +556,7 @@ def _obtener_eventos_dia(calendar_id: str, fecha: str, *, usar_cache: bool = Tru
             ultimo_error = e
             _invalidar_cache_agenda(calendar_id, fecha)
             reset_google_clients()
+            status = getattr(e, "http_status", None)
             logger.warning(
                 "Calendario %s %s — ciclo %s/%s falló: %s",
                 calendar_id,
@@ -532,18 +565,21 @@ def _obtener_eventos_dia(calendar_id: str, fecha: str, *, usar_cache: bool = Tru
                 ciclos,
                 e,
             )
-            if ciclo < ciclos - 1:
+            if status in (401, 403, 404):
+                break
+            if ciclo < ciclos - 1 and time.monotonic() < deadline:
                 pausa = min(
                     config.CALENDAR_RETRY_PAUSE_SECONDS * (ciclo + 1),
-                    20,
+                    max(0.5, deadline - time.monotonic()),
                 )
-                time.sleep(pausa)
+                if pausa > 0:
+                    time.sleep(pausa)
 
     if isinstance(ultimo_error, GoogleCalendarError):
         raise ultimo_error
     raise GoogleCalendarError(
-        f"Calendario no disponible tras {ciclos} ciclos: {ultimo_error}",
-        reason=str(ultimo_error) if ultimo_error else "desconocido",
+        f"Calendario no disponible en {max_wait:.0f}s: {ultimo_error}",
+        reason=str(ultimo_error) if ultimo_error else "timeout",
     ) from ultimo_error
 
 

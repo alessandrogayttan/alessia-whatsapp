@@ -11,6 +11,9 @@ import config
 
 logger = logging.getLogger(__name__)
 
+# Errores HTTP que no mejoran con reintentos (permisos, credenciales, recurso inexistente)
+_HTTP_SIN_REINTENTO = {400, 401, 403, 404}
+
 _creds = None
 _calendar = None
 _sheets = None
@@ -97,11 +100,17 @@ def get_sheets_service():
     return _sheets
 
 
-def ejecutar_con_reintento(operation, descripcion: str = "google_api"):
+def ejecutar_con_reintento(
+    operation,
+    descripcion: str = "google_api",
+    deadline: float | None = None,
+):
     """Ejecuta una llamada a Google API con reintentos y reset de cliente."""
     ultimo_error: Exception | None = None
     intentos = config.CALENDAR_API_RETRIES
     for intento in range(1, intentos + 1):
+        if deadline is not None and time.monotonic() >= deadline:
+            break
         try:
             return operation()
         except HttpError as e:
@@ -116,22 +125,24 @@ def ejecutar_con_reintento(operation, descripcion: str = "google_api"):
                 e,
             )
             reset_google_clients()
-            if intento < intentos:
+            if status in _HTTP_SIN_REINTENTO:
+                break
+            if intento < intentos and (deadline is None or time.monotonic() < deadline):
                 time.sleep(
                     min(
                         config.CALENDAR_RETRY_PAUSE_SECONDS * (1.5 ** (intento - 1)),
-                        15,
+                        4,
                     )
                 )
         except Exception as e:
             ultimo_error = e
             logger.warning("%s error (intento %s/%s): %s", descripcion, intento, intentos, e)
             reset_google_clients()
-            if intento < intentos:
+            if intento < intentos and (deadline is None or time.monotonic() < deadline):
                 time.sleep(
                     min(
                         config.CALENDAR_RETRY_PAUSE_SECONDS * (1.5 ** (intento - 1)),
-                        15,
+                        4,
                     )
                 )
 

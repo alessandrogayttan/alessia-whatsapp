@@ -165,7 +165,7 @@ def health_ready():
 
     from tools import verificar_acceso_calendarios
 
-    calendarios_fallidos = verificar_acceso_calendarios()
+    calendarios_fallidos = verificar_acceso_calendarios(rapido=True)
     if calendarios_fallidos:
         bloqueantes.extend(calendarios_fallidos)
 
@@ -573,7 +573,7 @@ def create_app():
 
     try:
         verificar_credenciales_google()
-        cal_fallos = verificar_acceso_calendarios()
+        cal_fallos = verificar_acceso_calendarios(rapido=True)
         if cal_fallos:
             logger.error(
                 "CALENDARIO NO ACCESIBLE al arranque: %s. Cuenta servicio: %s",

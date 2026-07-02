@@ -96,13 +96,15 @@ def _enviar_payload(telefono_destino: str, payload: dict, max_intentos: int | No
 
 
 def enviar_ack_inmediato(telefono: str) -> bool:
-    """Confirma recepción mientras la IA procesa (reduce percepción de silencio)."""
+    """Confirma recepción mientras la IA procesa (opcional; desactivado por defecto)."""
     if not config.ENABLE_LAUNCH_ACK:
         return False
     if config.identificar_terapeuta(telefono):
         texto = config.MENSAJE_ACK_STAFF
     else:
         texto = config.MENSAJE_ACK_PACIENTE
+    if not texto.strip():
+        return False
     return enviar_mensaje_whatsapp(telefono, texto)
 
 

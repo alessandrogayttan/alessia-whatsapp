@@ -107,3 +107,44 @@ def test_primera_cita_y_aniversario(db_temp):
     assert not storage.aniversario_ya_enviado("523326505999", 1)
     storage.marcar_aniversario_enviado("523326505999", 1)
     assert storage.aniversario_ya_enviado("523326505999", 1)
+
+
+def test_eliminar_datos_paciente_limpia_tablas_locales(db_temp):
+    telefono = "523326505999"
+    storage.guardar_nombre_paciente(telefono, "María López")
+    storage.guardar_ubicacion(telefono, 20.1, -103.1)
+    storage.guardar_checkin_emocional(telefono, 8)
+    storage.marcar_prep_pendiente(telefono, "evt-1")
+    storage.guardar_prep_sesion(telefono, "evt-1", "Ansiedad", "no", 8)
+    storage.marcar_ritual_pendiente(telefono, "evt-2")
+    storage.guardar_nota_ritual(telefono, "evt-2", "Me llevo calma")
+    storage.registrar_primera_cita_si_nueva(telefono, "2025-05-28")
+    storage.marcar_aniversario_enviado(telefono, 1)
+    storage.crear_tarea_terapeutica(telefono, "523322222222", "Respirar", "lunes")
+    storage.registrar_interes_taller(telefono, "Sara Rosales", "Taller ansiedad", "María")
+    storage.marcar_notificacion_nuevo_taller(telefono, "sara|taller")
+
+    storage.eliminar_datos_paciente(telefono)
+
+    with storage._transaction() as conn:
+        tablas = {
+            "pacientes": "telefono",
+            "ubicaciones_pacientes": "telefono",
+            "paciente_extra": "telefono",
+            "checkins_emocionales": "telefono",
+            "prep_sesion": "telefono",
+            "prep_pendiente": "telefono",
+            "ritual_pendiente": "telefono",
+            "notas_ritual": "telefono",
+            "primera_cita": "telefono",
+            "aniversarios_enviados": "telefono",
+            "tareas_terapeuticas": "telefono_paciente",
+            "interes_talleres": "telefono",
+            "notificaciones_nuevo_taller": "telefono",
+        }
+        for tabla, columna in tablas.items():
+            row = conn.execute(
+                f"SELECT COUNT(*) AS total FROM {tabla} WHERE {columna} = ?",
+                (telefono,),
+            ).fetchone()
+            assert row["total"] == 0, tabla

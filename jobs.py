@@ -467,14 +467,14 @@ def calendario_keepalive_background():
 
     try:
         verificar_credenciales_google()
-        fallos = verificar_acceso_calendarios()
+        fallos = verificar_acceso_calendarios(rapido=False)
         if not fallos:
             return
         logger.warning("Keepalive calendario: fallos detectados %s — reintentando", fallos)
         reset_google_clients()
         time.sleep(3)
         verificar_credenciales_google()
-        recuperados = verificar_acceso_calendarios()
+        recuperados = verificar_acceso_calendarios(rapido=False)
         if not recuperados:
             logger.info("Keepalive calendario: conexión recuperada")
         else:

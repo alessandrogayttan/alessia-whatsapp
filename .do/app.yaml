@@ -1,0 +1,102 @@
+name: alessia-whatsapp
+region: nyc
+services:
+  - name: alessia
+    github:
+      repo: YOUR_GITHUB_USER/ALESSIA
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    environment_slug: python
+    http_port: 8080
+    instance_count: 1
+    instance_size_slug: basic-xs
+    run_command: gunicorn --bind 0.0.0.0:8080 --workers 1 --timeout 120 wsgi:app
+    health_check:
+      http_path: /health/ready
+      initial_delay_seconds: 30
+      period_seconds: 30
+      timeout_seconds: 10
+      success_threshold: 1
+      failure_threshold: 3
+    envs:
+      - key: FLASK_ENV
+        value: production
+      - key: PORT
+        value: "8080"
+      - key: TOKEN_WHATSAPP
+        scope: RUN_TIME
+        type: SECRET
+      - key: ID_TELEFONO
+        value: "1090957250773198"
+      - key: META_APP_ID
+        value: "3817725751857412"
+      - key: WHATSAPP_VERIFY_TOKEN
+        scope: RUN_TIME
+        type: SECRET
+      - key: WHATSAPP_APP_SECRET
+        scope: RUN_TIME
+        type: SECRET
+      - key: WEBHOOK_CALLBACK_URL
+        value: "https://alessia-whatsapp-jbems.ondigitalocean.app/webhook"
+      - key: GEMINI_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: ID_HOJA_CALCULO
+        value: "1HE-a6v2b-bCcN6JLHOJ3mevuRhJCWmInZEXkyV24L3k"
+      - key: GOOGLE_SERVICE_ACCOUNT_JSON
+        scope: RUN_TIME
+        type: SECRET
+      - key: DATABASE_PATH
+        value: /data/alessia.db
+      - key: ENABLE_SCHEDULER
+        value: "1"
+      - key: ENABLE_LAUNCH_ACK
+        value: "0"
+      - key: WHATSAPP_TEMPLATE_24H
+        scope: RUN_TIME
+        type: SECRET
+      - key: WHATSAPP_TEMPLATE_2H
+        scope: RUN_TIME
+        type: SECRET
+      - key: RECEPCION_WHATSAPP
+        scope: RUN_TIME
+        type: SECRET
+      - key: WHATSAPP_SARA
+        value: "523310265936"
+      - key: WHATSAPP_MAGUI
+        value: "13476240818"
+      - key: WHATSAPP_JUAN
+        value: "523331706274"
+      - key: WHATSAPP_PATRICIA
+        value: "523314995220"
+      - key: WHATSAPP_REBECA
+        value: "523313837376"
+      - key: WHATSAPP_BETTY
+        value: "523310122705"
+      - key: WHATSAPP_IVAN
+        value: "523312212406"
+      - key: WHATSAPP_NUTRICION
+        scope: RUN_TIME
+        type: SECRET
+      - key: HEALTH_CONFIG_SECRET
+        scope: RUN_TIME
+        type: SECRET
+      - key: API_KEY_MAPS
+        scope: RUN_TIME
+        type: SECRET
+      - key: LINK_SESION_ONLINE
+        scope: RUN_TIME
+        type: SECRET
+      - key: BACKUP_DIR
+        value: /data/backups
+      - key: SENTRY_DSN
+        scope: RUN_TIME
+        type: SECRET
+    mount:
+      path: /data
+      volume: alessia-data
+volumes:
+  - name: alessia-data
+    region: nyc
+    size: 1Gi

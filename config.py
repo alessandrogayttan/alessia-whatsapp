@@ -206,9 +206,15 @@ CLINICA_DIRECCION = "Av. Hidalgo 533, República, 45146 Zapopan, Jal."
 CLINICA_MAPS_URL = "https://maps.google.com/?q=Av.+Hidalgo+533,+Zapopan,+Jalisco"
 WHATSAPP_MAX_CHARS = 4000
 CITAS_CACHE_TTL = int(os.getenv("CITAS_CACHE_TTL", "180"))
-CALENDAR_API_RETRIES = int(os.getenv("CALENDAR_API_RETRIES", "8"))
-CALENDAR_CONSULTA_REINTENTOS = int(os.getenv("CALENDAR_CONSULTA_REINTENTOS", "6"))
-CALENDAR_RETRY_PAUSE_SECONDS = float(os.getenv("CALENDAR_RETRY_PAUSE_SECONDS", "3"))
+CALENDAR_API_RETRIES = int(os.getenv("CALENDAR_API_RETRIES", "4"))
+CALENDAR_CONSULTA_REINTENTOS = int(os.getenv("CALENDAR_CONSULTA_REINTENTOS", "3"))
+CALENDAR_RETRY_PAUSE_SECONDS = float(os.getenv("CALENDAR_RETRY_PAUSE_SECONDS", "1.5"))
+# Tiempo máximo esperando calendario en una conversación (evita colgar WhatsApp)
+CALENDAR_MAX_WAIT_SECONDS = float(os.getenv("CALENDAR_MAX_WAIT_SECONDS", "12"))
+# Tiempo máximo para keepalive / diagnósticos en segundo plano
+CALENDAR_MAX_WAIT_BACKGROUND_SECONDS = float(
+    os.getenv("CALENDAR_MAX_WAIT_BACKGROUND_SECONDS", "45")
+)
 # Calendarios que deben responder en /health/ready (agenda de citas)
 CALENDARIOS_CRITICOS = ["sara", "juan", "patricia", "ivan"]
 PAGO_TOLERANCIA_MXN = float(os.getenv("PAGO_TOLERANCIA_MXN", "10"))

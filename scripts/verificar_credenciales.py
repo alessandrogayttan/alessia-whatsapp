@@ -83,6 +83,27 @@ def main():
         fail("ID_HOJA_CALCULO vacío")
         errores += 1
 
+    print("\n  Calendarios Google (lectura de agenda)")
+    from google_client import email_cuenta_servicio, verificar_credenciales_google
+    from tools import verificar_acceso_calendarios
+
+    cuenta = email_cuenta_servicio()
+    if cuenta:
+        print(f"  INFO Cuenta de servicio: {cuenta}")
+        print(f"       Comparte cada calendario con ese email como Editor.")
+    try:
+        verificar_credenciales_google()
+        cal_fallos = verificar_acceso_calendarios()
+        if cal_fallos:
+            for f in cal_fallos:
+                fail(f)
+                errores += 1
+        else:
+            ok(f"Calendarios accesibles: {', '.join(config.CALENDARIOS_CRITICOS)}")
+    except Exception as e:
+        fail(f"Google auth/calendar: {e}")
+        errores += 1
+
     print()
     if errores:
         print(f"Resultado: {errores} error(es). Corrige .env antes de desplegar.")

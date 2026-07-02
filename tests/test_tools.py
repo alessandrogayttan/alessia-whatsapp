@@ -78,6 +78,30 @@ def test_identificar_terapeuta_sara():
     assert identificar_terapeuta("5213310265936") == "Sara Rosales"
 
 
+def test_identificar_staff_oficial(monkeypatch):
+    import config
+
+    monkeypatch.setattr(
+        config,
+        "TERAPEUTAS_WHATSAPP",
+        {
+            "magui": "13476240818",
+            "juan": "523331706274",
+            "patricia": "523314995220",
+            "rebeca": "523313837376",
+            "betty": "523310122705",
+            "ivan": "523312212406",
+        },
+    )
+
+    assert config.identificar_terapeuta("+1 (347) 624-0818") == "Magui Cárdenas"
+    assert config.identificar_terapeuta("+52 1 33 3170 6274") == "Juan Rosales"
+    assert config.identificar_terapeuta("+52 1 33 1499 5220") == "Paty Velázquez"
+    assert config.identificar_terapeuta("+52 1 33 1383 7376") == "Rebeca Torres"
+    assert config.identificar_terapeuta("+52 1 33 1012 2705") == "Betty Martínez"
+    assert config.identificar_terapeuta("+52 1 33 1221 2406") == "Ivan Navarro"
+
+
 def test_es_evento_bloqueo():
     from tools import _es_evento_bloqueo
 
@@ -167,18 +191,19 @@ def test_normalizar_modalidad_presencial_y_online():
 
 
 def test_catalogo_web_talleres_completos():
-    from catalogo_web import PAGINAS_SITIO, TALLERES_WEB, filas_catalogo_dict
+    from catalogo_web import CONTACTO_WEB, EQUIPO_WEB, PAGINAS_SITIO, TALLERES_WEB, filas_catalogo_dict
 
     assert "talleres.php" in PAGINAS_SITIO["talleres"]
-    assert len(TALLERES_WEB) == 4
+    assert len(TALLERES_WEB) == 3
+    assert len(EQUIPO_WEB) == 9
+    assert "+52 33 1469 9772" in CONTACTO_WEB["telefonos"]
     filas = filas_catalogo_dict()
     talleres = [f for f in filas if f["tipo"] == "taller"]
-    assert len(talleres) == 4
+    assert len(talleres) == 3
     nombres = " ".join(t["nombre"].lower() for t in talleres)
-    assert "ansiedad" in nombres
     assert "principito" in nombres or "capítulos" in nombres or "capitulos" in nombres
     assert "alianza" in nombres
-    assert "sexualidad" in nombres or "tabúes" in nombres or "tabues" in nombres
+    assert "volver a encontrarnos" in nombres
 
 
 def test_formatear_evento_cita():
@@ -193,3 +218,24 @@ def test_formatear_evento_cita():
     assert "10:00" in texto
     assert "MARÍA LÓPEZ" in texto
     assert "523311122233" in texto
+
+
+def test_reagendar_ofrece_opciones_sin_cancelar(monkeypatch):
+    import experiencia
+
+    monkeypatch.setattr(
+        experiencia,
+        "listar_citas_futuras_por_telefono",
+        lambda tel: [{"fecha": "2026-06-10", "hora": "10:00", "especialista": "Sara Rosales"}],
+    )
+    monkeypatch.setattr(
+        experiencia,
+        "consultar_agenda",
+        lambda fecha, esp: f"Espacios DISPONIBLES para sara el {fecha} (Citas de 1 hora): 12:00, 13:00",
+    )
+
+    resultado = experiencia.reagendar_cita_inteligente("523326505999")
+
+    assert "sigue reservada" in resultado
+    assert "agenda primero la nueva cita" in resultado
+    assert "Cita cancelada" not in resultado

@@ -386,7 +386,7 @@ def obtener_chat_paciente(numero_telefono: str):
     return memoria_pacientes[numero_telefono]
 
 
-def _gemini_send_message(chat, contenido, timeout: int = 90):
+def _gemini_send_message(chat, contenido, timeout: int = 120):
     """Llama a Gemini con timeout para evitar hilos colgados sin respuesta."""
     with ThreadPoolExecutor(max_workers=1) as pool:
         future = pool.submit(chat.send_message, contenido)

@@ -168,6 +168,20 @@ def init_db():
                     actualizado_at TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS idx_cola_estado ON cola_mensajes(estado, creado_at);
+                CREATE TABLE IF NOT EXISTS confirmaciones_asistencia (
+                    event_id TEXT NOT NULL,
+                    telefono TEXT NOT NULL,
+                    fecha_cita TEXT,
+                    hora_cita TEXT,
+                    especialista TEXT,
+                    confirmado_at TEXT NOT NULL,
+                    PRIMARY KEY (event_id, telefono)
+                );
+                CREATE TABLE IF NOT EXISTS reagendar_pendiente (
+                    telefono TEXT PRIMARY KEY,
+                    event_id TEXT NOT NULL,
+                    creado_at TEXT NOT NULL
+                );
                 """
             )
             conn.commit()
@@ -593,6 +607,68 @@ def obtener_prep_pendiente(telefono: str) -> str | None:
 def limpiar_prep_pendiente(telefono: str):
     with _transaction() as conn:
         conn.execute("DELETE FROM prep_pendiente WHERE telefono = ?", (telefono,))
+
+
+def asistencia_ya_confirmada(event_id: str, telefono: str) -> bool:
+    with _transaction() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM confirmaciones_asistencia WHERE event_id = ? AND telefono = ?",
+            (event_id, telefono),
+        ).fetchone()
+        return row is not None
+
+
+def marcar_asistencia_confirmada(
+    telefono: str,
+    event_id: str,
+    fecha_cita: str = "",
+    hora_cita: str = "",
+    especialista: str = "",
+):
+    with _transaction() as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO confirmaciones_asistencia
+            (event_id, telefono, fecha_cita, hora_cita, especialista, confirmado_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event_id,
+                telefono,
+                fecha_cita,
+                hora_cita,
+                especialista,
+                datetime.utcnow().isoformat(),
+            ),
+        )
+
+
+def marcar_reagendar_pendiente(telefono: str, event_id: str):
+    with _transaction() as conn:
+        conn.execute(
+            """
+            INSERT INTO reagendar_pendiente (telefono, event_id, creado_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(telefono) DO UPDATE SET
+                event_id = excluded.event_id,
+                creado_at = excluded.creado_at
+            """,
+            (telefono, event_id, datetime.utcnow().isoformat()),
+        )
+
+
+def obtener_reagendar_pendiente(telefono: str) -> str | None:
+    with _transaction() as conn:
+        row = conn.execute(
+            "SELECT event_id FROM reagendar_pendiente WHERE telefono = ?",
+            (telefono,),
+        ).fetchone()
+        return row["event_id"] if row else None
+
+
+def limpiar_reagendar_pendiente(telefono: str):
+    with _transaction() as conn:
+        conn.execute("DELETE FROM reagendar_pendiente WHERE telefono = ?", (telefono,))
 
 
 def guardar_prep_sesion(

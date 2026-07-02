@@ -121,6 +121,140 @@ def reagendar_cita_inteligente(telefono_paciente: str):
     )
 
 
+def _accion_boton_recordatorio(texto: str) -> str | None:
+    """'confirmar' | 'reagendar' si coincide con botones de plantilla Meta."""
+    limpio = texto.strip()
+    if not limpio:
+        return None
+    confirmar = {
+        config.WHATSAPP_BTN_CONFIRMAR_ASISTENCIA.lower(),
+        "confirmo asistencia",
+        "confirmar asistencia",
+    }
+    reagendar = {
+        config.WHATSAPP_BTN_REAGENDAR.lower(),
+        "necesito reagendar",
+        "reagendar cita",
+        "quiero reagendar",
+    }
+    bajo = limpio.lower()
+    if limpio == config.WHATSAPP_BTN_CONFIRMAR_ASISTENCIA or bajo in confirmar:
+        return "confirmar"
+    if limpio == config.WHATSAPP_BTN_REAGENDAR or bajo in reagendar:
+        return "reagendar"
+    return None
+
+
+def _opciones_horarios_alternativos(especialista: str, max_opciones: int = 3) -> list[str]:
+    opciones: list[str] = []
+    hoy = datetime.datetime.now(ZONA).replace(tzinfo=None)
+    for dias in range(8):
+        fecha = (hoy + datetime.timedelta(days=dias)).strftime("%Y-%m-%d")
+        disp = consultar_agenda(fecha, especialista)
+        if "Espacios DISPONIBLES" not in disp:
+            continue
+        parte = disp.split("): ")[1] if "): " in disp else ""
+        for hora in parte.split(", ")[:2]:
+            hora = hora.strip()
+            if hora:
+                opciones.append(f"{fecha} a las {hora}")
+            if len(opciones) >= max_opciones:
+                break
+        if len(opciones) >= max_opciones:
+            break
+    return opciones
+
+
+def _formatear_fecha_amigable(fecha: str) -> str:
+    try:
+        dt = datetime.datetime.strptime(fecha[:10], "%Y-%m-%d")
+        dias = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+        meses = [
+            "enero", "febrero", "marzo", "abril", "mayo", "junio",
+            "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+        ]
+        return f"{dias[dt.weekday()]} {dt.day} de {meses[dt.month - 1]}"
+    except ValueError:
+        return fecha
+
+
+def respuesta_confirmar_asistencia(telefono: str) -> str:
+    citas = listar_citas_futuras_por_telefono(telefono)
+    if not citas:
+        return (
+            "No encontré una cita próxima a tu nombre 😊 Si acabas de agendar o tienes duda, "
+            "cuéntame y con gusto te ayudo."
+        )
+
+    proxima = citas[0]
+    event_id = proxima.get("event_id", "")
+    fecha_txt = _formatear_fecha_amigable(proxima["fecha"])
+    hora = proxima["hora"]
+    esp = proxima["especialista"]
+
+    if event_id and storage.asistencia_ya_confirmada(event_id, telefono):
+        return (
+            f"Ya tenemos tu confirmación para el *{fecha_txt}* a las *{hora}* "
+            f"con *{esp}*. ¡Te esperamos! ✨"
+        )
+
+    if event_id:
+        storage.marcar_asistencia_confirmada(
+            telefono, event_id, proxima["fecha"], hora, esp
+        )
+
+    nombre = storage.primer_nombre(telefono) or storage.obtener_nombre_paciente(telefono)
+    saludo = f"¡Gracias, {nombre}! " if nombre else "¡Gracias! "
+    return (
+        f"{saludo}✨ *Asistencia confirmada*\n\n"
+        f"Te esperamos el *{fecha_txt}* a las *{hora}* con *{esp}*.\n\n"
+        f"📍 {config.CLINICA_DIRECCION}\n"
+        f"Si algo cambia, escríbenos por aquí."
+    )
+
+
+def respuesta_solicitud_reagendar(telefono: str) -> str:
+    citas = listar_citas_futuras_por_telefono(telefono)
+    if not citas:
+        return (
+            "No encontré una cita futura para cambiar 😊 ¿Quieres agendar una nueva? "
+            "Te ayudo con gusto."
+        )
+
+    proxima = citas[0]
+    event_id = proxima.get("event_id", "")
+    if event_id:
+        storage.marcar_reagendar_pendiente(telefono, event_id)
+
+    fecha_txt = _formatear_fecha_amigable(proxima["fecha"])
+    detalle = f"{fecha_txt} a las {proxima['hora']} con {proxima['especialista']}"
+    opciones = _opciones_horarios_alternativos(proxima["especialista"])
+
+    if not opciones:
+        return (
+            f"Claro 😊 Tu cita actual sigue siendo el *{detalle}*.\n\n"
+            "Por ahora no veo otros horarios cercanos con tu especialista. "
+            "¿Te gustaría que te anote en lista de espera o prefieres hablar con recepción?"
+        )
+
+    lista = "\n".join(f"{i}. {o}" for i, o in enumerate(opciones, 1))
+    return (
+        f"Claro 😊 Tu cita actual sigue siendo el *{detalle}*.\n\n"
+        f"Estos horarios alternativos están disponibles:\n{lista}\n\n"
+        "Responde con el *número* o la *fecha y hora* que prefieras y lo movemos."
+    )
+
+
+def procesar_boton_recordatorio(telefono: str, texto: str) -> str | None:
+    """Si el texto es un botón de plantilla, devuelve la respuesta para el paciente."""
+    accion = _accion_boton_recordatorio(texto)
+    if accion == "confirmar":
+        return respuesta_confirmar_asistencia(telefono)
+    if accion == "reagendar":
+        return respuesta_solicitud_reagendar(telefono)
+    return None
+
+
 def guardar_prep_sesion(telefono: str, tema: str, es_primera_sesion: str = "", animo: int = 0):
     """Guarda respuestas de prep de sesión para el terapeuta."""
     event_id = storage.obtener_prep_pendiente(telefono) or ""

@@ -2041,6 +2041,7 @@ def reagendar_cita_atomica(
         return resultado_agendar
     vieja = citas[0]
     resultado_cancelar = _cancelar_cita_especifica(telefono_paciente, vieja)
+    storage.limpiar_reagendar_pendiente(telefono_paciente)
     return (
         f"{resultado_agendar} {resultado_cancelar} "
         f"INSTRUCCIÓN PARA LA IA: Confirma el reagendado con calidez. "

@@ -15,7 +15,12 @@ import config
 import storage
 from bienestar import comando_biblioteca, micro_ejercicio_para_texto
 from chat import procesar_mensaje_ia, reiniciar_chat_paciente
-from experiencia import calcular_minutos_ruta, guardar_nota_ritual_cierre, guardar_prep_sesion
+from experiencia import (
+    calcular_minutos_ruta,
+    guardar_nota_ritual_cierre,
+    guardar_prep_sesion,
+    procesar_boton_recordatorio,
+)
 from message_queue import encolar_mensaje_texto, procesar_cola
 from observability import init_sentry, metricas_fallos
 from tools import (
@@ -320,6 +325,29 @@ def _procesar_estados_whatsapp(datos: dict):
                     logger.debug("WhatsApp %s msg=%s", estado, msg_id)
 
 
+def _extraer_texto_respuesta_boton(mensaje_info: dict) -> str | None:
+    """Texto que envía WhatsApp al pulsar Quick Reply en plantilla."""
+    tipo = mensaje_info.get("type")
+    if tipo == "button":
+        return mensaje_info.get("button", {}).get("text", "").strip() or None
+    if tipo == "interactive":
+        inter = mensaje_info.get("interactive", {})
+        if inter.get("type") == "button_reply":
+            return inter.get("button_reply", {}).get("title", "").strip() or None
+    return None
+
+
+def _manejar_boton_recordatorio(telefono: str, texto: str) -> bool:
+    if config.identificar_terapeuta(telefono):
+        return False
+    respuesta = procesar_boton_recordatorio(telefono, texto)
+    if not respuesta:
+        return False
+    enviar_mensaje_whatsapp(telefono, respuesta)
+    logger.info("Botón recordatorio '%s' atendido para %s", texto[:40], telefono)
+    return True
+
+
 def _extraer_nombre_del_mensaje(texto: str) -> str | None:
     """Detecta presentación casual: 'me llamo X', 'soy X', 'mi nombre es X'."""
     patrones = [
@@ -351,6 +379,10 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
     numero_remitente = mensaje_info["from"]
     tipo_mensaje = mensaje_info.get("type")
 
+    texto_boton = _extraer_texto_respuesta_boton(mensaje_info)
+    if texto_boton and _manejar_boton_recordatorio(numero_remitente, texto_boton):
+        return None
+
     zona_mexico = pytz.timezone(config.ZONA_MEXICO)
     hora_exacta = datetime.datetime.now(zona_mexico).strftime("%Y-%m-%d %H:%M")
     texto_contexto = f"[Sistema: Mensaje recibido el {hora_exacta}] "
@@ -361,6 +393,9 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
 
         if es_terapeuta:
             return texto_contexto + f"[Modo staff: {es_terapeuta}]\n" + texto_paciente
+
+        if _manejar_boton_recordatorio(numero_remitente, texto_paciente):
+            return None
 
         nombre_detectado = _extraer_nombre_del_mensaje(texto_paciente)
         if nombre_detectado:
@@ -521,6 +556,14 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
                 texto_contexto
                 + "[Sistema: EMERGENCIA detectada — terapeuta y recepción alertados. "
                 "Indica 911 si hay riesgo inmediato. NO llames notificar_emergencia_paciente otra vez.]\n"
+                + texto_paciente
+            )
+
+        if storage.obtener_reagendar_pendiente(numero_remitente):
+            return (
+                texto_contexto
+                + "[Sistema: El paciente pidió reagendar tras un recordatorio. "
+                "Usa reagendar_cita_atomica cuando elija fecha/hora; no canceles antes de agendar.]\n"
                 + texto_paciente
             )
 

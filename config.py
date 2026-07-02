@@ -61,6 +61,11 @@ WHATSAPP_SEND_RETRIES = int(os.getenv("WHATSAPP_SEND_RETRIES", "3"))
 WHATSAPP_TEMPLATE_24H = os.getenv("WHATSAPP_TEMPLATE_24H", "")
 WHATSAPP_TEMPLATE_2H = os.getenv("WHATSAPP_TEMPLATE_2H", "")
 WHATSAPP_TEMPLATE_LANG = os.getenv("WHATSAPP_TEMPLATE_LANG", "es_MX")
+# Quick Reply en plantillas Meta (máx. 25 caracteres; deben coincidir con Meta).
+WHATSAPP_BTN_CONFIRMAR_ASISTENCIA = os.getenv(
+    "WHATSAPP_BTN_CONFIRMAR_ASISTENCIA", "Confirmo asistencia"
+)
+WHATSAPP_BTN_REAGENDAR = os.getenv("WHATSAPP_BTN_REAGENDAR", "Necesito reagendar")
 
 # Escalación humana — WhatsApp de recepción (opcional, ej. 5233XXXXXXXX)
 RECEPCION_WHATSAPP = os.getenv("RECEPCION_WHATSAPP", "")

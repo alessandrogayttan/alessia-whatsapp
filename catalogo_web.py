@@ -6,6 +6,8 @@ Fuente local cuando Drive está vacío o para enriquecer respuestas de Alessia.
 
 """
 
+import re
+
 import config
 
 
@@ -106,23 +108,106 @@ ESPECIALIDADES_INPULSO = {
     ),
 }
 
+# Talleres vigentes en inpulso43.com/talleres.php (base local + lectura web en vivo).
+OVERRIDES_TALLER: dict[str, dict] = {
+    "sara-club": {
+        "nombre": "Mente en Capítulos: De qué hablamos cuando hablamos de amor",
+        "libro_mes": "De qué hablamos cuando hablamos de amor",
+        "autor_libro": "Raymond Carver",
+        "temario": (
+            "Club de lectura gratuito con Sara Rosales; "
+            "libro del mes: De qué hablamos cuando hablamos de amor, de Raymond Carver; "
+            "lectura y reflexión psicológica en comunidad; "
+            "sesiones en vivo todos los viernes a las 6:00 PM"
+        ),
+        "descripcion_web": (
+            "Club de lectura gratuito con Sara Rosales. "
+            "Este mes leemos De qué hablamos cuando hablamos de amor, de Raymond Carver."
+        ),
+    },
+}
+
+ALIASES_TALLER: dict[str, list[str]] = {
+    "sanando-heridas": [
+        "sanando tus heridas del pasado",
+        "sanando heridas del pasado",
+        "sanando heridas",
+        "heridas del pasado",
+        "taller de heridas",
+        "taller heridas",
+        "taller del niño",
+        "taller del nino",
+        "el taller del niño",
+        "el taller del nino",
+        "niño interior",
+        "nino interior",
+        "taller historia",
+        "historia del pasado",
+    ],
+    "sara-club": [
+        "mente en capítulos",
+        "mente en capitulos",
+        "club de lectura",
+        "club lectura",
+        "el principito",
+        "principito",
+        "raymond carver",
+        "carver",
+        "de qué hablamos cuando hablamos de amor",
+        "de que hablamos cuando hablamos de amor",
+        "hablamos de amor",
+    ],
+    "alianza-360": ["alianza 360", "alianza360", "matrimonios"],
+    "volver-a-encontrarnos": [
+        "volver a encontrarnos",
+        "divorcio silencioso",
+        "manual digital parejas",
+    ],
+}
+
 TALLERES_WEB = [
+    {
+        "id_web": "sanando-heridas",
+        "terapeuta": "Juan y Sara Rosales",
+        "nombre": "Sanando tus heridas del pasado",
+        "nombre_corto_web": "Sanando heridas del pasado",
+        "fechas": "30 de agosto de 2026",
+        "horario": "Por confirmar",
+        "modalidad": "Presencial en Zapopan + en línea en vivo",
+        "precio": "Consultar precio",
+        "cupo": "Lista de espera abierta — escribir HISTORIA por WhatsApp",
+        "temario": (
+            "Espacio psicoterapéutico vivencial sobre cómo tu historia influye en vínculos y decisiones; "
+            "facilitado por Juan y Sara Rosales; presencial (cupo limitado) y transmisión en vivo; "
+            "mayores de 18 años"
+        ),
+        "descripcion_web": (
+            "Taller para comprender cómo tu historia influye en tus vínculos y tu presente. "
+            "Lista de espera abierta: el paciente puede escribir HISTORIA por WhatsApp."
+        ),
+        "inscripcion": "Escribir HISTORIA por WhatsApp para unirse a la lista de espera",
+        "url_web": PAGINAS_SITIO["talleres"],
+    },
     {
         "id_web": "sara-club",
         "terapeuta": "Sara Rosales",
-        "nombre": "Mente en Capítulos: El Principito",
+        "nombre": "Mente en Capítulos: De qué hablamos cuando hablamos de amor",
         "nombre_corto_web": "Mente en Capítulos",
+        "libro_mes": "De qué hablamos cuando hablamos de amor",
+        "autor_libro": "Raymond Carver",
         "fechas": "Todos los viernes",
         "horario": "6:00 PM",
         "modalidad": "Sesión en vivo",
         "precio": "Gratuito",
         "cupo": "Club de lectura",
         "temario": (
-            "Lectura y reflexión psicológica en comunidad; "
-            "sesiones en vivo todos los viernes a las 6:00 PM; "
-            "El Principito con mirada psicológica"
+            "Club de lectura gratuito; libro del mes: De qué hablamos cuando hablamos de amor "
+            "(Raymond Carver); reflexión psicológica en comunidad; viernes 6:00 PM"
         ),
-        "descripcion_web": "Club de lectura gratuito con Sara Rosales.",
+        "descripcion_web": (
+            "Club de lectura gratuito con Sara Rosales. "
+            "Libro del mes: De qué hablamos cuando hablamos de amor, de Raymond Carver."
+        ),
         "url_web": PAGINAS_SITIO["talleres"],
     },
     {
@@ -229,6 +314,114 @@ EQUIPO_WEB = [
 TALLER_WEB = TALLERES_WEB[0]
 
 
+def _normalizar_busqueda(texto: str) -> str:
+    import unicodedata
+
+    t = unicodedata.normalize("NFKD", (texto or "").lower())
+    t = "".join(c for c in t if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def obtener_talleres_vigentes() -> list[dict]:
+    """Fusiona catálogo base, lectura en vivo de la web y overrides editoriales."""
+    from catalogo_web_live import cargar_talleres_publicados_web
+
+    live = cargar_talleres_publicados_web()
+    talleres: list[dict] = []
+    for base in TALLERES_WEB:
+        t = dict(base)
+        remoto = live.get(t["id_web"], {})
+        if remoto.get("nombre") and t["id_web"] not in OVERRIDES_TALLER:
+            t["nombre"] = remoto["nombre"]
+        if remoto.get("descripcion_js") and t["id_web"] not in OVERRIDES_TALLER:
+            t["descripcion_web"] = remoto["descripcion_js"]
+        if t["id_web"] == "sanando-heridas":
+            if remoto.get("fechas"):
+                t["fechas"] = remoto["fechas"]
+            if remoto.get("cupo"):
+                t["cupo"] = remoto["cupo"]
+        t.update(OVERRIDES_TALLER.get(t["id_web"], {}))
+        talleres.append(t)
+    return talleres
+
+
+def id_web_desde_texto(texto: str) -> str:
+    consulta = _normalizar_busqueda(texto)
+    if not consulta:
+        return ""
+    for tid, taller in {t["id_web"]: t for t in obtener_talleres_vigentes()}.items():
+        campos = [
+            taller.get("nombre", ""),
+            taller.get("nombre_corto_web", ""),
+            taller.get("libro_mes", ""),
+            taller.get("autor_libro", ""),
+            taller.get("temario", ""),
+        ]
+        blob = _normalizar_busqueda(" ".join(campos))
+        if consulta in blob or blob in consulta:
+            return tid
+    for tid, alias_list in ALIASES_TALLER.items():
+        for alias in alias_list:
+            a = _normalizar_busqueda(alias)
+            if a and (a in consulta or consulta in a):
+                return tid
+    return ""
+
+
+def taller_coincide_consulta(consulta: str, fila: dict) -> bool:
+    if fila.get("tipo") != "taller":
+        return False
+    consulta_n = _normalizar_busqueda(consulta)
+    if not consulta_n:
+        return False
+    tid = fila.get("id_web") or id_web_desde_texto(fila.get("nombre", ""))
+    if tid and id_web_desde_texto(consulta) == tid:
+        return True
+    blob = _normalizar_busqueda(
+        " ".join(
+            [
+                fila.get("nombre", ""),
+                fila.get("nombre_corto_web", ""),
+                fila.get("terapeuta", ""),
+                fila.get("temario", ""),
+                fila.get("libro_mes", ""),
+            ]
+        )
+    )
+    return consulta_n in blob or blob in consulta_n
+
+
+def enriquecer_taller_desde_web(fila: dict) -> dict:
+    fila = dict(fila)
+    tid = fila.get("id_web") or id_web_desde_texto(fila.get("nombre", ""))
+    if not tid:
+        return fila
+    catalogo = {t["id_web"]: t for t in obtener_talleres_vigentes()}
+    base = catalogo.get(tid)
+    if not base:
+        return fila
+    for key in (
+        "id_web",
+        "nombre",
+        "nombre_corto_web",
+        "descripcion_web",
+        "fechas",
+        "horario",
+        "modalidad",
+        "precio",
+        "cupo",
+        "temario",
+        "libro_mes",
+        "autor_libro",
+        "inscripcion",
+        "url_web",
+        "terapeuta",
+    ):
+        if base.get(key):
+            fila[key] = base[key]
+    return fila
+
+
 
 
 
@@ -318,7 +511,7 @@ def filas_catalogo_sheet() -> list[list]:
 
     """Filas listas para la hoja Catalogo (columnas A–J)."""
 
-    filas = [_fila_taller(t) for t in TALLERES_WEB]
+    filas = [_fila_taller(t) for t in obtener_talleres_vigentes()]
 
 
 
@@ -425,34 +618,27 @@ def _enriquecer_fila_dict(fila: dict) -> dict:
 
 
     if fila.get("tipo") == "taller":
-
-        for t in TALLERES_WEB:
-
-            if t["nombre"].lower() in fila.get("nombre", "").lower() or fila.get(
-
-                "nombre", ""
-
-            ).lower() in t["nombre"].lower():
-
-                fila.update(
-
-                    {
-
-                        "descripcion_web": t.get("descripcion_web", ""),
-
-                        "nombre_corto_web": t.get("nombre_corto_web", ""),
-
-                        "subtitulo_web": t.get("subtitulo_web", ""),
-
-                        "id_web": t.get("id_web", ""),
-
-                        "url_web": t.get("url_web", PAGINAS_SITIO["talleres"]),
-
-                    }
-
-                )
-
-                break
+        fila = enriquecer_taller_desde_web(fila)
+        for t in obtener_talleres_vigentes():
+            if t["id_web"] == fila.get("id_web") or taller_coincide_consulta(
+                fila.get("nombre", ""), {**fila, "tipo": "taller"}
+            ):
+                if t["nombre"].lower() in fila.get("nombre", "").lower() or fila.get(
+                    "id_web"
+                ) == t["id_web"]:
+                    fila.update(
+                        {
+                            "descripcion_web": t.get("descripcion_web", ""),
+                            "nombre_corto_web": t.get("nombre_corto_web", ""),
+                            "subtitulo_web": t.get("subtitulo_web", ""),
+                            "id_web": t.get("id_web", ""),
+                            "url_web": t.get("url_web", PAGINAS_SITIO["talleres"]),
+                            "libro_mes": t.get("libro_mes", ""),
+                            "autor_libro": t.get("autor_libro", ""),
+                            "inscripcion": t.get("inscripcion", ""),
+                        }
+                    )
+                    break
 
     elif fila.get("tipo") == "servicio":
 
@@ -524,7 +710,7 @@ def contexto_web_para_ia() -> str:
 
     iniciativas = " | ".join(i["nombre"] for i in INICIATIVAS_WEB)
 
-    talleres = "; ".join(t["nombre_corto_web"] for t in TALLERES_WEB)
+    talleres = "; ".join(t["nombre_corto_web"] for t in obtener_talleres_vigentes())
 
     equipo = "; ".join(
         f"{e['nombre']} ({e['rol']}, {e['modalidad']}: {e.get('especialidades', '')})"

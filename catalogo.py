@@ -93,6 +93,9 @@ def _fechas_sesiones_taller(fechas_txt: str) -> list[datetime.date]:
     if not fechas_txt:
         return []
     texto = fechas_txt.lower()
+    if "lista de espera" in texto:
+        return []
+
     mes = None
     for nombre, num in MESES_ES.items():
         if nombre in texto:
@@ -100,13 +103,19 @@ def _fechas_sesiones_taller(fechas_txt: str) -> list[datetime.date]:
             break
     if not mes:
         return []
+
     dias = [int(d) for d in re.findall(r"\b(\d{1,2})\b", texto)]
     if not dias:
         return []
+
     hoy = datetime.datetime.now(ZONA).date()
     anio = hoy.year
-    if mes < hoy.month or (mes == hoy.month and max(dias) < hoy.day):
+    anio_txt = re.search(r"\b(20\d{2})\b", texto)
+    if anio_txt:
+        anio = int(anio_txt.group(1))
+    elif mes < hoy.month or (mes == hoy.month and max(dias) < hoy.day):
         anio += 1
+
     fechas = []
     for dia in sorted(set(dias)):
         try:
@@ -116,11 +125,30 @@ def _fechas_sesiones_taller(fechas_txt: str) -> list[datetime.date]:
     return fechas
 
 
-def estado_taller(fechas_txt: str) -> dict:
+def estado_taller(fechas_txt: str, cupo: str = "") -> dict:
     """
-    Calcula si un taller está por iniciar, en curso o finalizado.
+    Calcula si un taller está por iniciar, en curso, en lista de espera o finalizado.
     Devuelve estado, fechas y aviso listo para la IA.
     """
+    texto_estado = f"{fechas_txt} {cupo}".lower()
+    if "lista de espera" in texto_estado:
+        aviso = (
+            "LISTA DE ESPERA ABIERTA: aún no hay cupo confirmado. "
+            "Para Sanando tus heridas del pasado, el paciente puede escribir "
+            "HISTORIA por WhatsApp para apartar lugar."
+        )
+        sesiones = _fechas_sesiones_taller(fechas_txt)
+        extra = {}
+        if sesiones:
+            extra["proxima_sesion"] = sesiones[0].isoformat()
+            aviso += f" Fecha prevista de inicio: {sesiones[0].strftime('%d/%m/%Y')}."
+        return {
+            "estado_taller": "lista_espera",
+            "aviso_estado": aviso,
+            "sesiones": [f.isoformat() for f in sesiones],
+            **extra,
+        }
+
     sesiones = _fechas_sesiones_taller(fechas_txt)
     if not sesiones:
         return {
@@ -194,18 +222,19 @@ def _normalizar_modalidad_fila(fila: dict) -> dict:
 
 
 def _enriquecer_fila_catalogo(fila: dict) -> dict:
-    from catalogo_web import contexto_web_para_ia
+    from catalogo_web import contexto_web_para_ia, enriquecer_taller_desde_web
 
     fila = _normalizar_modalidad_fila(fila)
     fila["url_web"] = config.CLINICA_WEB_URL
-    if fila.get("tipo") == "taller" and fila.get("fechas"):
-        fila = {**fila, **estado_taller(fila["fechas"])}
+    if fila.get("tipo") == "taller":
+        fila = enriquecer_taller_desde_web(fila)
+        if fila.get("fechas") or fila.get("cupo"):
+            fila = {**fila, **estado_taller(fila.get("fechas", ""), fila.get("cupo", ""))}
     if not fila.get("descripcion_web"):
-        from catalogo_web import ESPECIALIDADES_INPULSO, TALLER_WEB
+        from catalogo_web import ESPECIALIDADES_INPULSO
 
         if fila.get("tipo") == "taller":
-            fila["descripcion_web"] = TALLER_WEB.get("descripcion_web", "")
-            fila["nombre_corto_web"] = TALLER_WEB.get("nombre_corto_web", "")
+            fila = enriquecer_taller_desde_web(fila)
         elif "nutric" in (fila.get("nombre") or "").lower():
             fila["descripcion_web"] = ESPECIALIDADES_INPULSO["nutricion"]
         elif "medicina" in (fila.get("nombre") or "").lower():
@@ -217,14 +246,28 @@ def _enriquecer_fila_catalogo(fila: dict) -> dict:
 
 
 def _fusionar_catalogo_web(filas: list[dict]) -> list[dict]:
-    """Completa Drive con entradas de inpulso43.com que falten."""
-    from catalogo_web import filas_catalogo_dict
+    """Completa Drive con inpulso43.com; los talleres web reemplazan entradas viejas."""
+    from catalogo_web import filas_catalogo_dict, id_web_desde_texto
 
-    claves = {
-        (f.get("terapeuta", "").lower(), f.get("nombre", "").lower()) for f in filas
+    web_filas = filas_catalogo_dict()
+    web_taller_por_id = {
+        f["id_web"]: f for f in web_filas if f.get("tipo") == "taller" and f.get("id_web")
     }
-    fusionadas = [_enriquecer_fila_catalogo(f) for f in filas]
-    for base in filas_catalogo_dict():
+    web_servicios = [f for f in web_filas if f.get("tipo") != "taller"]
+
+    fusionadas = []
+    for f in filas:
+        if f.get("tipo") == "taller":
+            tid = id_web_desde_texto(f.get("nombre", ""))
+            if tid and tid in web_taller_por_id:
+                continue
+        fusionadas.append(_enriquecer_fila_catalogo(f))
+
+    for taller in web_taller_por_id.values():
+        fusionadas.append(_enriquecer_fila_catalogo(taller))
+
+    claves = {(f.get("terapeuta", "").lower(), f.get("nombre", "").lower()) for f in fusionadas}
+    for base in web_servicios:
         clave = (base.get("terapeuta", "").lower(), base.get("nombre", "").lower())
         if clave not in claves:
             fusionadas.append(_enriquecer_fila_catalogo(base))
@@ -386,15 +429,22 @@ def consultar_catalogo_drive(especialista: str = "todos"):
         f"{contexto_web_para_ia()} "
         "Todas las consultas y talleres (excepto mentoras) son presencial Y online. "
         "En talleres usa SIEMPRE aviso_estado y estado_taller "
-        "(en_curso, por_iniciar, finalizado) sin que el paciente pregunte si ya empezó. "
+        "(lista_espera, en_curso, por_iniciar, finalizado) sin que el paciente pregunte si ya empezó. "
+        "Si preguntan por 'taller del niño', 'taller de heridas' o 'heridas del pasado', "
+        "se refieren al taller vigente Sanando tus heridas del pasado (lista de espera HISTORIA). "
+        "Si preguntan por el club de lectura de Sara, menciona el libro del mes actual. "
         "Puedes mencionar la página web si el paciente quiere más contexto."
     )
     esp_lower = especialista.lower()
     if esp_lower != "todos":
+        from catalogo_web import taller_coincide_consulta
+
         filtradas = [
             f
             for f in filas
-            if esp_lower in f["terapeuta"].lower() or esp_lower in f["nombre"].lower()
+            if taller_coincide_consulta(esp_lower, f)
+            or esp_lower in f["terapeuta"].lower()
+            or esp_lower in f["nombre"].lower()
         ]
         if not filtradas:
             return (

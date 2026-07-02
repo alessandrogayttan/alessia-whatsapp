@@ -194,16 +194,36 @@ def test_catalogo_web_talleres_completos():
     from catalogo_web import CONTACTO_WEB, EQUIPO_WEB, PAGINAS_SITIO, TALLERES_WEB, filas_catalogo_dict
 
     assert "talleres.php" in PAGINAS_SITIO["talleres"]
-    assert len(TALLERES_WEB) == 3
+    assert len(TALLERES_WEB) == 4
     assert len(EQUIPO_WEB) == 9
     assert "+52 33 1469 9772" in CONTACTO_WEB["telefonos"]
     filas = filas_catalogo_dict()
     talleres = [f for f in filas if f["tipo"] == "taller"]
-    assert len(talleres) == 3
+    assert len(talleres) == 4
     nombres = " ".join(t["nombre"].lower() for t in talleres)
-    assert "principito" in nombres or "capítulos" in nombres or "capitulos" in nombres
+    assert "heridas del pasado" in nombres
+    assert "carver" in nombres or "hablamos de amor" in nombres
     assert "alianza" in nombres
     assert "volver a encontrarnos" in nombres
+
+
+def test_alias_taller_heridas_resuelve_taller_vigente():
+    from catalogo_web import id_web_desde_texto
+
+    assert id_web_desde_texto("taller del niño") == "sanando-heridas"
+    assert id_web_desde_texto("taller de heridas") == "sanando-heridas"
+    assert id_web_desde_texto("heridas del pasado") == "sanando-heridas"
+
+
+def test_estado_taller_lista_espera():
+    import catalogo
+
+    estado = catalogo.estado_taller(
+        "30 de agosto de 2026",
+        "Lista de espera abierta — escribir HISTORIA por WhatsApp",
+    )
+    assert estado["estado_taller"] == "lista_espera"
+    assert "HISTORIA" in estado["aviso_estado"]
 
 
 def test_formatear_evento_cita():

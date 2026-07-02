@@ -255,6 +255,78 @@ def procesar_boton_recordatorio(telefono: str, texto: str) -> str | None:
     return None
 
 
+def _es_sesion_online(cita: dict) -> bool:
+    texto = (
+        (cita.get("servicio") or "")
+        + (cita.get("resumen") or "")
+    ).lower()
+    return any(k in texto for k in ("online", "virtual", "línea", "linea", "zoom", "videollamada"))
+
+
+def mensaje_mi_cita(telefono: str) -> str:
+    """Respuesta instantánea para el comando MI CITA (sin pasar por la IA)."""
+    citas = listar_citas_futuras_por_telefono(telefono)
+    if not citas:
+        return (
+            "No encontré una cita próxima con este número 📅\n\n"
+            "Si agendaste con otro WhatsApp o quieres reservar, cuéntame y te ayudo con gusto."
+        )
+
+    proxima = citas[0]
+    fecha_txt = _formatear_fecha_amigable(proxima["fecha"])
+    hora = proxima["hora"]
+    esp = proxima["especialista"]
+    servicio = proxima.get("servicio") or "Consulta"
+
+    nombre = storage.primer_nombre(telefono) or storage.obtener_nombre_paciente(telefono)
+    saludo = f"Hola {nombre.split()[0]} 👋\n\n" if nombre else ""
+
+    partes = [
+        f"{saludo}🗓️ *Tu próxima cita*",
+        f"📅 {fecha_txt}",
+        f"🕐 {hora}",
+        f"👤 {esp}",
+        f"💼 {servicio}",
+    ]
+
+    if _es_sesion_online(proxima):
+        partes.append(
+            "\n💻 *Sesión en línea* — tu terapeuta te contactará por aquí con el link el día de la cita."
+        )
+    else:
+        partes.append(f"\n📍 {config.CLINICA_DIRECCION}")
+        partes.append(f"🗺️ {config.CLINICA_MAPS_URL}")
+
+    if len(citas) > 1:
+        partes.append(f"\n_(Tienes {len(citas)} citas futuras; esta es la más próxima.)_")
+
+    partes.append("\n✨ Si necesitas cambiar algo, escríbenos por aquí.")
+    return "\n".join(partes)
+
+
+def respuesta_seguimiento_nps(telefono: str, puntaje: int) -> str:
+    """Procesa la calificación NPS 1-10 tras seguimiento post-cita."""
+    storage.guardar_respuesta_nps(telefono, puntaje)
+    if puntaje >= 9:
+        from marca import mensaje_referido_tras_nps_alto
+
+        return (
+            f"¡Muchas gracias! Tu calificación ({puntaje}/10) nos alegra muchísimo 💜\n\n"
+            + mensaje_referido_tras_nps_alto(telefono)
+        )
+    if puntaje >= 7:
+        return (
+            f"Gracias por tu sinceridad ({puntaje}/10) 🙏 "
+            "Tu opinión nos ayuda a mejorar. Si hay algo que podamos hacer mejor, "
+            "estamos aquí para escucharte."
+        )
+    return (
+        f"Gracias por compartir ({puntaje}/10). Lamentamos que no haya sido la experiencia "
+        "que esperabas 💙 Si quieres, cuéntanos qué pasó o escribe *HABLAR CON PERSONA* "
+        "y alguien del equipo te atenderá."
+    )
+
+
 def guardar_prep_sesion(telefono: str, tema: str, es_primera_sesion: str = "", animo: int = 0):
     """Guarda respuestas de prep de sesión para el terapeuta."""
     event_id = storage.obtener_prep_pendiente(telefono) or ""

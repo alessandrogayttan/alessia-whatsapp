@@ -80,8 +80,11 @@ La entrada oficial es `wsgi.py` en producción y `servidor.py` en desarrollo loc
 
 ## Comandos especiales para pacientes
 
+- `MI CITA` — muestra la próxima cita al instante
+- `MI CODIGO` / `REFIERE` — código de referido para invitar amigos
 - `ELIMINAR DATOS` — borra datos locales del paciente
 - `HABLAR CON PERSONA` — escala a recepción
+- `HISTORIA` — lista de espera del taller Sanando tus heridas del pasado
 
 ## Lanzamiento en producción
 

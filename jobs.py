@@ -324,9 +324,11 @@ def seguimiento_post_cita_background():
                 if not phone_match:
                     continue
                 telefono = phone_match.group(1)
+                nombre = storage.obtener_nombre_paciente(telefono) or storage.primer_nombre(telefono)
+                saludo = f"Hola {nombre.split()[0]}" if nombre else "Hola"
                 msg = (
-                    "💙 *Seguimiento Inpulso*\n\n"
-                    "Hace un par de días tuviste sesión con nosotros. "
+                    f"💙 *Seguimiento Inpulso*\n\n"
+                    f"{saludo}, hace un par de días tuviste sesión con nosotros. "
                     "¿Cómo te has sentido desde entonces?\n\n"
                     "🌿 *Ritual de cierre* (opcional y privado): "
                     "Si quieres, escribe en un mensaje qué te llevas de esa sesión "
@@ -338,12 +340,14 @@ def seguimiento_post_cita_background():
                     total = storage.incrementar_citas_completadas(telefono)
                     if total >= 3 and not storage.nps_ya_enviado(telefono):
                         nps = (
-                            "\n\n⭐ *Tu opinión nos importa*\n"
+                            "⭐ *Tu opinión nos importa*\n\n"
                             "Del 1 al 10, ¿qué tan probable es que recomiendes Inpulso 43 "
-                            "a un amigo o familiar?"
+                            "a un amigo o familiar?\n\n"
+                            "Responde solo con un número (ej. 9)."
                         )
                         enviar_mensaje_whatsapp(telefono, nps)
                         storage.marcar_nps_enviado(telefono)
+                        storage.marcar_nps_pendiente(telefono, event_id)
     except Exception as e:
         logger.error("Error seguimiento post-cita: %s", e)
 

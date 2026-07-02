@@ -182,6 +182,17 @@ def init_db():
                     event_id TEXT NOT NULL,
                     creado_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS nps_pendiente (
+                    telefono TEXT PRIMARY KEY,
+                    event_id TEXT,
+                    creado_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS nps_respuestas (
+                    telefono TEXT PRIMARY KEY,
+                    puntaje INTEGER NOT NULL,
+                    event_id TEXT,
+                    respondido_at TEXT NOT NULL
+                );
                 """
             )
             conn.commit()
@@ -298,6 +309,10 @@ def eliminar_datos_paciente(telefono: str):
         conn.execute("DELETE FROM interes_talleres WHERE telefono = ?", (telefono,))
         conn.execute("DELETE FROM notificaciones_nuevo_taller WHERE telefono = ?", (telefono,))
         conn.execute("DELETE FROM referidos_log WHERE telefono_nuevo = ?", (telefono,))
+        conn.execute("DELETE FROM nps_pendiente WHERE telefono = ?", (telefono,))
+        conn.execute("DELETE FROM nps_respuestas WHERE telefono = ?", (telefono,))
+        conn.execute("DELETE FROM reagendar_pendiente WHERE telefono = ?", (telefono,))
+        conn.execute("DELETE FROM confirmaciones_asistencia WHERE telefono = ?", (telefono,))
 
 
 def ya_menciono_cita_proactiva(telefono: str, cita_clave: str) -> bool:
@@ -669,6 +684,59 @@ def obtener_reagendar_pendiente(telefono: str) -> str | None:
 def limpiar_reagendar_pendiente(telefono: str):
     with _transaction() as conn:
         conn.execute("DELETE FROM reagendar_pendiente WHERE telefono = ?", (telefono,))
+
+
+def marcar_nps_pendiente(telefono: str, event_id: str = ""):
+    with _transaction() as conn:
+        conn.execute(
+            """
+            INSERT INTO nps_pendiente (telefono, event_id, creado_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(telefono) DO UPDATE SET
+                event_id = excluded.event_id,
+                creado_at = excluded.creado_at
+            """,
+            (telefono, event_id, datetime.utcnow().isoformat()),
+        )
+
+
+def obtener_nps_pendiente(telefono: str) -> bool:
+    with _transaction() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM nps_pendiente WHERE telefono = ?",
+            (telefono,),
+        ).fetchone()
+        return row is not None
+
+
+def limpiar_nps_pendiente(telefono: str):
+    with _transaction() as conn:
+        conn.execute("DELETE FROM nps_pendiente WHERE telefono = ?", (telefono,))
+
+
+def guardar_respuesta_nps(telefono: str, puntaje: int, event_id: str = ""):
+    with _transaction() as conn:
+        conn.execute(
+            """
+            INSERT INTO nps_respuestas (telefono, puntaje, event_id, respondido_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(telefono) DO UPDATE SET
+                puntaje = excluded.puntaje,
+                event_id = excluded.event_id,
+                respondido_at = excluded.respondido_at
+            """,
+            (telefono, puntaje, event_id, datetime.utcnow().isoformat()),
+        )
+        conn.execute("DELETE FROM nps_pendiente WHERE telefono = ?", (telefono,))
+
+
+def obtener_ultimo_nps(telefono: str) -> int | None:
+    with _transaction() as conn:
+        row = conn.execute(
+            "SELECT puntaje FROM nps_respuestas WHERE telefono = ?",
+            (telefono,),
+        ).fetchone()
+        return row["puntaje"] if row else None
 
 
 def guardar_prep_sesion(

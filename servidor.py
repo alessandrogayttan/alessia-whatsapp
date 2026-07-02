@@ -19,8 +19,11 @@ from experiencia import (
     calcular_minutos_ruta,
     guardar_nota_ritual_cierre,
     guardar_prep_sesion,
+    mensaje_mi_cita,
     procesar_boton_recordatorio,
+    respuesta_seguimiento_nps,
 )
+from marca import contexto_blog_si_aplica, mensaje_codigo_referido
 from message_queue import encolar_mensaje_texto, procesar_cola
 from observability import init_sentry, metricas_fallos
 from tools import (
@@ -443,6 +446,15 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
                 return None
             return texto_contexto + f"[Sistema: Comando {texto_paciente.upper()} enviado.]\n" + texto_paciente
 
+        texto_cmd = texto_paciente.strip().upper().replace("_", " ")
+        if texto_cmd in ("MI CITA", "MICITA", "MIS CITAS"):
+            enviar_mensaje_whatsapp(numero_remitente, mensaje_mi_cita(numero_remitente))
+            return None
+
+        if texto_cmd in ("MI CODIGO", "MI CÓDIGO", "REFIERE", "REFERIDO", "REFERIDOS"):
+            enviar_mensaje_whatsapp(numero_remitente, mensaje_codigo_referido(numero_remitente))
+            return None
+
         if storage.obtener_ritual_pendiente(numero_remitente) and len(texto_paciente) > 3:
             guardar_nota_ritual_cierre(numero_remitente, texto_paciente)
             enviar_mensaje_whatsapp(
@@ -483,6 +495,12 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
         if escala_match:
             escala = int(escala_match.group(1))
             if 1 <= escala <= 10:
+                if storage.obtener_nps_pendiente(numero_remitente):
+                    enviar_mensaje_whatsapp(
+                        numero_remitente,
+                        respuesta_seguimiento_nps(numero_remitente, escala),
+                    )
+                    return None
                 storage.guardar_checkin_emocional(numero_remitente, escala)
                 return (
                     texto_contexto
@@ -490,6 +508,8 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
                     f"Agradece con calidez; si es bajo (1-4), ofrece apoyo sin alarmar.]\n"
                     + texto_paciente
                 )
+
+        blog_ctx = contexto_blog_si_aplica(texto_paciente)
 
         ejercicio = micro_ejercicio_para_texto(texto_paciente)
         if ejercicio and any(p in texto_lower for p in config.PALABRAS_ANSIEDAD):
@@ -562,12 +582,13 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
         if storage.obtener_reagendar_pendiente(numero_remitente):
             return (
                 texto_contexto
+                + blog_ctx
                 + "[Sistema: El paciente pidió reagendar tras un recordatorio. "
                 "Usa reagendar_cita_atomica cuando elija fecha/hora; no canceles antes de agendar.]\n"
                 + texto_paciente
             )
 
-        return texto_contexto + texto_paciente
+        return texto_contexto + blog_ctx + texto_paciente
 
     if tipo_mensaje == "location":
         lat = mensaje_info["location"]["latitude"]

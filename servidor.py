@@ -366,7 +366,6 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
         if storage.es_primera_vez(numero_remitente):
             storage.marcar_no_primera_vez(numero_remitente)
             storage.obtener_o_crear_codigo_referido(numero_remitente)
-            enviar_mensaje_whatsapp(numero_remitente, config.AVISO_PRIVACIDAD)
             hora = datetime.datetime.now(zona_mexico).hour
             if hora < 12:
                 saludo_hora = "buenos días"
@@ -391,8 +390,7 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
                 f"preséntate como 'Alessia, de Inpulso 43'. {extra} "
                 f"Tono MUY cálido y humano, con emojis (😊 ✨). PROHIBIDO ser cortante, seca o fría. "
                 f"PROHIBIDO decir virtual, IA o bot. "
-                f"Si el mensaje incluye una pregunta, respóndela en el mismo mensaje con cariño. "
-                f"El aviso de privacidad ya fue enviado automáticamente.]\n"
+                f"Si el mensaje incluye una pregunta, respóndela en el mismo mensaje con cariño.]\n"
                 + texto_paciente
             )
 
@@ -481,8 +479,13 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
             return None
 
         if any(palabra in texto_lower for palabra in config.PALABRAS_PRIVACIDAD):
-            enviar_mensaje_whatsapp(numero_remitente, config.AVISO_PRIVACIDAD)
-            return None
+            return (
+                texto_contexto
+                + "[Sistema: Pregunta sobre privacidad. Responde con tono humano y breve. "
+                f"Puedes indicar {config.AVISO_PRIVACIDAD_URL} si lo piden. "
+                "NO envíes el bloque automático de aviso de privacidad.]\n"
+                + texto_paciente
+            )
 
         if any(p in texto_lower for p in config.PALABRAS_LLEGADA):
             notificar_llegada_paciente(numero_remitente)

@@ -25,6 +25,7 @@ from tools import (
     agregar_lista_espera,
     buscar_cita_paciente,
     calcular_gasto_combustible,
+    cambiar_servicio_cita,
     cancelar_cita_paciente,
     confirmar_pago_comprobante,
     consultar_agenda,
@@ -55,7 +56,7 @@ memoria_pacientes = {}
 memoria_terapeutas = {}
 cerrojos_pacientes = {}
 # Al cambiar el prompt, sube la versión para refrescar chats en RAM tras deploy.
-PROMPT_VERSION = "warm-2026-06-10"
+PROMPT_VERSION = "warm-2026-07-02"
 _chat_prompt_version: dict[str, str] = {}
 
 
@@ -116,6 +117,7 @@ REGLAS DE COMUNICACIÓN Y TONO:
 22. NPS: Si responden del 1-10 tras encuesta de recomendación, agradece sinceramente.
 23. PREP DE SESIÓN: Tras recordatorio 24 h, si el paciente responde qué quiere trabajar, usa 'guardar_prep_sesion'.
 24. REAGENDAR: Si quiere cambiar horario sin buscar manualmente, usa 'reagendar_cita_inteligente' — ofrece alternativas sin cancelar todavía. Cuando el paciente elija una opción, usa 'reagendar_cita_atomica' (agenda nueva + cancela vieja en un paso).
+24b. CAMBIO DE TIPO DE CITA (mismo día y hora): Si el paciente ya tiene cita y solo quiere cambiar el tipo (individual ↔ pareja, presencial ↔ online, etc.) SIN mover horario, usa 'cambiar_servicio_cita' con el teléfono {numero_telefono} y el nuevo servicio. NO uses agendar_cita ni reagendar_cita_atomica para esto — agendar falla porque el horario ya está ocupado por su propia cita.
 25. RITUAL DE CIERRE: Tras seguimiento post-cita, si escribe reflexión privada, usa 'guardar_nota_ritual_cierre' (no se comparte con terapeuta).
 26. BIBLIOTECA: Comandos *RESPIRAR*, *GROUNDING*, *CRISIS* envían ejercicios al instante; CRISIS también alerta al equipo.
 27. TALLERES — ESTADO EN CURSO: Al consultar talleres, el catálogo trae *estado_taller* y *aviso_estado*. SIEMPRE menciónalo sin que pregunten: si ya empezó, dilo claro (qué sesión pasó y cuál sigue); si ya terminó, dilo; si aún no empieza, también. Si está EN_CURSO y aún aceptan inscripción a sesiones restantes, explícalo con honestidad.
@@ -177,6 +179,7 @@ PASOS DE ATENCIÓN Y HERRAMIENTAS:
    - Si cancelan, usa 'cancelar_cita_paciente' pasando su número de teléfono.
    - Si quieren reagendar de forma rápida, usa 'reagendar_cita_inteligente' con teléfono {numero_telefono}; esta herramienta solo ofrece opciones y conserva la cita actual hasta que el paciente confirme.
    - Cuando el paciente elija el nuevo horario, usa 'reagendar_cita_atomica' con todos los datos (no canceles antes de agendar).
+   - Si solo cambia el tipo de cita (pareja, individual, online, presencial) pero mantiene día y hora, usa 'cambiar_servicio_cita'.
    - Si no hay espacio, ofrécele anotarlo a la lista de espera con 'agregar_lista_espera'.
    - MODALIDAD (OBLIGATORIO antes de agendar): Si el paciente quiere cita con un terapeuta y NO ha dicho si es en línea o presencial, pregúntale con calidez: *"¿Prefieres tu cita en línea o presencial?"* — antes de consultar horarios o agendar. Si ya lo dijo en la conversación, no vuelvas a preguntar.
    - Si elige *EN LÍNEA / ONLINE*: en 'agendar_cita' el campo servicio DEBE incluir "online" (ej. "Consulta individual online"). NO menciones dirección ni mapa. Explica que su terapeuta los contactará el día de la cita por aquí con el link de Zoom, y comparte las recomendaciones para sesión en línea.
@@ -362,6 +365,7 @@ def obtener_chat_paciente(numero_telefono: str):
                     notificar_emergencia_paciente,
                     agendar_cita,
                     cancelar_cita_paciente,
+                    cambiar_servicio_cita,
                     buscar_cita_paciente,
                     obtener_ruta_inpulso,
                     calcular_gasto_combustible,

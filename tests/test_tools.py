@@ -220,6 +220,101 @@ def test_formatear_evento_cita():
     assert "523311122233" in texto
 
 
+def test_cambiar_servicio_cita_actualiza_evento(monkeypatch):
+    import tools
+
+    cita = {
+        "event_id": "evt-1",
+        "calendar_id": "cal-sara",
+        "fecha": "2026-07-02",
+        "hora": "18:00",
+        "especialista": "Sara Rosales",
+        "servicio": "Consulta individual presencial",
+        "resumen": "ALESSANDRO GAYTÁN",
+    }
+    evento = {
+        "id": "evt-1",
+        "summary": "ALESSANDRO GAYTÁN",
+        "description": "Cita de Consulta individual presencial con Sara Rosales. Teléfono: 523326505999",
+        "start": {"dateTime": "2026-07-02T18:00:00"},
+        "end": {"dateTime": "2026-07-02T19:00:00"},
+    }
+    patched = {}
+
+    class FakeEvents:
+        def get(self, calendarId, eventId):
+            return self
+
+        def patch(self, calendarId, eventId, body):
+            patched["body"] = body
+            return self
+
+        def execute(self):
+            return evento if "body" not in patched else patched["body"]
+
+    class FakeService:
+        def events(self):
+            return FakeEvents()
+
+    monkeypatch.setattr(tools, "listar_citas_futuras_por_telefono", lambda tel: [cita])
+    monkeypatch.setattr(tools, "get_calendar_service", lambda: FakeService())
+    monkeypatch.setattr(tools, "ejecutar_con_reintento", lambda fn, label: fn())
+    monkeypatch.setattr(tools, "_invalidar_cache_agenda", lambda *a, **k: None)
+    monkeypatch.setattr(tools, "_invalidar_cache_citas", lambda *a, **k: None)
+
+    resultado = tools.cambiar_servicio_cita(
+        "523326505999",
+        "Consulta de pareja presencial",
+        "2026-07-02T18:00:00",
+    )
+
+    assert "ÉXITO" in resultado
+    assert "pareja" in patched["body"]["description"].lower()
+    assert "Consulta individual" not in patched["body"]["description"]
+
+
+def test_reagendar_atomica_mismo_horario_usa_cambiar_servicio(monkeypatch):
+    import tools
+
+    llamadas = []
+
+    def fake_cambiar(telefono, servicio, fecha_hora=""):
+        llamadas.append((telefono, servicio, fecha_hora))
+        return "ÉXITO cambio"
+
+    monkeypatch.setattr(
+        tools,
+        "listar_citas_futuras_por_telefono",
+        lambda tel: [
+            {
+                "event_id": "evt-1",
+                "calendar_id": "cal-sara",
+                "fecha": "2026-07-02",
+                "hora": "18:00",
+                "especialista": "Sara Rosales",
+                "servicio": "Consulta individual presencial",
+            }
+        ],
+    )
+    monkeypatch.setattr(tools, "cambiar_servicio_cita", fake_cambiar)
+    monkeypatch.setattr(
+        tools,
+        "agendar_cita",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no debe agendar")),
+    )
+
+    resultado = tools.reagendar_cita_atomica(
+        "523326505999",
+        "2026-07-02T18:00:00",
+        "Alessandro Gaytán",
+        "Sara Rosales",
+        "Consulta de pareja presencial",
+    )
+
+    assert resultado == "ÉXITO cambio"
+    assert len(llamadas) == 1
+
+
 def test_reagendar_ofrece_opciones_sin_cancelar(monkeypatch):
     import experiencia
 

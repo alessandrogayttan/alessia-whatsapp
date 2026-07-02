@@ -883,10 +883,44 @@ def _especialista_desde_calendario(calendar_id: str) -> str:
 
 
 def _parsear_servicio_descripcion(descripcion: str) -> str:
-    if descripcion.startswith("Cita de "):
-        parte = descripcion.split(" con ", 1)[0]
-        return parte.replace("Cita de ", "").strip()
+    for prefijo in ("Cita ONLINE de ", "Cita de "):
+        if descripcion.startswith(prefijo):
+            parte = descripcion.split(" con ", 1)[0]
+            return parte.replace(prefijo, "").strip()
     return "Consulta"
+
+
+def _normalizar_fecha_hora_cita(fecha_hora: str) -> datetime.datetime:
+    texto = (fecha_hora or "").strip().replace(" ", "T")
+    if len(texto) == 10:
+        raise ValueError("Falta la hora")
+    if len(texto) == 16:
+        texto += ":00"
+    return datetime.datetime.fromisoformat(texto)
+
+
+def _seleccionar_cita_paciente(citas: list[dict], fecha_hora: str = "") -> dict | None:
+    if not citas:
+        return None
+    if not fecha_hora:
+        return citas[0]
+    try:
+        objetivo = _normalizar_fecha_hora_cita(fecha_hora)
+    except ValueError:
+        return None
+    coincidencias = []
+    for cita in citas:
+        try:
+            inicio = _normalizar_fecha_hora_cita(f"{cita['fecha']}T{cita['hora']}")
+        except ValueError:
+            continue
+        if inicio == objetivo:
+            coincidencias.append(cita)
+    if len(coincidencias) == 1:
+        return coincidencias[0]
+    if len(coincidencias) > 1:
+        return None
+    return citas[0]
 
 
 def listar_citas_futuras_por_telefono(telefono_paciente: str) -> list[dict]:
@@ -939,6 +973,7 @@ def listar_citas_futuras_por_telefono(telefono_paciente: str) -> list[dict]:
                 citas.append(
                     {
                         "event_id": event.get("id", ""),
+                        "calendar_id": cal_id,
                         "fecha": fecha,
                         "hora": hora,
                         "especialista": _especialista_desde_calendario(cal_id),
@@ -1889,6 +1924,93 @@ def confirmar_pago_cita_online(telefono: str, monto: float) -> tuple[bool, str]:
         return False, "Error técnico"
 
 
+def cambiar_servicio_cita(
+    telefono_paciente: str,
+    nuevo_servicio: str,
+    fecha_hora: str = "",
+):
+    """
+    Actualiza el tipo o modalidad de una cita existente sin cambiar día ni hora.
+    Usar cuando el paciente pida pasar de individual a pareja, presencial a online, etc.
+    """
+    citas = listar_citas_futuras_por_telefono(telefono_paciente)
+    if not citas:
+        return (
+            "INSTRUCCIÓN PARA LA IA: No hay cita futura para actualizar. "
+            "Usa agendar_cita si necesita una cita nueva."
+        )
+
+    cita = _seleccionar_cita_paciente(citas, fecha_hora)
+    if not cita:
+        return (
+            "INSTRUCCIÓN PARA LA IA: Hay varias citas con ese horario. "
+            "Pregunta cuál desea cambiar o usa consultar_mis_citas."
+        )
+
+    event_id = cita.get("event_id")
+    calendar_id = cita.get("calendar_id")
+    if not event_id or not calendar_id:
+        return "ERROR: No se pudo localizar la cita en el calendario."
+
+    try:
+        service = get_calendar_service()
+        evento = ejecutar_con_reintento(
+            lambda: service.events()
+            .get(calendarId=calendar_id, eventId=event_id)
+            .execute(),
+            f"calendar.get {calendar_id}",
+        )
+
+        especialista_texto = cita["especialista"]
+        es_online = _es_servicio_online(nuevo_servicio)
+        descripcion_cita = (
+            f"Cita ONLINE de {nuevo_servicio} con {especialista_texto}. "
+            f"Teléfono: {telefono_paciente}"
+            if es_online
+            else (
+                f"Cita de {nuevo_servicio} con {especialista_texto}. "
+                f"Teléfono: {telefono_paciente}"
+            )
+        )
+        evento["description"] = descripcion_cita
+        if es_online:
+            evento["location"] = "Sesión online — Inpulso 43"
+        else:
+            evento.pop("location", None)
+
+        ejecutar_con_reintento(
+            lambda: service.events()
+            .patch(calendarId=calendar_id, eventId=event_id, body=evento)
+            .execute(),
+            f"calendar.patch {calendar_id}",
+        )
+
+        _invalidar_cache_agenda(calendar_id, cita["fecha"])
+        _invalidar_cache_citas(telefono_paciente)
+
+        fecha_inicio = _normalizar_fecha_hora_cita(f"{cita['fecha']}T{cita['hora']}")
+        bloque = _formatear_confirmacion_cita(
+            fecha_inicio, especialista_texto, nuevo_servicio, es_online=es_online
+        )
+        servicio_anterior = cita.get("servicio", "consulta")
+        return (
+            f"ÉXITO: Cita actualizada de '{servicio_anterior}' a '{nuevo_servicio}' "
+            f"el {cita['fecha']} a las {cita['hora']} con {especialista_texto}. "
+            f"INSTRUCCIÓN PARA LA IA: El cambio ya quedó guardado en la agenda. "
+            f"Confirma con calidez el nuevo tipo de cita (mismo día y hora). "
+            f"Puedes usar este bloque si hace falta:\n\n{bloque}"
+        )
+    except GoogleCalendarError as e:
+        logger.error("Error al cambiar servicio de cita: %s", e)
+        return (
+            "ERROR_CALENDARIO_TEMPORAL: No se pudo actualizar la cita aún. "
+            "INSTRUCCIÓN PARA LA IA: Reintenta cambiar_servicio_cita en un momento."
+        )
+    except Exception as e:
+        logger.error("Error al cambiar servicio de cita: %s", e)
+        return "ERROR: No se pudo actualizar el tipo de cita."
+
+
 def reagendar_cita_atomica(
     telefono_paciente: str,
     nueva_fecha_hora: str,
@@ -1902,6 +2024,16 @@ def reagendar_cita_atomica(
         return (
             "INSTRUCCIÓN PARA LA IA: No hay cita previa. Usa agendar_cita directamente."
         )
+
+    vieja = _seleccionar_cita_paciente(citas, nueva_fecha_hora) or citas[0]
+    try:
+        hora_vieja = _normalizar_fecha_hora_cita(f"{vieja['fecha']}T{vieja['hora']}")
+        hora_nueva = _normalizar_fecha_hora_cita(nueva_fecha_hora)
+        if hora_vieja == hora_nueva:
+            return cambiar_servicio_cita(telefono_paciente, servicio, nueva_fecha_hora)
+    except ValueError:
+        pass
+
     resultado_agendar = agendar_cita(
         servicio, nueva_fecha_hora, nombre_paciente, especialista, telefono_paciente
     )

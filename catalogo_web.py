@@ -322,11 +322,13 @@ def _normalizar_busqueda(texto: str) -> str:
     return re.sub(r"\s+", " ", t).strip()
 
 
-def obtener_talleres_vigentes() -> list[dict]:
+def obtener_talleres_vigentes(*, forzar_web: bool = False) -> list[dict]:
     """Fusiona catálogo base, lectura en vivo de la web y overrides editoriales."""
-    from catalogo_web_live import cargar_talleres_publicados_web
+    from catalogo_web_live import cargar_talleres_publicados_web, invalidar_cache_web
 
-    live = cargar_talleres_publicados_web()
+    if forzar_web:
+        invalidar_cache_web()
+    live = cargar_talleres_publicados_web(forzar=forzar_web)
     talleres: list[dict] = []
     for base in TALLERES_WEB:
         t = dict(base)

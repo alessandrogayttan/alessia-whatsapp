@@ -226,6 +226,70 @@ def test_estado_taller_lista_espera():
     assert "HISTORIA" in estado["aviso_estado"]
 
 
+def test_sincronizar_catalogo_desactiva_nombre_viejo(monkeypatch):
+    import catalogo_sync
+
+    taller_vigente = {
+        "id_web": "sanando-heridas",
+        "terapeuta": "Juan y Sara Rosales",
+        "nombre": "Sanando tus heridas del pasado",
+        "nombre_corto_web": "Sanando heridas",
+        "fechas": "30 de agosto de 2026",
+        "horario": "Por confirmar",
+        "modalidad": "Presencial + online",
+        "precio": "Consultar",
+        "cupo": "Lista de espera",
+        "temario": "Vivencial",
+        "descripcion_web": "Taller",
+        "url_web": "https://inpulso43.com/talleres.php",
+    }
+
+    class FakeValues:
+        def update(self, **kwargs):
+            fake.last_update = kwargs
+            return self
+
+        def append(self, **kwargs):
+            fake.last_append = kwargs
+            return self
+
+        def execute(self):
+            return {}
+
+    class FakeSpreadsheets:
+        def values(self):
+            return FakeValues()
+
+    class FakeService:
+        def spreadsheets(self):
+            return FakeSpreadsheets()
+
+    fake = FakeService()
+    monkeypatch.setattr(catalogo_sync, "config", type("C", (), {"ID_HOJA_CALCULO": "sheet1"})())
+    monkeypatch.setattr(
+        catalogo_sync,
+        "obtener_talleres_vigentes",
+        lambda **k: [taller_vigente],
+    )
+    monkeypatch.setattr(
+        catalogo_sync,
+        "_filas_crudas_catalogo",
+        lambda: [
+            ["Juan", "taller", "Taller de heridas del pasado", "", "", "", "", "", "", "SI"],
+        ],
+    )
+    monkeypatch.setattr(catalogo_sync, "get_sheets_service", lambda: fake)
+    monkeypatch.setattr(catalogo_sync, "invalidar_cache", lambda: None)
+    monkeypatch.setattr(catalogo_sync, "invalidar_cache_web", lambda: None)
+    monkeypatch.setattr(catalogo_sync, "cargar_talleres_publicados_web", lambda **k: {})
+
+    resultado = catalogo_sync.sincronizar_catalogo_desde_web(forzar_lectura_web=False)
+
+    assert resultado["ok"] is True
+    assert resultado["actualizados"] == 1
+    assert resultado["desactivados"] == 0
+
+
 def test_formatear_evento_cita():
     from tools import _formatear_evento_cita
 

@@ -531,6 +531,16 @@ def backup_db_background():
         logger.error("Error backup DB: %s", e)
 
 
+def sincronizar_catalogo_web_background():
+    """Sincroniza pestaña Catalogo en Google Sheets con inpulso43.com."""
+    try:
+        from catalogo_sync import sincronizar_catalogo_desde_web
+
+        sincronizar_catalogo_desde_web(forzar_lectura_web=True)
+    except Exception as e:
+        logger.error("Error sync catálogo web: %s", e)
+
+
 def sincronizar_web_background():
     """Compara catálogo local vs inpulso43.com y alerta si hay diferencias."""
     ahora = datetime.datetime.now(ZONA)

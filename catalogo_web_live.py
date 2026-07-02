@@ -14,7 +14,7 @@ import config
 logger = logging.getLogger(__name__)
 
 _CACHE: dict[str, Any] = {"talleres": None, "ts": 0.0}
-_CACHE_TTL = 900  # 15 min
+_CACHE_TTL = int(__import__("os").getenv("CATALOGO_WEB_CACHE_SECONDS", "300"))
 
 
 def _limpiar_html(texto: str) -> str:

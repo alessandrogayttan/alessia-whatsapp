@@ -416,7 +416,10 @@ def consultar_catalogo_drive(especialista: str = "todos"):
     Los terapeutas editan la hoja 'Catalogo' del archivo en Drive.
     Se fusiona con el catálogo de inpulso43.com para mantener coherencia con la web.
     """
-    from catalogo_web import contexto_web_para_ia, filas_catalogo_dict
+    from catalogo_web import contexto_web_para_ia, filas_catalogo_dict, obtener_talleres_vigentes
+
+    # Refrescar lectura web (caché ~5 min) antes de responder al paciente
+    obtener_talleres_vigentes()
 
     filas_drive = _leer_filas_catalogo()
     if filas_drive:

@@ -19,6 +19,7 @@ from experiencia import calcular_minutos_ruta, guardar_nota_ritual_cierre, guard
 from message_queue import encolar_mensaje_texto, procesar_cola
 from observability import init_sentry, metricas_fallos
 from tools import (
+    agregar_lista_espera,
     eliminar_datos_arco,
     envolver_mensaje_con_contexto_paciente,
     notificar_emergencia_paciente,
@@ -35,6 +36,7 @@ from jobs import (
     reporte_semanal_background,
     renotificar_escalaciones_background,
     seguimiento_post_cita_background,
+    sincronizar_catalogo_web_background,
     sincronizar_web_background,
     trivia_semanal_background,
     detectar_nuevos_talleres_background,
@@ -98,6 +100,7 @@ def _iniciar_scheduler():
     scheduler.add_job(calendario_keepalive_background, "interval", minutes=5)
     scheduler.add_job(renotificar_escalaciones_background, "interval", minutes=5)
     scheduler.add_job(backup_db_background, "interval", hours=24)
+    scheduler.add_job(sincronizar_catalogo_web_background, "interval", minutes=30)
     scheduler.add_job(sincronizar_web_background, "interval", hours=24)
     scheduler.start()
     _scheduler_iniciado = True
@@ -476,6 +479,22 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
                 "Una persona te contactará pronto por este mismo chat.",
             )
             logger.info("Escalación humana solicitada por %s", numero_remitente)
+            return None
+
+        if texto_paciente.strip().upper().startswith("HISTORIA"):
+            nombre = storage.primer_nombre(numero_remitente) or "Paciente WhatsApp"
+            agregar_lista_espera(
+                nombre,
+                numero_remitente,
+                "Sanando tus heridas del pasado",
+                "Lista de espera taller",
+            )
+            enviar_mensaje_whatsapp(
+                numero_remitente,
+                "Listo ✨ Te anoté en la lista de espera del taller "
+                "*Sanando tus heridas del pasado*. En cuanto haya lugar te avisamos por aquí.",
+            )
+            logger.info("Lista espera HISTORIA: %s", numero_remitente)
             return None
 
         if any(palabra in texto_lower for palabra in config.PALABRAS_PRIVACIDAD):

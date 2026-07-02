@@ -77,6 +77,14 @@ def verificar_credenciales_google() -> None:
         creds.refresh(Request())
     except Exception as e:
         reset_google_clients()
+        detalle = str(e)
+        if "Invalid JWT Signature" in detalle or "invalid_grant" in detalle:
+            raise GoogleCalendarError(
+                "La llave JSON de Google está REVOCADA o corrupta (Invalid JWT Signature). "
+                "Genera una llave NUEVA en Google Cloud Console para "
+                f"{email_cuenta_servicio() or 'la cuenta de servicio'} "
+                "y actualiza GOOGLE_SERVICE_ACCOUNT_JSON en DigitalOcean."
+            ) from e
         raise GoogleCalendarError(
             "No se pudo autenticar con Google (cuenta de servicio). "
             "Revisa GOOGLE_SERVICE_ACCOUNT_JSON o comparte los calendarios con la cuenta de servicio."

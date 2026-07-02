@@ -40,6 +40,7 @@ from jobs import (
     detectar_nuevos_talleres_background,
     verificar_lista_espera_background,
     experiencia_diaria_background,
+    calendario_keepalive_background,
 )
 from whatsapp import (
     descargar_media_whatsapp,
@@ -94,12 +95,49 @@ def _iniciar_scheduler():
     scheduler.add_job(dashboard_background, "interval", hours=6)
     scheduler.add_job(experiencia_diaria_background, "interval", minutes=15)
     scheduler.add_job(procesar_cola_background, "interval", seconds=5)
+    scheduler.add_job(calendario_keepalive_background, "interval", minutes=5)
     scheduler.add_job(renotificar_escalaciones_background, "interval", minutes=5)
     scheduler.add_job(backup_db_background, "interval", hours=24)
     scheduler.add_job(sincronizar_web_background, "interval", hours=24)
     scheduler.start()
     _scheduler_iniciado = True
     logger.info("Scheduler de tareas en segundo plano iniciado")
+
+
+@app.route("/", methods=["GET"])
+def root():
+    """Raíz: meta tag para verificación de dominio Meta (si está configurada)."""
+    code = config.META_DOMAIN_VERIFICATION_CODE
+    if code:
+        html = (
+            "<!DOCTYPE html><html><head>"
+            f'<meta name="facebook-domain-verification" content="{code}" />'
+            "</head><body>Alessia — Inpulso 43</body></html>"
+        )
+        return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+    return "Alessia OK", 200
+
+
+def _meta_domain_verification_response(filename: str):
+    code = config.META_DOMAIN_VERIFICATION_CODE
+    if not code:
+        return "Not configured", 404
+    expected = config.META_DOMAIN_VERIFICATION_FILE
+    allowed = {expected, "facebook-domain-verification.html", f"{code}.html"}
+    if filename not in allowed:
+        return "Not found", 404
+    body = f"facebook-domain-verification: {code}"
+    return body, 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@app.route("/facebook-domain-verification.html", methods=["GET"])
+def meta_domain_verification_default():
+    return _meta_domain_verification_response("facebook-domain-verification.html")
+
+
+@app.route("/<verification_file>.html", methods=["GET"])
+def meta_domain_verification_named(verification_file: str):
+    return _meta_domain_verification_response(f"{verification_file}.html")
 
 
 @app.route("/health", methods=["GET"])
@@ -124,6 +162,12 @@ def health_ready():
     ).is_file()
     if not google_ok:
         bloqueantes.append("GOOGLE_CREDENTIALS")
+
+    from tools import verificar_acceso_calendarios
+
+    calendarios_fallidos = verificar_acceso_calendarios()
+    if calendarios_fallidos:
+        bloqueantes.extend(calendarios_fallidos)
 
     db_ok = True
     try:
@@ -524,6 +568,22 @@ def create_app():
     procesados = procesar_cola(max_items=20)
     if procesados:
         logger.info("Cola recuperada al arranque: %s mensajes", procesados)
+    from google_client import email_cuenta_servicio, verificar_credenciales_google
+    from tools import verificar_acceso_calendarios
+
+    try:
+        verificar_credenciales_google()
+        cal_fallos = verificar_acceso_calendarios()
+        if cal_fallos:
+            logger.error(
+                "CALENDARIO NO ACCESIBLE al arranque: %s. Cuenta servicio: %s",
+                "; ".join(cal_fallos),
+                email_cuenta_servicio() or "desconocida",
+            )
+        else:
+            logger.info("Calendarios Google OK (%s)", ", ".join(config.CALENDARIOS_CRITICOS))
+    except Exception as e:
+        logger.error("Google Calendar no disponible al arranque: %s", e)
     logger.info(
         "Alessia lista — WhatsApp:%s Gemini:%s VerifyToken:%s AppSecret:%s GoogleJSON:%s",
         "OK" if config.TOKEN_WHATSAPP else "FALTA",

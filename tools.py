@@ -12,7 +12,14 @@ import requests
 import config
 import storage
 from catalogo import consultar_catalogo_drive, obtener_cuentas_pago_texto, _leer_filas_catalogo
-from google_client import get_calendar_service, get_sheets_service
+from google_client import (
+    GoogleCalendarError,
+    ejecutar_con_reintento,
+    email_cuenta_servicio,
+    get_calendar_service,
+    get_sheets_service,
+    reset_google_clients,
+)
 
 logger = logging.getLogger(__name__)
 ZONA = pytz.timezone(config.ZONA_MEXICO)
@@ -27,6 +34,8 @@ DIAS_ES = [
 ]
 
 _citas_cache: dict[str, dict] = {}
+_agenda_cache: dict[str, dict] = {}
+_telefono_contexto: str | None = None
 
 
 def _formatear_fecha_español(fecha: datetime.datetime) -> str:
@@ -412,18 +421,130 @@ def _resolver_especialista(especialista: str) -> str | None:
     return None
 
 
-def _obtener_eventos_dia(calendar_id: str, fecha: str):
-    service = get_calendar_service()
-    time_min = f"{fecha}T00:00:00-06:00"
-    time_max = f"{fecha}T23:59:59-06:00"
-    events_result = service.events().list(
-        calendarId=calendar_id,
-        timeMin=time_min,
-        timeMax=time_max,
-        singleEvents=True,
-        orderBy="startTime",
-    ).execute()
-    return events_result.get("items", [])
+def _invalidar_cache_agenda(calendar_id: str | None = None, fecha: str | None = None):
+    global _agenda_cache
+    if calendar_id and fecha:
+        _agenda_cache.pop(f"{calendar_id}:{fecha}", None)
+        return
+    if calendar_id:
+        prefix = f"{calendar_id}:"
+        for key in list(_agenda_cache):
+            if key.startswith(prefix):
+                _agenda_cache.pop(key, None)
+        return
+    _agenda_cache.clear()
+
+
+def _respuesta_fallo_calendario(especialista: str, fecha: str, error: Exception) -> str:
+    clave = _resolver_especialista(especialista) or especialista
+    logger.error(
+        "Calendario agotó reintentos automáticos (%s, %s): %s",
+        clave,
+        fecha,
+        error,
+    )
+    return (
+        "ERROR_CALENDARIO_TEMPORAL: La agenda no respondió tras varios intentos automáticos. "
+        "INSTRUCCIÓN PARA LA IA: Di algo natural como que estás revisando la disponibilidad "
+        "y vuelve a llamar consultar_agenda con la misma fecha y especialista de inmediato "
+        "(hasta 3 veces en esta conversación). NO menciones errores técnicos ni sistemas. "
+        "NO pidas al paciente repetir su mensaje."
+    )
+
+
+def verificar_acceso_calendarios() -> list[str]:
+    """Prueba lectura de calendarios críticos. Devuelve lista de errores."""
+    errores = []
+    hoy = datetime.datetime.now(ZONA).strftime("%Y-%m-%d")
+    cuenta = email_cuenta_servicio()
+    for nombre in config.CALENDARIOS_CRITICOS:
+        calendar_id = config.DIRECTORIO_CALENDARIOS.get(nombre)
+        if not calendar_id:
+            errores.append(f"calendar:{nombre} (sin ID configurado)")
+            continue
+        try:
+            _obtener_eventos_dia(calendar_id, hoy, usar_cache=False)
+        except GoogleCalendarError as e:
+            hint = (
+                f" Comparte el calendario con {cuenta} como Editor."
+                if cuenta and e.http_status == 403
+                else ""
+            )
+            errores.append(f"calendar:{nombre} ({e.http_status or 'error'}){hint}")
+        except Exception as e:
+            errores.append(f"calendar:{nombre} ({type(e).__name__})")
+    return errores
+
+
+def _obtener_eventos_dia(calendar_id: str, fecha: str, *, usar_cache: bool = True):
+    """Lee eventos del día con reintentos automáticos (sin escalar a recepción)."""
+    cache_key = f"{calendar_id}:{fecha}"
+    ultimo_error: Exception | None = None
+    ciclos = config.CALENDAR_CONSULTA_REINTENTOS
+
+    for ciclo in range(ciclos):
+        if usar_cache and ciclo == 0:
+            hit = _agenda_cache.get(cache_key)
+            if hit and time.time() - hit["ts"] < config.CITAS_CACHE_TTL:
+                return hit["items"]
+
+        time_min = f"{fecha}T00:00:00-06:00"
+        time_max = f"{fecha}T23:59:59-06:00"
+
+        def _listar():
+            service = get_calendar_service()
+            return (
+                service.events()
+                .list(
+                    calendarId=calendar_id,
+                    timeMin=time_min,
+                    timeMax=time_max,
+                    singleEvents=True,
+                    orderBy="startTime",
+                )
+                .execute()
+            )
+
+        try:
+            events_result = ejecutar_con_reintento(
+                _listar, f"calendar.list {calendar_id} {fecha}"
+            )
+            items = events_result.get("items", [])
+            _agenda_cache[cache_key] = {"items": items, "ts": time.time()}
+            if ciclo > 0:
+                logger.info(
+                    "Calendario recuperado en ciclo %s/%s: %s %s",
+                    ciclo + 1,
+                    ciclos,
+                    calendar_id,
+                    fecha,
+                )
+            return items
+        except (GoogleCalendarError, Exception) as e:
+            ultimo_error = e
+            _invalidar_cache_agenda(calendar_id, fecha)
+            reset_google_clients()
+            logger.warning(
+                "Calendario %s %s — ciclo %s/%s falló: %s",
+                calendar_id,
+                fecha,
+                ciclo + 1,
+                ciclos,
+                e,
+            )
+            if ciclo < ciclos - 1:
+                pausa = min(
+                    config.CALENDAR_RETRY_PAUSE_SECONDS * (ciclo + 1),
+                    20,
+                )
+                time.sleep(pausa)
+
+    if isinstance(ultimo_error, GoogleCalendarError):
+        raise ultimo_error
+    raise GoogleCalendarError(
+        f"Calendario no disponible tras {ciclos} ciclos: {ultimo_error}",
+        reason=str(ultimo_error) if ultimo_error else "desconocido",
+    ) from ultimo_error
 
 
 def _parsear_ocupados(events, base_date: datetime.datetime):
@@ -577,7 +698,11 @@ def consultar_agenda(fecha: str, especialista: str):
         return "Error: La fecha debe estar en formato exacto YYYY-MM-DD."
 
     calendar_id = config.DIRECTORIO_CALENDARIOS[nombre_clave]
-    events = _obtener_eventos_dia(calendar_id, fecha)
+    try:
+        events = _obtener_eventos_dia(calendar_id, fecha)
+    except (GoogleCalendarError, Exception) as e:
+        return _respuesta_fallo_calendario(especialista, fecha, e)
+
     ocupados, dia_bloqueado = _parsear_ocupados(events, base_date)
     if dia_bloqueado:
         return f"El {fecha}, {nombre_clave} tiene bloqueado todo el día."
@@ -652,7 +777,11 @@ def listar_citas_agendadas_dia(especialista: str, fecha: str) -> str:
 
     fecha = fecha.strip()[:10]
     calendar_id = config.DIRECTORIO_CALENDARIOS[nombre_clave]
-    events = _obtener_eventos_dia(calendar_id, fecha)
+    try:
+        events = _obtener_eventos_dia(calendar_id, fecha)
+    except (GoogleCalendarError, Exception) as e:
+        return _respuesta_fallo_calendario(especialista, fecha, e)
+
     citas = [e for e in events if not _es_evento_bloqueo(e)]
 
     display = NOMBRES_TERAPEUTAS.get(nombre_clave, especialista.title())
@@ -942,9 +1071,14 @@ def agendar_cita(
         if es_online:
             event["location"] = "Sesión online — Inpulso 43"
 
-        evento_creado = service.events().insert(calendarId=calendar_id, body=event).execute()
+        evento_creado = ejecutar_con_reintento(
+            lambda: service.events().insert(calendarId=calendar_id, body=event).execute(),
+            f"calendar.insert {calendar_id}",
+        )
         if not evento_creado.get("id"):
             return "ERROR CRITICO: Google Calendar no devolvió confirmación."
+
+        _invalidar_cache_agenda(calendar_id, fecha_inicio.strftime("%Y-%m-%d"))
 
         _quitar_de_lista_espera(telefono_paciente)
         _invalidar_cache_citas(telefono_paciente)
@@ -1006,6 +1140,14 @@ def agendar_cita(
             f"ÉXITO: Cita guardada correctamente. INSTRUCCIÓN PARA LA IA: "
             f"Envía al paciente EXACTAMENTE este bloque de confirmación "
             f"(puedes añadir una frase cálida antes o después, pero conserva el bloque completo):\n\n{bloque}"
+        )
+    except GoogleCalendarError as e:
+        logger.error("Error al agendar cita (calendar): %s", e)
+        return (
+            "ERROR_CALENDARIO_TEMPORAL: No se guardó la cita aún. INSTRUCCIÓN PARA LA IA: "
+            "Vuelve a llamar consultar_agenda y, si el horario sigue libre, reintenta agendar_cita. "
+            "Di algo natural como que confirmas la cita en un momento. "
+            "NO menciones errores técnicos ni recepción."
         )
     except Exception as e:
         logger.error("Error al agendar cita: %s", e)

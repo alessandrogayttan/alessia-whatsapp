@@ -458,6 +458,32 @@ def verificar_lista_espera_background():
         logger.error("Error lista de espera: %s", e)
 
 
+def calendario_keepalive_background():
+    """Mantiene viva la conexión con Google Calendar y recupera tras fallos transitorios."""
+    import time
+
+    from google_client import reset_google_clients, verificar_credenciales_google
+    from tools import verificar_acceso_calendarios
+
+    try:
+        verificar_credenciales_google()
+        fallos = verificar_acceso_calendarios()
+        if not fallos:
+            return
+        logger.warning("Keepalive calendario: fallos detectados %s — reintentando", fallos)
+        reset_google_clients()
+        time.sleep(3)
+        verificar_credenciales_google()
+        recuperados = verificar_acceso_calendarios()
+        if not recuperados:
+            logger.info("Keepalive calendario: conexión recuperada")
+        else:
+            logger.warning("Keepalive calendario: siguen fallando %s", recuperados)
+    except Exception as e:
+        logger.warning("Keepalive calendario error: %s", e)
+        reset_google_clients()
+
+
 def procesar_cola_background():
     from message_queue import limpiar_antiguos, procesar_cola, reintentar_fallidos
 

@@ -23,6 +23,12 @@ WEBHOOK_CALLBACK_URL = os.getenv(
     "WEBHOOK_CALLBACK_URL",
     "https://alessia-whatsapp-jbems.ondigitalocean.app/webhook",
 )
+# Código que Meta muestra al verificar dominio (Configuración → Básica → Dominios)
+META_DOMAIN_VERIFICATION_CODE = os.getenv("META_DOMAIN_VERIFICATION_CODE", "")
+# Nombre del archivo HTML si Meta lo pide distinto a facebook-domain-verification.html
+META_DOMAIN_VERIFICATION_FILE = os.getenv(
+    "META_DOMAIN_VERIFICATION_FILE", "facebook-domain-verification.html"
+)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 API_KEY_MAPS = os.getenv("API_KEY_MAPS", "")
@@ -39,11 +45,11 @@ PORT = int(os.getenv("PORT", "5000"))
 # Scheduler: solo un worker/proceso debe ejecutar tareas en segundo plano
 ENABLE_SCHEDULER = os.getenv("ENABLE_SCHEDULER", "1").strip().lower() in ("1", "true", "yes")
 
-# Ack inmediato al recibir mensaje (evita silencio mientras Gemini procesa)
+# Ack inmediato al recibir mensaje (desactivado por defecto; el indicador "escribiendo…" basta)
 ENABLE_LAUNCH_ACK = os.getenv("ENABLE_LAUNCH_ACK", "0").strip().lower() in ("1", "true", "yes")
 MENSAJE_ACK_PACIENTE = os.getenv(
     "MENSAJE_ACK_PACIENTE",
-    "Dame un momentito, ya te leo 😊",
+    "",
 )
 MENSAJE_ACK_STAFF = os.getenv(
     "MENSAJE_ACK_STAFF",
@@ -200,6 +206,11 @@ CLINICA_DIRECCION = "Av. Hidalgo 533, República, 45146 Zapopan, Jal."
 CLINICA_MAPS_URL = "https://maps.google.com/?q=Av.+Hidalgo+533,+Zapopan,+Jalisco"
 WHATSAPP_MAX_CHARS = 4000
 CITAS_CACHE_TTL = int(os.getenv("CITAS_CACHE_TTL", "180"))
+CALENDAR_API_RETRIES = int(os.getenv("CALENDAR_API_RETRIES", "8"))
+CALENDAR_CONSULTA_REINTENTOS = int(os.getenv("CALENDAR_CONSULTA_REINTENTOS", "6"))
+CALENDAR_RETRY_PAUSE_SECONDS = float(os.getenv("CALENDAR_RETRY_PAUSE_SECONDS", "3"))
+# Calendarios que deben responder en /health/ready (agenda de citas)
+CALENDARIOS_CRITICOS = ["sara", "juan", "patricia", "ivan"]
 PAGO_TOLERANCIA_MXN = float(os.getenv("PAGO_TOLERANCIA_MXN", "10"))
 PAGO_TOLERANCIA_PORCENTAJE = float(os.getenv("PAGO_TOLERANCIA_PORCENTAJE", "0.05"))
 CLIMA_LAT = 20.7236

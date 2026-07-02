@@ -405,6 +405,9 @@ def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
 
     enviado = False
     with cerrojos_pacientes[numero_paciente]:
+        import tools as tools_ctx
+
+        tools_ctx._telefono_contexto = numero_paciente
         try:
             chat_alessia = obtener_chat_paciente(numero_paciente)
             nombre_terapeuta = identificar_terapeuta(numero_paciente)
@@ -450,6 +453,7 @@ def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
         except Exception as e:
             logger.exception("Error fatal procesando mensaje de %s: %s", numero_paciente, e)
         finally:
+            tools_ctx._telefono_contexto = None
             if not enviado:
                 for intento in range(3):
                     if enviar_mensaje_whatsapp(numero_paciente, MENSAJE_RESCATE):

@@ -509,6 +509,18 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
 
         blog_ctx = contexto_blog_si_aplica(texto_paciente)
 
+        if any(p in texto_lower for p in config.PALABRAS_ORIENTACION_INICIAL):
+            return (
+                texto_contexto
+                + blog_ctx
+                + "[Sistema: ORIENTACIÓN INICIAL — El paciente no sabe qué especialista necesita. "
+                "PROHIBIDO recomendar Sara ni pedir nombre completo todavía. "
+                "Pregunta con calidez qué síntomas o situación le preocupa. "
+                "Luego: psicología → Sara Rosales; nutrición → Gabriela Sánchez; "
+                "medicina → registrar_escalacion_humana y avisar que recepción contactará.]\n"
+                + texto_paciente
+            )
+
         ejercicio = micro_ejercicio_para_texto(texto_paciente)
         if ejercicio and any(p in texto_lower for p in config.PALABRAS_ANSIEDAD):
             enviar_mensaje_whatsapp(numero_remitente, ejercicio)

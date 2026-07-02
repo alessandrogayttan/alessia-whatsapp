@@ -273,6 +273,23 @@ AVISO_PRIVACIDAD = (
     "Puedes solicitar la eliminación de tus datos escribiendo *ELIMINAR DATOS*."
 )
 
+PALABRAS_ORIENTACION_INICIAL = (
+    "no sé qué especialista",
+    "no se que especialista",
+    "qué especialista necesito",
+    "que especialista necesito",
+    "no sé a quién",
+    "no se a quien",
+    "no sé con quién",
+    "no se con quien",
+    "iniciar un proceso",
+    "quiero iniciar un proceso",
+    "qué doctor",
+    "que doctor",
+    "a quien debo ir",
+    "a quién debo ir",
+)
+
 PALABRAS_PRIVACIDAD = (
     "privacidad",
     "aviso de privacidad",

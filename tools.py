@@ -492,6 +492,17 @@ def verificar_acceso_calendarios(*, rapido: bool = False) -> list[str]:
     return errores
 
 
+def estado_calendarios_cache() -> list[str]:
+    """Devuelve fallos de calendario cacheados (sin llamar a Google)."""
+    fallos = _health_calendario_cache.get("fallos", [])
+    if not fallos:
+        return []
+    ts = _health_calendario_cache.get("ts", 0)
+    if time.time() - ts > 600:
+        return ["Calendario: sin verificación reciente (keepalive pendiente)"]
+    return [f"Calendario: {f}" for f in fallos]
+
+
 def _obtener_eventos_dia(
     calendar_id: str,
     fecha: str,

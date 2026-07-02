@@ -163,11 +163,11 @@ def health_ready():
     if not google_ok:
         bloqueantes.append("GOOGLE_CREDENTIALS")
 
-    from tools import verificar_acceso_calendarios
+    advertencias = config.advertencias_lanzamiento()
+    # Calendario: no bloquear /health/ready (evita 504 en DO); se verifica en keepalive
+    from tools import estado_calendarios_cache
 
-    calendarios_fallidos = verificar_acceso_calendarios(rapido=True)
-    if calendarios_fallidos:
-        bloqueantes.extend(calendarios_fallidos)
+    advertencias.extend(estado_calendarios_cache())
 
     db_ok = True
     try:
@@ -184,7 +184,7 @@ def health_ready():
         "ready": listo,
         "scheduler": config.ENABLE_SCHEDULER and _scheduler_iniciado,
         "bloqueantes": bloqueantes,
-        "advertencias": config.advertencias_lanzamiento(),
+        "advertencias": advertencias,
     }
     return payload, 200 if listo else 503
 

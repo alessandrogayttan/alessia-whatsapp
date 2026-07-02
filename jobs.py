@@ -76,12 +76,17 @@ def _enviar_recordatorio_24h(telefono: str, hora_cita: datetime.datetime, event_
     if storage.recordatorio_ya_enviado(event_id, "24h"):
         return
     hora_txt = hora_cita.strftime("%H:%M")
+    nombre = (
+        storage.primer_nombre(telefono)
+        or storage.obtener_nombre_paciente(telefono)
+        or "hola"
+    )
     msg = mensaje_recordatorio_24h(hora_cita)
     if enviar_recordatorio(
         telefono,
         msg,
         config.WHATSAPP_TEMPLATE_24H,
-        [hora_txt, config.CLINICA_DIRECCION],
+        [nombre, hora_txt],
     ):
         storage.marcar_recordatorio_enviado(event_id, "24h")
         storage.marcar_prep_pendiente(telefono, event_id)
@@ -128,7 +133,12 @@ def _enviar_recordatorio_2h(telefono: str, hora_cita: datetime.datetime, event_i
                     telefono,
                     msg,
                     config.WHATSAPP_TEMPLATE_2H,
-                    [hora_cita.strftime("%H:%M"), config.CLINICA_MAPS_URL],
+                    [
+                        storage.primer_nombre(telefono)
+                        or storage.obtener_nombre_paciente(telefono)
+                        or "hola",
+                        hora_cita.strftime("%H:%M"),
+                    ],
                 ):
                     storage.marcar_recordatorio_enviado(event_id, "2h")
                 return
@@ -148,7 +158,12 @@ def _enviar_recordatorio_2h(telefono: str, hora_cita: datetime.datetime, event_i
         telefono,
         msg,
         config.WHATSAPP_TEMPLATE_2H,
-        [hora_cita.strftime("%H:%M"), config.CLINICA_MAPS_URL],
+        [
+            storage.primer_nombre(telefono)
+            or storage.obtener_nombre_paciente(telefono)
+            or "hola",
+            hora_cita.strftime("%H:%M"),
+        ],
     ):
         storage.marcar_recordatorio_enviado(event_id, "2h")
 

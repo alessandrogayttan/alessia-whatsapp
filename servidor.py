@@ -70,6 +70,10 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+from web_chat_api import registrar_rutas_web_chat
+
+registrar_rutas_web_chat(app)
+
 _webhook_hits: dict[str, list[float]] = defaultdict(list)
 
 
@@ -695,3 +699,4 @@ if __name__ == "__main__":
     create_app()
     logger.info("Alessia escuchando en puerto %s (modo %s)", config.PORT, config.FLASK_ENV)
     app.run(host="0.0.0.0", port=config.PORT, debug=not config.IS_PRODUCTION)
+    

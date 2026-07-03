@@ -205,6 +205,19 @@ def init_db():
                     monto REAL NOT NULL,
                     enviado_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS web_chat_sessions (
+                    session_id TEXT PRIMARY KEY,
+                    telefono_vinculado TEXT,
+                    nombre TEXT,
+                    creado_at TEXT NOT NULL,
+                    ultimo_mensaje_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS web_chat_hits (
+                    ip_hash TEXT NOT NULL,
+                    minuto TEXT NOT NULL,
+                    hits INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (ip_hash, minuto)
+                );
                 """
             )
             conn.commit()
@@ -1182,3 +1195,93 @@ def necesita_consentimiento(telefono: str) -> bool:
             (telefono,),
         ).fetchone()
         return row is None or row["consentimiento_at"] is None
+
+
+def crear_sesion_web(session_id: str) -> None:
+    ahora = datetime.utcnow().isoformat()
+    with _transaction() as conn:
+        conn.execute(
+            """
+            INSERT INTO web_chat_sessions (session_id, creado_at, ultimo_mensaje_at)
+            VALUES (?, ?, ?)
+            """,
+            (session_id, ahora, ahora),
+        )
+
+
+def obtener_sesion_web(session_id: str) -> dict | None:
+    with _transaction() as conn:
+        row = conn.execute(
+            """
+            SELECT session_id, telefono_vinculado, nombre, creado_at, ultimo_mensaje_at
+            FROM web_chat_sessions WHERE session_id = ?
+            """,
+            (session_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def actualizar_sesion_web(
+    session_id: str,
+    *,
+    telefono: str | None = None,
+    nombre: str | None = None,
+) -> None:
+    ahora = datetime.utcnow().isoformat()
+    with _transaction() as conn:
+        if telefono is not None and nombre is not None:
+            conn.execute(
+                """
+                UPDATE web_chat_sessions
+                SET telefono_vinculado = ?, nombre = ?, ultimo_mensaje_at = ?
+                WHERE session_id = ?
+                """,
+                (telefono, nombre, ahora, session_id),
+            )
+        elif telefono is not None:
+            conn.execute(
+                """
+                UPDATE web_chat_sessions
+                SET telefono_vinculado = ?, ultimo_mensaje_at = ?
+                WHERE session_id = ?
+                """,
+                (telefono, ahora, session_id),
+            )
+        elif nombre is not None:
+            conn.execute(
+                """
+                UPDATE web_chat_sessions
+                SET nombre = ?, ultimo_mensaje_at = ?
+                WHERE session_id = ?
+                """,
+                (nombre, ahora, session_id),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE web_chat_sessions SET ultimo_mensaje_at = ? WHERE session_id = ?
+                """,
+                (ahora, session_id),
+            )
+
+
+def registrar_hit_web_chat(ip_hash: str, limite_por_minuto: int) -> bool:
+    """True si el hit está permitido (bajo el rate limit)."""
+    minuto = datetime.utcnow().strftime("%Y-%m-%dT%H:%M")
+    with _transaction() as conn:
+        row = conn.execute(
+            "SELECT hits FROM web_chat_hits WHERE ip_hash = ? AND minuto = ?",
+            (ip_hash, minuto),
+        ).fetchone()
+        hits = int(row["hits"]) if row else 0
+        if hits >= limite_por_minuto:
+            return False
+        conn.execute(
+            """
+            INSERT INTO web_chat_hits (ip_hash, minuto, hits) VALUES (?, ?, 1)
+            ON CONFLICT(ip_hash, minuto) DO UPDATE SET hits = hits + 1
+            """,
+            (ip_hash, minuto),
+        )
+        return True
+

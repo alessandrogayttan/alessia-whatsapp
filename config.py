@@ -313,6 +313,29 @@ SENTRY_DSN = os.getenv("SENTRY_DSN", "")
 ALERTA_FALLOS_UMBRAL = int(os.getenv("ALERTA_FALLOS_UMBRAL", "5"))
 BACKUP_DIR = os.getenv("BACKUP_DIR", str(DATA_DIR / "backups"))
 WEBHOOK_RATE_LIMIT = int(os.getenv("WEBHOOK_RATE_LIMIT", "120"))  # req/min por IP
+
+# Chat web inpulso43.com (canal separado de WhatsApp; desactivado por defecto)
+ENABLE_WEB_CHAT = os.getenv("ENABLE_WEB_CHAT", "0").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+WEB_CHAT_RATE_LIMIT = int(os.getenv("WEB_CHAT_RATE_LIMIT", "30"))  # req/min por IP
+WEB_CHAT_ORIGINS = tuple(
+    o.strip().rstrip("/")
+    for o in os.getenv(
+        "WEB_CHAT_ORIGINS",
+        "https://inpulso43.com,https://www.inpulso43.com,http://localhost:8080",
+    ).split(",")
+    if o.strip()
+)
+WHATSAPP_PACIENTES_NUMERO = _normalizar_whatsapp(
+    os.getenv("WHATSAPP_PACIENTES_NUMERO", "523324453536")
+)
+WHATSAPP_PACIENTES_URL = (
+    f"https://wa.me/{WHATSAPP_PACIENTES_NUMERO}" if WHATSAPP_PACIENTES_NUMERO else ""
+)
 ESCALACION_REAVISO_MINUTOS = int(os.getenv("ESCALACION_REAVISO_MINUTOS", "15"))
 
 # Sesiones online (Tier 4.15) — link por defecto o por terapeuta

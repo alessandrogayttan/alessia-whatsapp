@@ -1621,6 +1621,50 @@ def registrar_paciente_taller(
         return "INSTRUCCIÓN PARA LA IA: Hubo un fallo al registrar en Sheets."
 
 
+def obtener_concepto_pago_reciente(telefono: str) -> str:
+    """Último taller inscrito o pago de cita asociado al teléfono."""
+    concepto = "Servicio Inpulso 43"
+    if not config.ID_HOJA_CALCULO:
+        return concepto
+    target = _normalizar_telefono_digitos(telefono)
+    try:
+        service = get_sheets_service()
+        insc = service.spreadsheets().values().get(
+            spreadsheetId=config.ID_HOJA_CALCULO, range="Inscripciones!A:F"
+        ).execute()
+        for row in reversed(insc.get("values", [])):
+            if len(row) < 5:
+                continue
+            if target in re.sub(r"\D", "", row[2]) and len(target) > 5:
+                return row[4].strip() or concepto
+        pagos = service.spreadsheets().values().get(
+            spreadsheetId=config.ID_HOJA_CALCULO, range="PagosCitas!A:G"
+        ).execute()
+        for row in reversed(pagos.get("values", [])):
+            if len(row) < 4:
+                continue
+            if target in re.sub(r"\D", "", row[1]) and len(target) > 5:
+                return (row[3] if len(row) > 3 else "").strip() or "Cita en línea Inpulso 43"
+    except Exception as e:
+        logger.debug("Concepto recibo no disponible: %s", e)
+    return concepto
+
+
+def _intentar_enviar_recibo_pago(telefono: str, monto: float):
+    try:
+        from recibos import enviar_recibo_pago
+
+        nombre = (
+            storage.obtener_nombre_paciente(telefono)
+            or storage.primer_nombre(telefono)
+            or "Paciente"
+        )
+        concepto = obtener_concepto_pago_reciente(telefono)
+        enviar_recibo_pago(telefono, nombre, concepto, monto)
+    except Exception as e:
+        logger.warning("No se pudo enviar recibo a %s: %s", telefono, e)
+
+
 def confirmar_pago_comprobante(telefono: str, monto_comprobante: float):
     """
     Confirma automáticamente el pago tras validar comprobante y monto.
@@ -1638,16 +1682,20 @@ def confirmar_pago_comprobante(telefono: str, monto_comprobante: float):
     resultado = actualizar_pago_paciente(telefono, "PAGADO")
     ok_cita, detalle_cita = confirmar_pago_cita_online(telefono, monto_comprobante)
     if "actualizado a PAGADO" in resultado or "Estatus de pago actualizado" in resultado:
+        _intentar_enviar_recibo_pago(telefono, monto_comprobante)
         extra = f" {detalle_cita}" if ok_cita else ""
         return (
             f"ÉXITO: Pago confirmado ({detalle}).{extra} INSTRUCCIÓN PARA LA IA: "
             "Felicita al paciente con calidez — su inscripción quedó confirmada. ✨ "
+            "El sistema ya envió (o intentó enviar) el recibo gráfico por WhatsApp. "
             "NO menciones validación automática, IA ni revisión del comprobante."
         )
     if ok_cita:
+        _intentar_enviar_recibo_pago(telefono, monto_comprobante)
         return (
             f"ÉXITO: {detalle_cita} INSTRUCCIÓN PARA LA IA: "
-            "Felicita al paciente — el pago de su cita online quedó confirmado. ✨"
+            "Felicita al paciente — el pago de su cita online quedó confirmado. ✨ "
+            "El recibo gráfico se envió por WhatsApp si fue posible."
         )
     return (
         f"{resultado} {detalle} Cuentas válidas: {cuentas}. "

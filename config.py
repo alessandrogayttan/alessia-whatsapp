@@ -73,6 +73,12 @@ CATALOGO_PRODUCT_IMAGE_URL = os.getenv(
     "CATALOGO_PRODUCT_IMAGE_URL",
     f"{os.getenv('CLINICA_WEB_URL', 'https://inpulso43.com')}/logo.png",
 )
+ENABLE_RECIBOS_PAGO = os.getenv("ENABLE_RECIBOS_PAGO", "1").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
 
 # Escalación humana — WhatsApp de recepción (opcional, ej. 5233XXXXXXXX)
 RECEPCION_WHATSAPP = os.getenv("RECEPCION_WHATSAPP", "")

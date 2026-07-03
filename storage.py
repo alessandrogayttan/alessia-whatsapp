@@ -193,6 +193,18 @@ def init_db():
                     event_id TEXT,
                     respondido_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS recibo_folio_seq (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    ultimo INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE TABLE IF NOT EXISTS recibos_pago (
+                    folio TEXT PRIMARY KEY,
+                    telefono TEXT NOT NULL,
+                    nombre TEXT,
+                    concepto TEXT,
+                    monto REAL NOT NULL,
+                    enviado_at TEXT NOT NULL
+                );
                 """
             )
             conn.commit()
@@ -313,6 +325,7 @@ def eliminar_datos_paciente(telefono: str):
         conn.execute("DELETE FROM nps_respuestas WHERE telefono = ?", (telefono,))
         conn.execute("DELETE FROM reagendar_pendiente WHERE telefono = ?", (telefono,))
         conn.execute("DELETE FROM confirmaciones_asistencia WHERE telefono = ?", (telefono,))
+        conn.execute("DELETE FROM recibos_pago WHERE telefono = ?", (telefono,))
 
 
 def ya_menciono_cita_proactiva(telefono: str, cita_clave: str) -> bool:
@@ -737,6 +750,38 @@ def obtener_ultimo_nps(telefono: str) -> int | None:
             (telefono,),
         ).fetchone()
         return row["puntaje"] if row else None
+
+
+def siguiente_folio_recibo() -> str:
+    with _transaction() as conn:
+        conn.execute("INSERT OR IGNORE INTO recibo_folio_seq (id, ultimo) VALUES (1, 0)")
+        conn.execute("UPDATE recibo_folio_seq SET ultimo = ultimo + 1 WHERE id = 1")
+        row = conn.execute("SELECT ultimo FROM recibo_folio_seq WHERE id = 1").fetchone()
+        return f"INP-{row['ultimo']:06d}"
+
+
+def registrar_recibo_enviado(
+    folio: str,
+    telefono: str,
+    nombre: str,
+    concepto: str,
+    monto: float,
+):
+    with _transaction() as conn:
+        conn.execute(
+            """
+            INSERT INTO recibos_pago (folio, telefono, nombre, concepto, monto, enviado_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                folio,
+                telefono,
+                nombre,
+                concepto,
+                monto,
+                datetime.utcnow().isoformat(),
+            ),
+        )
 
 
 def guardar_prep_sesion(

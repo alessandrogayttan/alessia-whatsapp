@@ -220,6 +220,47 @@ def enviar_recordatorio(
     return enviar_mensaje_whatsapp(telefono, texto_libre)
 
 
+def _subir_media_whatsapp(
+    contenido: bytes,
+    mime_type: str,
+    filename: str,
+) -> str | None:
+    if not config.TOKEN_WHATSAPP or not config.ID_TELEFONO:
+        return None
+    url = f"https://graph.facebook.com/v19.0/{config.ID_TELEFONO}/media"
+    headers = {"Authorization": f"Bearer {config.TOKEN_WHATSAPP}"}
+    try:
+        res = requests.post(
+            url,
+            headers=headers,
+            data={"messaging_product": "whatsapp", "type": mime_type},
+            files={"file": (filename, contenido, mime_type)},
+            timeout=60,
+        )
+        if res.status_code == 200:
+            return res.json().get("id")
+        logger.error("Error subiendo media WhatsApp: %s", res.text[:400])
+    except requests.RequestException as e:
+        logger.error("Error subiendo media: %s", e)
+    return None
+
+
+def enviar_imagen_whatsapp(
+    telefono_destino: str,
+    imagen_bytes: bytes,
+    caption: str = "",
+    mime_type: str = "image/png",
+    filename: str = "recibo.png",
+) -> bool:
+    media_id = _subir_media_whatsapp(imagen_bytes, mime_type, filename)
+    if not media_id:
+        return False
+    payload: dict = {"type": "image", "image": {"id": media_id}}
+    if caption:
+        payload["image"]["caption"] = caption[:1024]
+    return _enviar_payload(telefono_destino, payload)
+
+
 def descargar_media_whatsapp(media_id: str):
     url_info = f"https://graph.facebook.com/v19.0/{media_id}"
     headers = {"Authorization": f"Bearer {config.TOKEN_WHATSAPP}"}

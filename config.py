@@ -80,15 +80,19 @@ ENABLE_RECIBOS_PAGO = os.getenv("ENABLE_RECIBOS_PAGO", "1").strip().lower() in (
     "on",
 )
 
-# Escalación humana — WhatsApp de recepción (opcional, ej. 5233XXXXXXXX)
-RECEPCION_WHATSAPP = os.getenv("RECEPCION_WHATSAPP", "")
-
 
 def _normalizar_whatsapp(numero: str) -> str:
     digits = re.sub(r"\D", "", numero)
     if digits.startswith("521") and len(digits) == 13:
         digits = "52" + digits[3:]
     return digits
+
+
+# Escalación humana — WhatsApp de recepción (52 + 10 dígitos, sin +)
+RECEPCION_WHATSAPP = _normalizar_whatsapp(os.getenv("RECEPCION_WHATSAPP", ""))
+# Plantilla opcional Meta para avisar a recepción fuera de ventana 24h
+WHATSAPP_TEMPLATE_ESCALACION = os.getenv("WHATSAPP_TEMPLATE_ESCALACION", "").strip()
+ESCALACION_REAVISO_MINUTOS = int(os.getenv("ESCALACION_REAVISO_MINUTOS", "15"))
 
 
 def _cargar_terapeutas_whatsapp() -> dict[str, str]:
@@ -117,6 +121,9 @@ def _cargar_terapeutas_whatsapp() -> dict[str, str]:
         "betty martínez": _normalizar_whatsapp(os.getenv("WHATSAPP_BETTY", "")),
         "nutricion": _normalizar_whatsapp(os.getenv("WHATSAPP_NUTRICION", "")),
         "nutricionista": _normalizar_whatsapp(os.getenv("WHATSAPP_NUTRICION", "")),
+        "gabriela": _normalizar_whatsapp(os.getenv("WHATSAPP_NUTRICION", "")),
+        "gabriela sanchez": _normalizar_whatsapp(os.getenv("WHATSAPP_NUTRICION", "")),
+        "gabriela sánchez": _normalizar_whatsapp(os.getenv("WHATSAPP_NUTRICION", "")),
     }
     raw = os.getenv("TERAPEUTAS_WHATSAPP_JSON", "").strip()
     if raw:
@@ -156,6 +163,9 @@ TERAPEUTA_NOMBRES = {
     "betty martínez": "Betty Martínez",
     "nutricion": "Nutrición",
     "nutricionista": "Nutrición",
+    "gabriela": "Gabriela Sánchez",
+    "gabriela sanchez": "Gabriela Sánchez",
+    "gabriela sánchez": "Gabriela Sánchez",
 }
 
 
@@ -424,7 +434,6 @@ ENABLE_INPULSO_RAG = os.getenv("ENABLE_INPULSO_RAG", "1").strip().lower() in (
 )
 INPULSO_RAG_REINDEX_SECONDS = int(os.getenv("INPULSO_RAG_REINDEX_SECONDS", "21600"))
 INPULSO_RAG_PDF_URLS = os.getenv("INPULSO_RAG_PDF_URLS", "").strip()
-ESCALACION_REAVISO_MINUTOS = int(os.getenv("ESCALACION_REAVISO_MINUTOS", "15"))
 
 # Sesiones online (Tier 4.15) — link por defecto o por terapeuta
 LINK_SESION_ONLINE_DEFAULT = os.getenv("LINK_SESION_ONLINE", "")

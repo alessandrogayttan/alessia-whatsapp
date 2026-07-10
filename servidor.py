@@ -215,10 +215,21 @@ def health_metrics():
         token = request.args.get("secret") or request.headers.get("X-Health-Secret", "")
         if token != config.HEALTH_CONFIG_SECRET:
             return {"error": "Forbidden"}, 403
-    return {
+    base = {
         "cola_pendiente": storage.contar_cola_pendiente(),
         "fallos": metricas_fallos(),
-    }, 200
+        "recepcion_configurada": bool(config.RECEPCION_WHATSAPP),
+        "plantillas_recordatorio": {
+            "24h": bool(config.WHATSAPP_TEMPLATE_24H),
+            "2h": bool(config.WHATSAPP_TEMPLATE_2H),
+            "escalacion": bool(config.WHATSAPP_TEMPLATE_ESCALACION),
+        },
+    }
+    try:
+        base.update(storage.resumen_metricas_operativas())
+    except Exception as e:
+        logger.debug("Métricas extendidas no disponibles: %s", e)
+    return base, 200
 
 
 @app.route("/health/config", methods=["GET"])
@@ -243,6 +254,9 @@ def health_config():
         "GEMINI_API_KEY": bool(config.GEMINI_API_KEY),
         "ID_HOJA_CALCULO": bool(config.ID_HOJA_CALCULO),
         "GOOGLE_CREDENTIALS": google_ok,
+        "RECEPCION_WHATSAPP": bool(config.RECEPCION_WHATSAPP),
+        "WHATSAPP_TEMPLATE_24H": bool(config.WHATSAPP_TEMPLATE_24H),
+        "WHATSAPP_TEMPLATE_2H": bool(config.WHATSAPP_TEMPLATE_2H),
         "FLASK_ENV": config.FLASK_ENV,
         "ENABLE_SCHEDULER": config.ENABLE_SCHEDULER,
         "ENABLE_LAUNCH_ACK": config.ENABLE_LAUNCH_ACK,
@@ -554,14 +568,27 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
             logger.info("ARCO eliminación: %s — %s", numero_remitente, resultado[:120])
             return None
 
-        if texto_paciente.upper() == "HABLAR CON PERSONA":
-            registrar_escalacion_humana(numero_remitente)
+        from escalacion import es_solicitud_humano, mensaje_confirmacion_escalacion
+        from tools import escalar_a_recepcion
+
+        if es_solicitud_humano(texto_paciente):
+            estado = escalar_a_recepcion(
+                numero_remitente,
+                f"Paciente solicitó humano: {texto_paciente[:180]}",
+            )
             enviar_mensaje_whatsapp(
                 numero_remitente,
-                "Entendido 😊 He notificado al equipo de recepción. "
-                "Una persona te contactará pronto por este mismo chat.",
+                mensaje_confirmacion_escalacion(
+                    aviso_enviado=bool(estado.get("whatsapp_ok")),
+                    recepcion_configurada=bool(estado.get("recepcion_configurada")),
+                ),
             )
-            logger.info("Escalación humana solicitada por %s", numero_remitente)
+            logger.info(
+                "Escalación humana por %s — wa_ok=%s recepcion=%s",
+                numero_remitente,
+                estado.get("whatsapp_ok"),
+                estado.get("recepcion_configurada"),
+            )
             return None
 
         if texto_paciente.strip().upper().startswith("HISTORIA"):

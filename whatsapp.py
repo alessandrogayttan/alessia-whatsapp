@@ -30,9 +30,10 @@ def verificar_firma_webhook(payload: bytes, signature_header: str | None) -> boo
 
 
 def normalizar_telefono(telefono: str) -> str:
-    if telefono.startswith("521") and len(telefono) == 13:
-        return telefono.replace("521", "52", 1)
-    return telefono
+    digits = re.sub(r"\D", "", telefono or "")
+    if digits.startswith("521") and len(digits) == 13:
+        digits = "52" + digits[3:]
+    return digits
 
 
 def _partir_mensaje(texto: str, max_len: int | None = None) -> list[str]:

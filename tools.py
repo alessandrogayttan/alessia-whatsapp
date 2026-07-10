@@ -239,41 +239,108 @@ def _asegurar_hoja_escalaciones(service) -> bool:
 
 
 def registrar_escalacion_humana(telefono: str, motivo: str = "Paciente solicitó hablar con persona"):
-    """Registra escalación en Google Sheets y opcionalmente avisa a recepción por WhatsApp."""
-    if not config.ID_HOJA_CALCULO:
-        logger.warning("Escalación sin ID_HOJA_CALCULO: %s", telefono)
-        return False
+    """
+    Registra escalación (Sheets + SQLite) y avisa a recepción por WhatsApp.
+    El aviso a recepción NO depende de que Sheets funcione.
+    """
+    from whatsapp import enviar_recordatorio
 
     nombre = storage.obtener_nombre_paciente(telefono) or ""
+    motivo_limpio = (motivo or "Paciente solicitó hablar con persona").strip()[:500]
+    hoja_ok = False
+    wa_ok = False
+    destino = config.RECEPCION_WHATSAPP
 
     try:
-        service = get_sheets_service()
-        _asegurar_hoja_escalaciones(service)
-        fecha = datetime.datetime.now(ZONA).strftime("%Y-%m-%d %H:%M:%S")
-        service.spreadsheets().values().append(
-            spreadsheetId=config.ID_HOJA_CALCULO,
-            range="Escalaciones!A:F",
-            valueInputOption="USER_ENTERED",
-            body={"values": [[fecha, telefono, nombre, motivo, "PENDIENTE", ""]]},
-        ).execute()
-        logger.info("Escalación registrada: %s (%s)", telefono, nombre or "sin nombre")
+        storage.guardar_escalacion_local(telefono, nombre, motivo_limpio)
     except Exception as e:
-        logger.error("Error registrando escalación: %s", e)
-        return False
+        logger.warning("No se pudo guardar escalación local: %s", e)
 
-    if config.RECEPCION_WHATSAPP:
-        from whatsapp import enviar_mensaje_whatsapp
+    if config.ID_HOJA_CALCULO:
+        try:
+            service = get_sheets_service()
+            _asegurar_hoja_escalaciones(service)
+            fecha = datetime.datetime.now(ZONA).strftime("%Y-%m-%d %H:%M:%S")
+            service.spreadsheets().values().append(
+                spreadsheetId=config.ID_HOJA_CALCULO,
+                range="Escalaciones!A:F",
+                valueInputOption="USER_ENTERED",
+                body={"values": [[fecha, telefono, nombre, motivo_limpio, "PENDIENTE", ""]]},
+            ).execute()
+            hoja_ok = True
+            logger.info("Escalación en Sheets: %s (%s)", telefono, nombre or "sin nombre")
+        except Exception as e:
+            logger.error("Error registrando escalación en Sheets: %s", e)
+    else:
+        logger.warning("Escalación sin ID_HOJA_CALCULO: %s", telefono)
 
+    if destino:
         aviso = (
-            f"🙋 *Escalación humana*\n"
+            f"🙋 *Escalación humana — Inpulso 43*\n\n"
             f"Tel: {telefono}\n"
             f"Nombre: {nombre or 'No registrado'}\n"
-            f"Motivo: {motivo}\n\n"
-            f"Revisa la hoja Escalaciones en Google Sheets."
+            f"Motivo: {motivo_limpio}\n\n"
+            f"Responde a este paciente por WhatsApp lo antes posible."
         )
-        enviar_mensaje_whatsapp(config.RECEPCION_WHATSAPP, aviso)
+        params = [
+            nombre or "Paciente",
+            telefono[-10:] if len(telefono) >= 10 else telefono,
+            motivo_limpio[:60],
+        ]
+        wa_ok = enviar_recordatorio(
+            destino,
+            aviso,
+            config.WHATSAPP_TEMPLATE_ESCALACION,
+            params if config.WHATSAPP_TEMPLATE_ESCALACION else None,
+        )
+        if wa_ok:
+            logger.info("Escalación avisada a recepción %s", destino)
+            try:
+                storage.marcar_escalacion_notificada(telefono)
+            except Exception:
+                pass
+        else:
+            logger.error(
+                "No se pudo avisar a recepción (%s) por WhatsApp. "
+                "Revisa RECEPCION_WHATSAPP y ventana 24h / plantilla.",
+                destino,
+            )
+    else:
+        logger.error(
+            "RECEPCION_WHATSAPP vacío: escalación de %s NO se envió a nadie. "
+            "Configura el número en DigitalOcean.",
+            telefono,
+        )
 
-    return True
+    if wa_ok:
+        return (
+            "INSTRUCCIÓN PARA LA IA: Escalación registrada y recepción notificada. "
+            "Dile al paciente con calidez que recepción fue avisada y le escribirán pronto "
+            "por este mismo chat. NO digas que falló el sistema."
+        )
+    if destino:
+        return (
+            "INSTRUCCIÓN PARA LA IA: Registré la solicitud en el sistema, pero el aviso "
+            "inmediato a recepción pudo fallar. Dile al paciente que el equipo revisará "
+            "su mensaje y, si es urgente, marque *+52 33 1469 9772* o *+52 331 230 2221*."
+        )
+    return (
+        "INSTRUCCIÓN PARA LA IA: No hay WhatsApp de recepción configurado. "
+        "Pide disculpas breves y comparte *+52 33 1469 9772* y *+52 331 230 2221*."
+    )
+
+
+def escalar_a_recepcion(telefono: str, motivo: str = "Paciente solicitó hablar con persona") -> dict:
+    """Ejecuta escalación y devuelve estado estructurado para el servidor."""
+    mensaje = registrar_escalacion_humana(telefono, motivo)
+    wa_ok = "recepción notificada" in mensaje.lower() or "recepcion notificada" in mensaje.lower()
+    # También detectar éxito por frase "fue avisada"
+    wa_ok = wa_ok or "fue avisada" in mensaje.lower()
+    return {
+        "whatsapp_ok": wa_ok,
+        "recepcion_configurada": bool(config.RECEPCION_WHATSAPP),
+        "mensaje_ia": mensaje,
+    }
 
 
 def _resolver_whatsapp_terapeuta(especialista: str) -> tuple[str, str] | None:
@@ -414,7 +481,19 @@ def notificar_emergencia_paciente(
 
 
 def _resolver_especialista(especialista: str) -> str | None:
-    especialista_completo = especialista.lower()
+    especialista_completo = especialista.lower().strip()
+    alias = {
+        "gabriela": "nutricion",
+        "gabriela sanchez": "nutricion",
+        "gabriela sánchez": "nutricion",
+        "nutricionista": "nutricion",
+        "nutrición": "nutricion",
+    }
+    if especialista_completo in alias:
+        return alias[especialista_completo]
+    for clave_alias, destino in alias.items():
+        if clave_alias in especialista_completo:
+            return destino
     for nombre in config.DIRECTORIO_CALENDARIOS:
         if nombre in especialista_completo:
             return nombre
@@ -896,7 +975,7 @@ NOMBRES_TERAPEUTAS = {
     "sara": "Sara Rosales",
     "patricia": "Paty Velázquez",
     "ivan": "Ivan Navarro",
-    "nutricion": "Nutricionista",
+    "nutricion": "Gabriela Sánchez",
     "mentoras": "Mentoras",
     "talleres": "Talleres",
 }
@@ -1042,12 +1121,34 @@ def consultar_mis_citas(telefono: str):
 def obtener_contexto_perfil_paciente(telefono: str) -> str:
     """Memoria permanente: nombre asociado al número de WhatsApp."""
     nombre = storage.obtener_nombre_paciente(telefono)
+    memoria_extra = ""
+    try:
+        from conversacion import clave_conversacion_whatsapp
+
+        msgs = storage.obtener_mensajes_conversacion(
+            clave_conversacion_whatsapp(telefono), limite=4
+        )
+        if msgs:
+            pistas = []
+            for m in msgs[-4:]:
+                rol = "Paciente" if m["rol"] == "user" else "Alessia"
+                pistas.append(f"{rol}: {m['contenido'][:120]}")
+            memoria_extra = (
+                "[Sistema: ÚLTIMOS MENSAJES — Continúa el hilo con naturalidad, "
+                "sin repetir saludos ni presentaciones.]\n"
+                + "\n".join(pistas)
+                + "\n"
+            )
+    except Exception:
+        pass
+
     if not nombre:
         return (
             "[Sistema: PERFIL PACIENTE — Sin nombre guardado para este número. "
             "NO pidas nombre para charlar; solo si agendará cita o se inscribirá a taller "
             "pide nombre COMPLETO (nombre y apellidos). Si se presenta casualmente, "
             "usa recordar_nombre_paciente. Mantén tono cálido con emojis.]\n"
+            + memoria_extra
         )
     primero = nombre.strip().split()[0]
     completo = "sí" if storage.tiene_nombre_completo(telefono) else "no"
@@ -1057,6 +1158,7 @@ def obtener_contexto_perfil_paciente(telefono: str) -> str:
         f"Nombre completo en archivo: {completo}. "
         f"Salúdalo por '{primero}' con calidez y emojis. PROHIBIDO preguntar cómo se llama para platicar. "
         f"Solo pide nombre y apellidos al agendar cita o inscribir a taller si aún no es completo.]\n"
+        + memoria_extra
     )
 
 

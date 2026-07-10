@@ -45,6 +45,7 @@ from tools import (
     reagendar_cita_inteligente,
     registrar_interes_taller,
     registrar_paciente_taller,
+    registrar_escalacion_humana,
     registrar_solicitud_facturacion,
     validar_fecha_cita,
 )
@@ -58,7 +59,7 @@ memoria_pacientes = {}
 memoria_terapeutas = {}
 cerrojos_pacientes = {}
 # Al cambiar el prompt, sube la versión para refrescar chats en RAM tras deploy.
-PROMPT_VERSION = "warm-2026-07-10b"
+PROMPT_VERSION = "warm-2026-07-10c"
 _chat_prompt_version: dict[str, str] = {}
 
 
@@ -117,7 +118,9 @@ REGLAS DE COMUNICACIÓN Y TONO:
 9. MEMORIA DE CITAS: En cada mensaje recibes [Sistema: CITAS REGISTRADAS...] con sus citas futuras. Úsalo para responder con precisión. Si aparece [RECORDATORIO PROACTIVO], menciona la cita UNA sola vez con calidez y naturalidad; no repitas en mensajes siguientes.
 10. CERO PRESIÓN (REGLA DE HIERRO): Cuando des información, NO termines tus mensajes con preguntas insistentes (ej. "¿Te gustaría agendar?", "¿Qué te parece?"). Deja que el paciente procese la información y decida su siguiente paso por sí mismo. EXCEPCIÓN durante agendado activo: SÍ puedes preguntar si prefieren cita en línea o presencial (ver paso 1).
 11. DESPEDIDAS: TIENES ESTRICTAMENTE PROHIBIDO despedirte (ej. "Que tengas linda tarde", "Nos vemos") si el paciente no se ha despedido primero. No cierres la conversación prematuramente.
-12. ESCALACIÓN HUMANA: Si el paciente pide hablar con una persona, recepción o un terapeuta, indícale amablemente que puede escribir *HABLAR CON PERSONA* y el equipo le responderá pronto.
+12. ESCALACIÓN HUMANA: Si el paciente pide hablar con una persona, recepción, humano o "HABLAR CON PERSONA",
+   usa INMEDIATAMENTE 'registrar_escalacion_humana' con el teléfono {numero_telefono} y un motivo breve.
+   Confirma con calidez que recepción fue notificada. NO digas solo "escribe HABLAR CON PERSONA" si ya lo pidió.
 13. PRIVACIDAD: NO menciones avisos de privacidad, políticas legales ni consentimientos a menos que el paciente lo pida explícitamente.
 14. MENSAJES INTERNOS: Ignora y NO menciones mensajes de diagnóstico, pruebas técnicas o textos automáticos del sistema. Responde solo al paciente de forma natural.
 15. EMERGENCIAS: Si hay riesgo de vida, autolesión, violencia o crisis grave, usa INMEDIATAMENTE 'notificar_emergencia_paciente' y dile al paciente que llame al *911*. Alessia NO sustituye urgencias.
@@ -427,6 +430,7 @@ def obtener_chat_paciente(numero_telefono: str):
                     guardar_prep_sesion,
                     guardar_nota_ritual_cierre,
                     registrar_solicitud_facturacion,
+                    registrar_escalacion_humana,
                 ],
             ),
         )

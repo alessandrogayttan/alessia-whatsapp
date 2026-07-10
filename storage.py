@@ -237,6 +237,17 @@ def init_db():
                     expira_at TEXT,
                     actualizado_at TEXT
                 );
+                CREATE TABLE IF NOT EXISTS escalaciones_local (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    telefono TEXT NOT NULL,
+                    nombre TEXT,
+                    motivo TEXT NOT NULL,
+                    estado TEXT NOT NULL DEFAULT 'PENDIENTE',
+                    notificado INTEGER NOT NULL DEFAULT 0,
+                    creado_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_escalaciones_estado
+                    ON escalaciones_local(estado, creado_at);
                 CREATE VIRTUAL TABLE IF NOT EXISTS inpulso_rag_fts USING fts5(
                     fuente,
                     url,
@@ -1500,3 +1511,58 @@ def obtener_nombre_equipo_sesion(telefono: str) -> str:
     if fila and fila.get("nombre_miembro"):
         return str(fila["nombre_miembro"])
     return "Equipo Inpulso"
+
+
+def guardar_escalacion_local(telefono: str, nombre: str, motivo: str) -> int:
+    with _transaction() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO escalaciones_local (telefono, nombre, motivo, estado, notificado, creado_at)
+            VALUES (?, ?, ?, 'PENDIENTE', 0, ?)
+            """,
+            (telefono, nombre or "", motivo, datetime.utcnow().isoformat()),
+        )
+        return int(cur.lastrowid)
+
+
+def marcar_escalacion_notificada(telefono: str) -> None:
+    with _transaction() as conn:
+        conn.execute(
+            """
+            UPDATE escalaciones_local
+            SET notificado = 1
+            WHERE id = (
+                SELECT id FROM escalaciones_local
+                WHERE telefono = ? AND estado = 'PENDIENTE'
+                ORDER BY id DESC LIMIT 1
+            )
+            """,
+            (telefono,),
+        )
+
+
+def contar_escalaciones_pendientes_local() -> int:
+    with _transaction() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM escalaciones_local WHERE estado = 'PENDIENTE'"
+        ).fetchone()
+        return int(row["n"]) if row else 0
+
+
+def resumen_metricas_operativas() -> dict:
+    with _transaction() as conn:
+        cola = conn.execute(
+            "SELECT COUNT(*) AS n FROM cola_mensajes WHERE estado = 'pendiente'"
+        ).fetchone()
+        esc = conn.execute(
+            "SELECT COUNT(*) AS n FROM escalaciones_local WHERE estado = 'PENDIENTE'"
+        ).fetchone()
+        conv = conn.execute(
+            "SELECT COUNT(DISTINCT clave) AS n FROM conversacion_mensajes"
+        ).fetchone()
+    return {
+        "cola_pendiente": int(cola["n"]) if cola else 0,
+        "escalaciones_pendientes": int(esc["n"]) if esc else 0,
+        "conversaciones_activas": int(conv["n"]) if conv else 0,
+        "recepcion_configurada": bool(config.RECEPCION_WHATSAPP),
+    }

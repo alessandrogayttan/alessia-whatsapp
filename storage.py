@@ -1,3 +1,4 @@
+import re
 import sqlite3
 import threading
 from contextlib import contextmanager
@@ -217,6 +218,22 @@ def init_db():
                     minuto TEXT NOT NULL,
                     hits INTEGER NOT NULL DEFAULT 0,
                     PRIMARY KEY (ip_hash, minuto)
+                );
+                CREATE TABLE IF NOT EXISTS conversacion_mensajes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    clave TEXT NOT NULL,
+                    canal TEXT NOT NULL,
+                    rol TEXT NOT NULL,
+                    contenido TEXT NOT NULL,
+                    creado_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_conversacion_clave
+                    ON conversacion_mensajes(clave, id);
+                CREATE VIRTUAL TABLE IF NOT EXISTS inpulso_rag_fts USING fts5(
+                    fuente,
+                    url,
+                    chunk,
+                    tokenize='unicode61 remove_diacritics 2'
                 );
                 """
             )
@@ -1285,3 +1302,93 @@ def registrar_hit_web_chat(ip_hash: str, limite_por_minuto: int) -> bool:
         )
         return True
 
+
+def guardar_mensaje_conversacion(
+    clave: str,
+    canal: str,
+    rol: str,
+    contenido: str,
+) -> None:
+    texto = (contenido or "").strip()
+    if not texto or not clave:
+        return
+    with _transaction() as conn:
+        conn.execute(
+            """
+            INSERT INTO conversacion_mensajes (clave, canal, rol, contenido, creado_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (clave, canal, rol, texto[:8000], datetime.utcnow().isoformat()),
+        )
+
+
+def obtener_mensajes_conversacion(clave: str, limite: int = 40) -> list[dict]:
+    with _transaction() as conn:
+        rows = conn.execute(
+            """
+            SELECT rol, contenido, canal, creado_at
+            FROM conversacion_mensajes
+            WHERE clave = ?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (clave, limite),
+        ).fetchall()
+    return [dict(r) for r in reversed(rows)]
+
+
+def migrar_conversacion_clave(clave_origen: str, clave_destino: str) -> int:
+    if not clave_origen or not clave_destino or clave_origen == clave_destino:
+        return 0
+    with _transaction() as conn:
+        cur = conn.execute(
+            "UPDATE conversacion_mensajes SET clave = ? WHERE clave = ?",
+            (clave_destino, clave_origen),
+        )
+        return cur.rowcount
+
+
+def limpiar_rag_indice() -> None:
+    with _transaction() as conn:
+        conn.execute("DELETE FROM inpulso_rag_fts")
+
+
+def insertar_chunks_rag(chunks: list[tuple[str, str, str]]) -> int:
+    if not chunks:
+        return 0
+    with _transaction() as conn:
+        conn.executemany(
+            "INSERT INTO inpulso_rag_fts (fuente, url, chunk) VALUES (?, ?, ?)",
+            chunks,
+        )
+    return len(chunks)
+
+
+def buscar_rag_fts(consulta: str, limite: int = 8) -> list[dict]:
+    q = (consulta or "").strip()
+    if not q:
+        return []
+    tokens = [t for t in re.sub(r"[^\w\s]", " ", q, flags=re.UNICODE).split() if len(t) > 2]
+    if not tokens:
+        tokens = q.split()[:3]
+    match = " OR ".join(f'"{t}"' for t in tokens[:8])
+    try:
+        with _transaction() as conn:
+            rows = conn.execute(
+                """
+                SELECT fuente, url, chunk
+                FROM inpulso_rag_fts
+                WHERE inpulso_rag_fts MATCH ?
+                LIMIT ?
+                """,
+                (match, limite),
+            ).fetchall()
+        return [dict(r) for r in rows]
+    except sqlite3.OperationalError:
+        return []
+
+
+def contar_chunks_rag() -> int:
+    with _transaction() as conn:
+        row = conn.execute("SELECT COUNT(*) AS n FROM inpulso_rag_fts").fetchone()
+        return int(row["n"]) if row else 0

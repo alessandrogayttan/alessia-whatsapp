@@ -691,6 +691,13 @@ def consultar_sitio_inpulso(consulta: str, pagina: str = "auto") -> str:
     return _consultar(consulta, pagina)
 
 
+def buscar_conocimiento_inpulso(consulta: str) -> str:
+    """Busca en el índice RAG del sitio oficial y PDFs públicos de Inpulso."""
+    from inpulso_rag import buscar_conocimiento_inpulso as _buscar
+
+    return _buscar(consulta)
+
+
 def _pista_texto_desde_contenido(contenido) -> str:
     if isinstance(contenido, str):
         return contenido
@@ -1113,6 +1120,10 @@ def envolver_mensaje_con_contexto_paciente(telefono: str, contenido):
         from inpulso_web_live import obtener_contexto_web_en_vivo
 
         ctx += obtener_contexto_web_en_vivo(pista)
+    if config.ENABLE_INPULSO_RAG:
+        from inpulso_rag import contexto_rag_para_mensaje
+
+        ctx += contexto_rag_para_mensaje(pista)
     if isinstance(contenido, str):
         return ctx + contenido
     if isinstance(contenido, list):

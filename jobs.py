@@ -610,3 +610,16 @@ def sincronizar_web_background():
         storage.marcar_recordatorio_enviado(clave, "global")
     except Exception as e:
         logger.error("Error sync web: %s", e)
+
+
+def reindexar_rag_inpulso_background():
+    """Reindexa sitio inpulso43.com + PDFs para búsqueda RAG."""
+    if not config.ENABLE_INPULSO_RAG:
+        return
+    try:
+        from inpulso_rag import reindexar_sitio_inpulso
+
+        total = reindexar_sitio_inpulso()
+        logger.info("RAG background: %s chunks indexados", total)
+    except Exception as e:
+        logger.error("Error reindex RAG: %s", e)

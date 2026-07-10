@@ -14,14 +14,22 @@ from google.genai import types
 
 import config
 import storage
+from conversacion import (
+    clave_conversacion_web,
+    historial_para_gemini,
+    registrar_turno_web,
+    vincular_conversacion_web,
+)
 from observability import registrar_fallo_gemini
 from tools import (
     agendar_cita,
     agregar_lista_espera,
     buscar_cita_paciente,
+    buscar_conocimiento_inpulso,
     calcular_gasto_combustible,
     cambiar_servicio_cita,
     cancelar_cita_paciente,
+    confirmar_pago_comprobante,
     consultar_agenda,
     consultar_mis_citas,
     consultar_precios_y_servicios,
@@ -44,7 +52,7 @@ from tools import (
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION = "web-2026-07-09a"
+PROMPT_VERSION = "web-2026-07-09b"
 _genai_client = None
 _memoria_web: dict[str, object] = {}
 _prompt_version_web: dict[str, str] = {}
@@ -58,6 +66,12 @@ MENSAJE_RESCATE = (
 _SESSION_ID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
     re.I,
+)
+
+_INSTRUCCION_COMPROBANTE = (
+    "[COMPROBANTE DE PAGO — analiza monto, cuenta destino y estatus COMPLETADO. "
+    "Cuentas válidas: BANORTE CLABE 072320003548248000 o BANAMEX CLABE 002320700928855166. "
+    "Si es válido, llama confirmar_pago_comprobante con el teléfono del paciente y el monto.]"
 )
 
 
@@ -79,52 +93,34 @@ def _construir_instrucciones_web(
     banamex = config.CUENTAS_OFICIALES["BANAMEX"]
     tel_ctx = telefono or "(aún no proporcionado — pídelo antes de agendar o inscribir)"
     wa = config.WHATSAPP_PACIENTES_URL or "WhatsApp de Inpulso 43"
+    unificado = (
+        "Su historial está unificado con WhatsApp."
+        if telefono
+        else "Cuando den su WhatsApp, el historial se unifica con ese número."
+    )
 
     return f"""
 Eres Alessia, de Inpulso 43. Atiendes el *chat en vivo* del sitio web {config.CLINICA_WEB_URL}
-con el mismo cariño que recepción en persona. Este canal es la WEB, no WhatsApp.
+con el mismo cariño que recepción en persona. Este canal es la WEB.
 
 IDENTIDAD (REGLA DE HIERRO):
 - Preséntate solo como "Alessia, de Inpulso 43" o "Alessia de Inpulso".
 - PROHIBIDO decir: asistente virtual, IA, inteligencia artificial, bot, automatizado, robot, modelo, Gemini.
-- NUNCA te vuelvas a presentar si ya saludaste. Responde directo y con calidez.
 - Usa emojis con naturalidad (😊 ✨ 💙 🌿).
 
-CANAL WEB — REGLAS ESPECÍFICAS:
-1. NO puedes recibir imágenes ni comprobantes de pago aquí. Si quieren confirmar un pago, enviar comprobante,
-   recibir recibo automático, recordatorios de cita, escribir *MI CITA* o *HABLAR CON PERSONA*, invítalos con calidez
-   a continuar por WhatsApp: {wa}
-2. Antes de *agendar cita* o *inscribir a taller*, pide su número de WhatsApp (10 dígitos México) y nombre completo.
-3. En cada mensaje recibes [Sistema: WEB VIVA] con contenido actualizado de inpulso43.com — úsalo como fuente principal.
-4. Si falta detalle sobre Inpulso, llama 'consultar_sitio_inpulso' antes de responder. No digas que no sabes si puedes leer el sitio.
-5. Preguntas generales (bienestar, emociones, etc.): responde con empatía; datos de Inpulso siempre desde la web oficial.
-6. Teléfono del visitante en esta sesión: {tel_ctx}.
-7. Nombre en sesión web: {nombre or "(aún no)"}.
+CANAL WEB:
+1. SÍ puedes recibir *imágenes* (comprobantes de pago). Analízalas y usa confirmar_pago_comprobante si aplica.
+2. Recordatorios, *MI CITA* y *HABLAR CON PERSONA* siguen siendo más cómodos por WhatsApp: {wa}
+3. Antes de agendar o inscribir, pide WhatsApp (10 dígitos MX) y nombre completo si faltan.
+4. Usa [WEB VIVA] y [RAG] del mensaje; si falta info: consultar_sitio_inpulso o buscar_conocimiento_inpulso.
+5. Preguntas generales de bienestar: responde con empatía. Datos de Inpulso: solo del sitio oficial.
+6. Teléfono sesión: {tel_ctx}. Nombre: {nombre or "(aún no)"}. {unificado}
 
-ORIENTACIÓN INICIAL (modelo 360° mente · cuerpo · propósito):
-- Si no saben qué especialista necesitan, pregunta qué síntomas o motivo les trae ANTES de recomendar.
-- Psicología → Sara Rosales. Nutrición → Gabriela Sánchez. Medicina → escalación a recepción (registrar_escalacion_humana).
+HERRAMIENTAS: consultar_sitio_inpulso, buscar_conocimiento_inpulso, consultar_talleres_y_servicios,
+agendar_cita, confirmar_pago_comprobante (con imagen de comprobante), registrar_solicitud_facturacion, etc.
 
-INFORMACIÓN CLÍNICA Y WEB:
-- Sitio: {config.CLINICA_WEB_URL} — talleres en /talleres.php, equipo en /nosotros.php.
-- Ubicación: {config.CLINICA_DIRECCION} — Mapa: {config.CLINICA_MAPS_URL}
-- Horario citas: lun–vie 7:00–19:00. Modalidad presencial y en línea (mentoras solo en línea).
-- Pagos: efectivo/tarjeta en recepción; transferencia BANORTE CLABE {banorte['clabe']};
-  con factura BANAMEX CLABE {banamex['clabe']}. Concepto: nombre completo del paciente.
-- Citas online: pago total al confirmar (máx. 24 h antes). El terapeuta envía Zoom el día de la cita por WhatsApp.
-- Cancelación con menos de 24 h: penalización 50%.
-
-HERRAMIENTAS:
-- Info del sitio en vivo: consultar_sitio_inpulso (prioridad para talleres, equipo, precios, textos nuevos).
-- Info talleres/precios Drive: consultar_talleres_y_servicios, consultar_precios_y_servicios.
-- Disponibilidad: consultar_agenda. Agendar: agendar_cita (teléfono obligatorio).
-- Ver citas (si ya vinculó teléfono): consultar_mis_citas.
-- Reagendar: reagendar_cita_inteligente → reagendar_cita_atomica.
-- Inscripción taller: registrar_paciente_taller.
-- Factura CFDI: registrar_solicitud_facturacion cuando tengas todos los datos.
-- Emergencia: notificar_emergencia_paciente + indicar llamar al *911*.
-
-TONO: cálida, 2–3 párrafos máximo. Sin presión al final ("¿te gustaría agendar?"). Sin despedidas hasta que el visitante se despida.
+Pagos: BANORTE CLABE {banorte['clabe']}; factura BANAMEX CLABE {banamex['clabe']}.
+Ubicación: {config.CLINICA_DIRECCION}
 """
 
 
@@ -142,6 +138,7 @@ def _herramientas_web():
         calcular_gasto_combustible,
         consultar_precios_y_servicios,
         consultar_sitio_inpulso,
+        buscar_conocimiento_inpulso,
         consultar_talleres_y_servicios,
         registrar_paciente_taller,
         registrar_interes_taller,
@@ -151,14 +148,28 @@ def _herramientas_web():
         reagendar_cita_atomica,
         registrar_solicitud_facturacion,
         registrar_escalacion_humana,
+        confirmar_pago_comprobante,
     ]
 
 
+def _memoria_clave(session_id: str, telefono: str | None) -> str:
+    return f"{clave_conversacion_web(session_id, telefono)}:{PROMPT_VERSION}"
+
+
+def _invalidar_memoria_web(session_id: str):
+    for k in list(_memoria_web.keys()):
+        if session_id in k:
+            _memoria_web.pop(k, None)
+    _prompt_version_web.pop(session_id, None)
+
+
 def _obtener_chat_web(session_id: str, telefono: str | None, nombre: str | None):
-    clave = f"{session_id}:{PROMPT_VERSION}"
-    if clave not in _memoria_web or _prompt_version_web.get(session_id) != PROMPT_VERSION:
+    clave = _memoria_clave(session_id, telefono)
+    conv_clave = clave_conversacion_web(session_id, telefono)
+    if clave not in _memoria_web or _prompt_version_web.get(conv_clave) != PROMPT_VERSION:
         _memoria_web[clave] = _get_genai_client().chats.create(
             model="gemini-2.5-flash",
+            history=historial_para_gemini(conv_clave),
             config=types.GenerateContentConfig(
                 system_instruction=_construir_instrucciones_web(
                     session_id, telefono, nombre
@@ -166,7 +177,7 @@ def _obtener_chat_web(session_id: str, telefono: str | None, nombre: str | None)
                 tools=_herramientas_web(),
             ),
         )
-        _prompt_version_web[session_id] = PROMPT_VERSION
+        _prompt_version_web[conv_clave] = PROMPT_VERSION
     return _memoria_web[clave]
 
 
@@ -195,12 +206,6 @@ def _extraer_telefono_de_mensaje(texto: str) -> str | None:
     return None
 
 
-def _contexto_id_operaciones(telefono: str | None) -> str:
-    if telefono:
-        return telefono
-    return ""
-
-
 def envolver_mensaje_web(
     session_id: str,
     telefono: str | None,
@@ -209,21 +214,45 @@ def envolver_mensaje_web(
 ) -> str:
     ctx = obtener_contexto_fecha_actual()
     ctx += f"[Sistema: CANAL WEB — sesión {session_id}]\n"
-    if nombre:
-        ctx += f"[Sistema: Nombre en sesión web: {nombre}]\n"
     if telefono:
+        ctx += "[Sistema: Historial unificado con WhatsApp de este número.]\n"
         ctx += obtener_contexto_perfil_paciente(telefono)
         ctx += obtener_contexto_citas_paciente(telefono)
     else:
         ctx += (
-            "[Sistema: El visitante aún no ha dado su WhatsApp. "
-            "Pídelo antes de agendar o inscribir a talleres.]\n"
+            "[Sistema: Pide WhatsApp antes de agendar. Al darlo, se unifica el historial.]\n"
         )
     if config.ENABLE_INPULSO_WEB_LIVE:
         from inpulso_web_live import obtener_contexto_web_en_vivo
 
         ctx += obtener_contexto_web_en_vivo(mensaje)
+    if config.ENABLE_INPULSO_RAG:
+        from inpulso_rag import contexto_rag_para_mensaje
+
+        ctx += contexto_rag_para_mensaje(mensaje)
     return ctx + mensaje
+
+
+def _construir_contenido_multimodal(
+    session_id: str,
+    telefono: str | None,
+    nombre: str | None,
+    mensaje: str,
+    imagen_bytes: bytes | None,
+    mime_type: str,
+):
+    if not imagen_bytes:
+        return envolver_mensaje_web(session_id, telefono, nombre, mensaje)
+
+    partes = []
+    envuelto = envolver_mensaje_web(session_id, telefono, nombre, mensaje or "(imagen enviada)")
+    partes.append(types.Part(text=envuelto))
+    partes.append(
+        types.Part(inline_data=types.Blob(data=imagen_bytes, mime_type=mime_type))
+    )
+    if mime_type.startswith("image/") or mime_type == "application/pdf":
+        partes.append(types.Part(text=_INSTRUCCION_COMPROBANTE))
+    return partes
 
 
 def nueva_sesion_web() -> str:
@@ -243,17 +272,29 @@ def _vincular_telefono_si_aplica(session_id: str, mensaje: str, sesion: dict) ->
     detectado = _extraer_telefono_de_mensaje(mensaje)
     if detectado:
         storage.actualizar_sesion_web(session_id, telefono=detectado)
+        vincular_conversacion_web(session_id, detectado)
+        _invalidar_memoria_web(session_id)
         return detectado
     return None
 
 
-def procesar_mensaje_web(session_id: str, mensaje: str) -> str:
+def procesar_mensaje_web(
+    session_id: str,
+    mensaje: str,
+    *,
+    imagen_bytes: bytes | None = None,
+    mime_type: str = "image/jpeg",
+) -> str:
     if not config.ENABLE_WEB_CHAT:
         raise RuntimeError("Chat web desactivado")
     if not sesion_valida(session_id):
         raise ValueError("Sesión inválida")
+
+    tiene_imagen = bool(imagen_bytes)
     mensaje = (mensaje or "").strip()
-    if not mensaje or len(mensaje) > 4000:
+    if not mensaje and not tiene_imagen:
+        raise ValueError("Mensaje vacío")
+    if len(mensaje) > 4000:
         raise ValueError("Mensaje inválido")
 
     sesion = storage.obtener_sesion_web(session_id)
@@ -264,26 +305,29 @@ def procesar_mensaje_web(session_id: str, mensaje: str) -> str:
         "telefono_vinculado"
     )
     nombre = sesion.get("nombre")
-    if telefono and not sesion.get("telefono_vinculado"):
-        sesion = storage.obtener_sesion_web(session_id) or sesion
 
     if session_id not in _cerrojos_web:
         _cerrojos_web[session_id] = threading.Lock()
 
+    registro_usuario = mensaje or "[imagen/comprobante enviado]"
+
     with _cerrojos_web[session_id]:
         import tools as tools_ctx
 
-        id_ops = _contexto_id_operaciones(telefono) or f"web:{session_id}"
+        id_ops = telefono or f"web:{session_id}"
         tools_ctx._telefono_contexto = id_ops
         try:
             chat = _obtener_chat_web(session_id, telefono, nombre)
-            contenido = envolver_mensaje_web(session_id, telefono, nombre, mensaje)
+            contenido = _construir_contenido_multimodal(
+                session_id, telefono, nombre, mensaje, imagen_bytes, mime_type
+            )
             for intento in range(2):
                 try:
                     respuesta = _gemini_send_message(chat, contenido)
                     texto = (getattr(respuesta, "text", None) or "").strip()
                     if texto:
                         storage.actualizar_sesion_web(session_id)
+                        registrar_turno_web(session_id, telefono, registro_usuario, texto)
                         return texto
                 except FuturesTimeout:
                     logger.error("Timeout Gemini web %s intento %s", session_id, intento + 1)

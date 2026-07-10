@@ -344,6 +344,23 @@ ENABLE_INPULSO_WEB_LIVE = os.getenv("ENABLE_INPULSO_WEB_LIVE", "1").strip().lowe
     "yes",
     "on",
 )
+
+# Historial persistente y RAG del sitio
+ENABLE_CONVERSACION_PERSISTENTE = os.getenv("ENABLE_CONVERSACION_PERSISTENTE", "1").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+CONVERSACION_MAX_TURNOS = int(os.getenv("CONVERSACION_MAX_TURNOS", "40"))
+ENABLE_INPULSO_RAG = os.getenv("ENABLE_INPULSO_RAG", "1").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+INPULSO_RAG_REINDEX_SECONDS = int(os.getenv("INPULSO_RAG_REINDEX_SECONDS", "21600"))
+INPULSO_RAG_PDF_URLS = os.getenv("INPULSO_RAG_PDF_URLS", "").strip()
 ESCALACION_REAVISO_MINUTOS = int(os.getenv("ESCALACION_REAVISO_MINUTOS", "15"))
 
 # Sesiones online (Tier 4.15) — link por defecto o por terapeuta

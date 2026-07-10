@@ -43,6 +43,7 @@ from jobs import (
     procesar_cola_background,
     reporte_semanal_background,
     renotificar_escalaciones_background,
+    reindexar_rag_inpulso_background,
     seguimiento_post_cita_background,
     sincronizar_catalogo_web_background,
     sincronizar_catalogo_whatsapp_background,
@@ -116,6 +117,7 @@ def _iniciar_scheduler():
     scheduler.add_job(sincronizar_catalogo_web_background, "interval", minutes=30)
     scheduler.add_job(sincronizar_catalogo_whatsapp_background, "interval", minutes=30)
     scheduler.add_job(sincronizar_web_background, "interval", hours=24)
+    scheduler.add_job(reindexar_rag_inpulso_background, "interval", hours=6)
     scheduler.start()
     _scheduler_iniciado = True
     logger.info("Scheduler de tareas en segundo plano iniciado")

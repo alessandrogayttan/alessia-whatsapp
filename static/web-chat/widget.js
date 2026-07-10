@@ -90,6 +90,7 @@
       COLORS.azul +
       ";color:#fff;border-radius:20px;padding:10px 16px;font-size:14px;cursor:pointer}" +
       "#alessia-send:disabled{opacity:.5;cursor:not-allowed}" +
+      "#alessia-attach{border:none;background:transparent;font-size:20px;cursor:pointer;padding:4px 8px}" +
       "#alessia-footer{font-size:10px;text-align:center;padding:6px;color:#64748b;background:#fff}" +
       "#alessia-footer a{color:" +
       COLORS.azul +
@@ -139,10 +140,11 @@
     });
   }
 
-  function sendMessage(text) {
-    if (busy || !text.trim()) return;
+  function sendMessage(text, imageFile) {
+    if (busy || (!text.trim() && !imageFile)) return;
     busy = true;
-    appendMessage(text, "user");
+    if (text.trim()) appendMessage(text, "user");
+    else if (imageFile) appendMessage("📎 Comprobante enviado", "user");
     var input = document.getElementById("alessia-input");
     var btn = document.getElementById("alessia-send");
     if (input) input.value = "";
@@ -151,6 +153,19 @@
 
     ensureSession()
       .then(function (sid) {
+        if (imageFile) {
+          var fd = new FormData();
+          fd.append("session_id", sid);
+          fd.append("message", text || "");
+          fd.append("image", imageFile);
+          return fetch(apiBase + "/api/web-chat/message", {
+            method: "POST",
+            body: fd,
+          }).then(function (r) {
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            return r.json();
+          });
+        }
         return api("/api/web-chat/message", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -200,8 +215,21 @@
       autocomplete: "off",
     });
     var send = el("button", { id: "alessia-send", type: "button" }, "Enviar");
+    var attach = el("button", {
+      id: "alessia-attach",
+      type: "button",
+      title: "Adjuntar imagen o comprobante",
+    }, "📎");
+    var fileInput = el("input", {
+      id: "alessia-file",
+      type: "file",
+      accept: "image/*,application/pdf",
+      style: "display:none",
+    });
+    row.appendChild(attach);
     row.appendChild(input);
     row.appendChild(send);
+    panel.appendChild(fileInput);
     panel.appendChild(row);
 
     var footer = el("div", { id: "alessia-footer" });
@@ -224,9 +252,18 @@
     });
 
     function submit() {
-      sendMessage(input.value);
+      sendMessage(input.value, null);
     }
     send.addEventListener("click", submit);
+    attach.addEventListener("click", function () {
+      fileInput.click();
+    });
+    fileInput.addEventListener("change", function () {
+      if (fileInput.files && fileInput.files[0]) {
+        sendMessage(input.value, fileInput.files[0]);
+        fileInput.value = "";
+      }
+    });
     input.addEventListener("keydown", function (e) {
       if (e.key === "Enter") submit();
     });

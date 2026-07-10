@@ -111,19 +111,37 @@ def web_chat_message():
     if not _rate_limit_ok():
         return _cors_headers(jsonify({"error": "Demasiadas solicitudes"})), 429
 
-    data = request.get_json(silent=True) or {}
-    session_id = (data.get("session_id") or "").strip()
-    mensaje = (data.get("message") or "").strip()
+    imagen_bytes = None
+    mime_type = "image/jpeg"
+
+    if request.content_type and "multipart/form-data" in request.content_type:
+        session_id = (request.form.get("session_id") or "").strip()
+        mensaje = (request.form.get("message") or "").strip()
+        archivo = request.files.get("image") or request.files.get("file")
+        if archivo and archivo.filename:
+            imagen_bytes = archivo.read()
+            mime_type = archivo.mimetype or "image/jpeg"
+            if len(imagen_bytes) > 8 * 1024 * 1024:
+                return _cors_headers(jsonify({"error": "Imagen demasiado grande (máx 8MB)"})), 400
+    else:
+        data = request.get_json(silent=True) or {}
+        session_id = (data.get("session_id") or "").strip()
+        mensaje = (data.get("message") or "").strip()
 
     if not sesion_valida(session_id):
         return _cors_headers(jsonify({"error": "Sesión inválida"})), 400
     if not storage.obtener_sesion_web(session_id):
         return _cors_headers(jsonify({"error": "Sesión expirada"})), 404
-    if not mensaje:
+    if not mensaje and not imagen_bytes:
         return _cors_headers(jsonify({"error": "Mensaje vacío"})), 400
 
     try:
-        reply = procesar_mensaje_web(session_id, mensaje)
+        reply = procesar_mensaje_web(
+            session_id,
+            mensaje,
+            imagen_bytes=imagen_bytes,
+            mime_type=mime_type,
+        )
     except ValueError as e:
         return _cors_headers(jsonify({"error": str(e)})), 400
     except Exception as e:

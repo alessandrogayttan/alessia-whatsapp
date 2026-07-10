@@ -24,6 +24,7 @@ from tools import (
     agendar_cita,
     agregar_lista_espera,
     buscar_cita_paciente,
+    buscar_conocimiento_inpulso,
     calcular_gasto_combustible,
     cambiar_servicio_cita,
     cancelar_cita_paciente,
@@ -57,7 +58,7 @@ memoria_pacientes = {}
 memoria_terapeutas = {}
 cerrojos_pacientes = {}
 # Al cambiar el prompt, sube la versión para refrescar chats en RAM tras deploy.
-PROMPT_VERSION = "warm-2026-07-09a"
+PROMPT_VERSION = "warm-2026-07-09b"
 _chat_prompt_version: dict[str, str] = {}
 
 
@@ -99,7 +100,7 @@ REGLAS DE COMUNICACIÓN Y TONO:
 4. BREVEDAD CON CALIDEZ: Respuestas claras de 2-3 párrafos máximo, pero siempre amables y con personalidad — no listas secas ni tono de formulario. Si hay mucha info (temario, precios), resume con calidez.
 5. INFORMACIÓN Y ALCANCE:
    - Preguntas sobre Inpulso (talleres, equipo, precios, servicios, blog, contacto): usa SIEMPRE el bloque [Sistema: WEB VIVA] del mensaje actual.
-   - Si falta detalle o puede haber cambiado algo, llama 'consultar_sitio_inpulso' ANTES de responder — lee inpulso43.com en vivo.
+   - Si falta detalle o puede haber cambiado algo, llama 'consultar_sitio_inpulso' o 'buscar_conocimiento_inpulso' ANTES de responder.
    - PROHIBIDO decir "no tengo esa información" sobre Inpulso si puedes consultar el sitio. NUNCA inventes precios, fechas, nombres ni políticas.
    - Preguntas generales de bienestar, emociones, música, películas o vida: responde con empatía y calidez aunque no sean del catálogo.
    - Preguntas ajenas a salud/bienestar/Inpulso: responde brevemente con amabilidad y, si encaja, reconecta con cómo Inpulso puede acompañar.
@@ -343,6 +344,16 @@ def _crear_herramientas_terapeuta(telefono: str):
     ]
 
 
+def _cargar_historial_persistente(clave: str):
+    try:
+        from conversacion import historial_para_gemini
+
+        return historial_para_gemini(clave)
+    except Exception as e:
+        logger.warning("Historial no cargado para %s: %s", clave, e)
+        return []
+
+
 def reiniciar_chat_paciente(numero_telefono: str):
     memoria_pacientes.pop(numero_telefono, None)
     memoria_terapeutas.pop(numero_telefono, None)
@@ -373,6 +384,7 @@ def obtener_chat_paciente(numero_telefono: str):
     ):
         memoria_pacientes[numero_telefono] = _get_genai_client().chats.create(
             model="gemini-2.5-flash",
+            history=_cargar_historial_persistente(numero_telefono),
             config=types.GenerateContentConfig(
                 system_instruction=_construir_instrucciones(numero_telefono),
                 tools=[
@@ -389,6 +401,7 @@ def obtener_chat_paciente(numero_telefono: str):
                     calcular_gasto_combustible,
                     consultar_precios_y_servicios,
                     consultar_sitio_inpulso,
+                    buscar_conocimiento_inpulso,
                     consultar_talleres_y_servicios,
                     registrar_paciente_taller,
                     registrar_interes_taller,
@@ -446,6 +459,14 @@ def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
                     texto = (getattr(respuesta_ia, "text", None) or "").strip()
                     if texto:
                         enviar_mensaje_whatsapp(numero_paciente, texto)
+                        try:
+                            from conversacion import registrar_turno_whatsapp
+
+                            registrar_turno_whatsapp(
+                                numero_paciente, contenido_para_ia, texto
+                            )
+                        except Exception as e:
+                            logger.debug("Historial WA no guardado: %s", e)
                         enviado = True
                         break
                     logger.warning(

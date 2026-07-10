@@ -61,7 +61,7 @@ def test_api_mensaje_mock_gemini(web_chat_habilitado, db_temp, monkeypatch):
     monkeypatch.setattr("web_chat_api._rate_limit_ok", lambda: True)
     monkeypatch.setattr(
         "web_chat_api.procesar_mensaje_web",
-        lambda sid, msg: f"Eco web: {msg}",
+        lambda sid, msg, **kwargs: f"Eco web: {msg}",
     )
 
     sid = web_chat.nueva_sesion_web()

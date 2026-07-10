@@ -1104,6 +1104,11 @@ def envolver_mensaje_con_contexto_paciente(telefono: str, contenido):
     """Anteponer contexto de fecha (y citas del paciente si no es staff)."""
     from google.genai import types
 
+    if config.identificar_miembro_equipo(telefono):
+        from modo_equipo import envolver_mensaje_equipo
+
+        return envolver_mensaje_equipo(telefono, contenido)
+
     ctx = obtener_contexto_fecha_actual() + obtener_contexto_perfil_paciente(telefono)
     if config.identificar_terapeuta(telefono):
         ctx += (

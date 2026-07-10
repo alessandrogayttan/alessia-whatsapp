@@ -316,7 +316,7 @@ def webhook():
 
 
 def _registrar_consentimiento_si_aplica(numero: str):
-    if config.identificar_terapeuta(numero):
+    if config.identificar_terapeuta(numero) or config.identificar_miembro_equipo(numero):
         return
     if storage.necesita_consentimiento(numero):
         storage.registrar_consentimiento(numero)
@@ -400,6 +400,10 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
 
     if tipo_mensaje == "text":
         texto_paciente = mensaje_info["text"]["body"].strip()
+
+        if config.identificar_miembro_equipo(numero_remitente):
+            return texto_paciente
+
         es_terapeuta = config.identificar_terapeuta(numero_remitente)
 
         if es_terapeuta:
@@ -632,6 +636,23 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
 
         if file_bytes:
             caption = mensaje_info.get(tipo_clave, {}).get("caption", "")
+            miembro_equipo = config.identificar_miembro_equipo(numero_remitente)
+            if miembro_equipo:
+                if tipo_mensaje in ("audio", "voice"):
+                    texto_descriptivo = (
+                        "NOTA DE VOZ del equipo Inpulso. Transcribe y responde con lo que necesiten."
+                    )
+                else:
+                    texto_descriptivo = (
+                        f"Archivo de trabajo ({tipo_mensaje}) enviado por {miembro_equipo}. "
+                        "Analízalo a fondo: extrae, resume, estructura o transforma según el pedido."
+                    )
+                if caption:
+                    texto_descriptivo += f" Instrucciones del equipo: {caption}"
+                return [
+                    types.Part(inline_data=types.Blob(data=file_bytes, mime_type=mime_type)),
+                    types.Part(text=texto_descriptivo),
+                ]
             if tipo_mensaje in ("audio", "voice"):
                 texto_descriptivo = (
                     "NOTA DE VOZ del paciente. Escucha/transcribe el audio y responde "

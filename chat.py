@@ -359,6 +359,12 @@ def reiniciar_chat_paciente(numero_telefono: str):
     memoria_terapeutas.pop(numero_telefono, None)
     cerrojos_pacientes.pop(numero_telefono, None)
     _chat_prompt_version.pop(numero_telefono, None)
+    try:
+        from modo_equipo import invalidar_chat_equipo
+
+        invalidar_chat_equipo(numero_telefono)
+    except Exception:
+        pass
 
 
 def _obtener_chat_terapeuta(numero_telefono: str, nombre_terapeuta: str):
@@ -436,6 +442,24 @@ MENSAJE_RESCATE = (
 
 
 def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
+    from modo_equipo import es_modo_equipo, procesar_mensaje_equipo
+
+    if es_modo_equipo(numero_paciente):
+        if numero_paciente not in cerrojos_pacientes:
+            cerrojos_pacientes[numero_paciente] = threading.Lock()
+        enviado = False
+        with cerrojos_pacientes[numero_paciente]:
+            texto = procesar_mensaje_equipo(numero_paciente, contenido_para_ia)
+            if texto:
+                enviar_mensaje_whatsapp(numero_paciente, texto)
+                enviado = True
+            if not enviado:
+                for intento in range(3):
+                    if enviar_mensaje_whatsapp(numero_paciente, MENSAJE_RESCATE):
+                        break
+                    time.sleep(2)
+        return
+
     if numero_paciente not in cerrojos_pacientes:
         cerrojos_pacientes[numero_paciente] = threading.Lock()
 

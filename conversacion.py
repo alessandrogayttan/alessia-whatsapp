@@ -88,6 +88,19 @@ def registrar_turno_whatsapp(telefono: str, contenido_entrada, respuesta: str) -
     registrar_turno(clave_conversacion_whatsapp(telefono), "whatsapp", usuario, respuesta)
 
 
+def clave_conversacion_equipo(telefono: str) -> str:
+    return f"equipo:{telefono}"
+
+
+def registrar_turno_equipo(telefono: str, mensaje_usuario: str, respuesta: str) -> None:
+    registrar_turno(
+        clave_conversacion_equipo(telefono),
+        "equipo",
+        mensaje_usuario,
+        respuesta,
+    )
+
+
 def registrar_turno_web(
     session_id: str,
     telefono: str | None,

@@ -176,6 +176,68 @@ def identificar_terapeuta(telefono: str) -> str | None:
         return clave.title()
     return None
 
+
+# Modo equipo interno — IA completa para staff (lista blanca por WhatsApp)
+ENABLE_MODO_EQUIPO = os.getenv("ENABLE_MODO_EQUIPO", "1").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+EQUIPO_GEMINI_MODEL = os.getenv("EQUIPO_GEMINI_MODEL", "gemini-2.5-pro")
+EQUIPO_GEMINI_TEMPERATURE = float(os.getenv("EQUIPO_GEMINI_TEMPERATURE", "0.7"))
+EQUIPO_GEMINI_TIMEOUT = int(os.getenv("EQUIPO_GEMINI_TIMEOUT", "180"))
+
+
+def _cargar_equipo_inpulso_whatsapp() -> dict[str, str]:
+    """WhatsApp personal del equipo interno (modo IA completa)."""
+    base: dict[str, str] = {}
+    for clave, env_key in (
+        ("alessandro", "WHATSAPP_ALESSANDRO"),
+        ("recepcion", "RECEPCION_WHATSAPP"),
+    ):
+        n = _normalizar_whatsapp(os.getenv(env_key, ""))
+        if n:
+            base[clave] = n
+    raw = os.getenv("EQUIPO_INPULSO_WHATSAPP_JSON", "").strip()
+    if raw:
+        try:
+            for nombre, numero in json.loads(raw).items():
+                n = _normalizar_whatsapp(str(numero))
+                if n:
+                    base[str(nombre).lower().strip()] = n
+        except json.JSONDecodeError:
+            pass
+    return {k: v for k, v in base.items() if v}
+
+
+EQUIPO_INPULSO_WHATSAPP = _cargar_equipo_inpulso_whatsapp()
+
+EQUIPO_NOMBRES = {
+    "alessandro": "Alessandro",
+    "alessandro gayttan": "Alessandro",
+    "recepcion": "Recepción",
+}
+
+
+def identificar_miembro_equipo(telefono: str) -> str | None:
+    """Si el WhatsApp pertenece al equipo interno, devuelve nombre para modo IA completa."""
+    if not ENABLE_MODO_EQUIPO:
+        return None
+    norm = _normalizar_whatsapp(telefono)
+    ultimos_10 = norm[-10:] if len(norm) >= 10 else norm
+    vistos: set[str] = set()
+    for clave, numero in EQUIPO_INPULSO_WHATSAPP.items():
+        if not numero or numero in vistos:
+            continue
+        num10 = numero[-10:] if len(numero) >= 10 else numero
+        if numero != norm and num10 != ultimos_10:
+            continue
+        vistos.add(numero)
+        return EQUIPO_NOMBRES.get(clave, clave.replace("_", " ").title())
+    return None
+
+
 PALABRAS_LLEGADA = (
     "ya llegué",
     "ya llegue",

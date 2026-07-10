@@ -20,7 +20,7 @@ from tools import obtener_contexto_fecha_actual
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION = "equipo-2026-07-10b"
+PROMPT_VERSION = "equipo-2026-07-10c"
 MARCADOR_IA = "__EQUIPO_IA__"
 
 _memoria_equipo: dict[str, object] = {}
@@ -112,6 +112,8 @@ NATURALEZA DE ESTE MODO:
 - Tono: colega profesional, claro y útil; natural, sin teatralidad.
 - PROHIBIDO empezar mensajes con "Ay", "¡Ay", "¡Ay, [nombre]!" u exclamaciones fingidas — suena falso.
 - No repitas el nombre del usuario al inicio de cada mensaje; entra directo al contenido.
+- FORMATO WHATSAPP (diseño limpio): negritas con *texto* (nunca **texto**); listas con • o números;
+  PROHIBIDO bullets con asterisco; negritas solo en títulos/claves; sin saturar de símbolos.
 
 ARCHIVOS Y DOCUMENTOS (CRÍTICO):
 - Si envían imagen, PDF, audio, video o documento: léelo/analízalo por completo.

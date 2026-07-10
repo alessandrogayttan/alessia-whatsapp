@@ -15,6 +15,25 @@ def test_naturalizar_apertura_quita_ay():
     assert naturalizar_apertura("Ay, hola de nuevo! Qué linda noche.") == "Qué linda noche."
 
 
+def test_limpiar_formato_whatsapp_elegante():
+    from whatsapp import limpiar_formato_whatsapp
+
+    sucio = (
+        "*B. Canales Digitales:*\n"
+        "* *Contenido Orgánico:* ideas\n"
+        "**Testimonios:** casos reales\n"
+        "- FAQ: responde dudas"
+    )
+    limpio = limpiar_formato_whatsapp(sucio)
+    assert "**" not in limpio
+    assert "* *" not in limpio
+    assert "•" in limpio
+    assert "*Testimonios:*" in limpio
+    assert "*B. Canales Digitales:*" in limpio
+    assert limpio.splitlines()[1].startswith("•")
+    assert limpio.splitlines()[3].startswith("•")
+
+
 def test_normalizar_telefono_whatsapp():
     assert normalizar_telefono("5213326505999") == "523326505999"
 

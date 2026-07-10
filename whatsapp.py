@@ -147,8 +147,76 @@ def naturalizar_apertura(texto: str) -> str:
     return sin_muletilla or limpio
 
 
+def limpiar_formato_whatsapp(texto: str) -> str:
+    """
+    Normaliza markdown a formato limpio de WhatsApp.
+    Conserva negritas (*texto*) y evita asteriscos sueltos que ensucian el diseño.
+    """
+    if not texto:
+        return texto
+
+    limpio = texto.replace("\r\n", "\n")
+
+    # Markdown genérico → WhatsApp
+    limpio = re.sub(r"\*\*(.+?)\*\*", r"*\1*", limpio, flags=re.DOTALL)
+    limpio = re.sub(r"__(.+?)__", r"*\1*", limpio, flags=re.DOTALL)
+    limpio = re.sub(r"^#{1,6}\s*", "", limpio, flags=re.MULTILINE)
+
+    lineas_out: list[str] = []
+    for linea in limpio.split("\n"):
+        # Bullet markdown (* item / - item) → viñeta tipográfica
+        m = re.match(r"^(\s*)(?:\*|\-|•)\s+(.*)$", linea)
+        if m:
+            indent, resto = m.groups()
+            # Quita negrita mal anidada al inicio: "*Título:* resto" ya viene bien;
+            # evita "* *Título" residual
+            resto = re.sub(r"^\*\s+", "", resto)
+            lineas_out.append(f"{indent}• {_negrita_linea_limpia(resto)}")
+            continue
+        lineas_out.append(_negrita_linea_limpia(linea))
+
+    limpio = "\n".join(lineas_out)
+    limpio = re.sub(r"\n{3,}", "\n\n", limpio)
+    return limpio.strip()
+
+
+def _negrita_linea_limpia(linea: str) -> str:
+    """Deja solo pares *texto* válidos en una línea; quita * sueltos."""
+    if "*" not in linea:
+        return linea
+
+    # Colapsa ** residuales y * *
+    linea = re.sub(r"\*{2,}", "*", linea)
+    linea = re.sub(r"\*\s+\*", "*", linea)
+
+    partes: list[str] = []
+    i = 0
+    n = len(linea)
+    while i < n:
+        if linea[i] != "*":
+            partes.append(linea[i])
+            i += 1
+            continue
+        j = linea.find("*", i + 1)
+        if j == -1:
+            # Asterisco huérfano: no lo mostramos
+            i += 1
+            continue
+        interior = linea[i + 1 : j].strip()
+        if interior and "\n" not in interior:
+            partes.append(f"*{interior}*")
+            i = j + 1
+        else:
+            i += 1
+    return "".join(partes)
+
+
+def preparar_texto_whatsapp(texto: str) -> str:
+    return limpiar_formato_whatsapp(naturalizar_apertura(texto))
+
+
 def enviar_mensaje_whatsapp(telefono_destino: str, texto: str) -> bool:
-    partes = _partir_mensaje(naturalizar_apertura(texto))
+    partes = _partir_mensaje(preparar_texto_whatsapp(texto))
     ok = True
     for i, parte in enumerate(partes):
         if i > 0:

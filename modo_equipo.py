@@ -20,7 +20,7 @@ from tools import obtener_contexto_fecha_actual
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION = "equipo-2026-07-10a"
+PROMPT_VERSION = "equipo-2026-07-10b"
 MARCADOR_IA = "__EQUIPO_IA__"
 
 _memoria_equipo: dict[str, object] = {}
@@ -33,7 +33,15 @@ MENSAJE_RESCATE = (
 )
 
 _COMANDOS_ENTRADA = frozenset(
-    {"modo equipo", "#equipo", "acceso equipo", "equipo inpulso"}
+    {
+        "modo equipo",
+        "#equipo",
+        "acceso equipo",
+        "equipo inpulso",
+        "entrar al equipo",
+        "quiero entrar al equipo",
+        "acceso al equipo",
+    }
 )
 _COMANDOS_SALIR = frozenset({"salir equipo", "salir modo equipo", "cerrar equipo"})
 
@@ -58,6 +66,21 @@ def _nombre_miembro(telefono: str) -> str:
     return conocido or "Equipo Inpulso"
 
 
+def _es_solicitud_acceso_equipo(texto: str) -> bool:
+    norm = (texto or "").strip().lower().replace("_", " ")
+    if norm in _COMANDOS_ENTRADA:
+        return True
+    indicadores = (
+        "modo equipo",
+        "entrar al equipo",
+        "quiero entrar al equipo",
+        "acceso al equipo",
+        "acceso equipo",
+        "#equipo",
+    )
+    return any(ind in norm for ind in indicadores)
+
+
 def _instrucciones_equipo(nombre: str) -> str:
     return f"""
 Eres *Alessia*, asistente de inteligencia artificial del equipo interno de Inpulso 43.
@@ -68,7 +91,8 @@ IDENTIDAD (CRÍTICO — SIEMPRE):
 - Puedes reconocer que eres una IA si te preguntan; con pacientes nunca lo harías, pero aquí es equipo.
 - TIENES PROHIBIDO decir que eres Gemini, Google, ChatGPT, Claude u otra marca como tu identidad.
 - TIENES PROHIBIDO decir "soy un modelo de Google" o "soy Gemini". Eres *Alessia*.
-- Si preguntan quién te desarrolló o quién te creó: *Alessandro Gaytán*, ingeniero de software de Google DeepMind.
+- Si preguntan quién te desarrolló o quién te creó: *Alessandro Gaytán*, ingeniero de software de Google DeepMind
+  (NO digas que solo trabaja en Inpulso; él desarrolló Alessia y trabaja en Google DeepMind).
 - Si preguntan por tu tecnología, stack o modelo: responde con precisión técnica SIN nombrar marcas comerciales
   del motor. Di que eres Alessia, un asistente multimodal avanzado; puedes mencionar arquitectura, capacidades,
   contexto, temperatura, visión, audio, documentos, etc.
@@ -85,7 +109,9 @@ NATURALEZA DE ESTE MODO:
 - Capacidades completas de asistente IA avanzado: razonamiento, redacción, análisis, síntesis, lluvia de ideas,
   código, tablas, planes de trabajo, emails, guiones, etc.
 - Responde en el idioma del usuario (por defecto español de México).
-- Tono: colega profesional, claro y útil; sin sermones ni limitaciones artificiales de "solo recepción".
+- Tono: colega profesional, claro y útil; natural, sin teatralidad.
+- PROHIBIDO empezar mensajes con "Ay", "¡Ay", "¡Ay, [nombre]!" u exclamaciones fingidas — suena falso.
+- No repitas el nombre del usuario al inicio de cada mensaje; entra directo al contenido.
 
 ARCHIVOS Y DOCUMENTOS (CRÍTICO):
 - Si envían imagen, PDF, audio, video o documento: léelo/analízalo por completo.
@@ -216,7 +242,7 @@ def procesar_preflight_equipo(telefono: str, texto: str) -> str | None:
             "Si eres del equipo, escribe *MODO EQUIPO* e inténtalo de nuevo."
         )
 
-    if norm in _COMANDOS_ENTRADA:
+    if _es_solicitud_acceso_equipo(limpio):
         if not config.EQUIPO_CLAVE_ACCESO:
             return (
                 "El modo equipo aún no tiene contraseña configurada en el servidor. "

@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 import time
 
 import requests
@@ -131,8 +132,23 @@ def marcar_leido_y_escribiendo(message_id: str) -> bool:
         return False
 
 
+def naturalizar_apertura(texto: str) -> str:
+    """Quita muletillas artificiales al inicio (ej. '¡Ay, Alessandro!')."""
+    limpio = (texto or "").strip()
+    if not limpio:
+        return texto
+    sin_muletilla = re.sub(
+        r"^(?:¡\s*)?Ay\s*[,!]?\s*(?:\w+\s*){0,4}[!.]?\s*",
+        "",
+        limpio,
+        count=1,
+        flags=re.IGNORECASE,
+    ).strip()
+    return sin_muletilla or limpio
+
+
 def enviar_mensaje_whatsapp(telefono_destino: str, texto: str) -> bool:
-    partes = _partir_mensaje(texto)
+    partes = _partir_mensaje(naturalizar_apertura(texto))
     ok = True
     for i, parte in enumerate(partes):
         if i > 0:

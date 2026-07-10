@@ -8,6 +8,13 @@ from whatsapp import _partir_mensaje, normalizar_telefono
 import pytest
 
 
+def test_naturalizar_apertura_quita_ay():
+    from whatsapp import naturalizar_apertura
+
+    assert naturalizar_apertura("¡Ay, Alessandro! Hola mundo") == "Hola mundo"
+    assert naturalizar_apertura("Ay, hola de nuevo! Qué linda noche.") == "Qué linda noche."
+
+
 def test_normalizar_telefono_whatsapp():
     assert normalizar_telefono("5213326505999") == "523326505999"
 

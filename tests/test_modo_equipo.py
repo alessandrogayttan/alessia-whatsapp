@@ -27,6 +27,29 @@ def test_instrucciones_equipo_identidad():
     assert "Tu nombre es *Alessia*" in texto
 
 
+def test_preflight_entrada_frase_natural(monkeypatch, db_temp):
+    _reload_config(
+        monkeypatch,
+        db_temp,
+        ENABLE_MODO_EQUIPO="1",
+        EQUIPO_CLAVE_ACCESO="300322",
+    )
+    from modo_equipo import procesar_preflight_equipo
+
+    respuesta = procesar_preflight_equipo(
+        "5233123456789",
+        "Quiero entrar al equipo, soy Alessandro",
+    )
+    assert respuesta is not None
+    assert "contraseña" in respuesta.lower()
+
+
+def test_clave_por_defecto_300322(monkeypatch):
+    monkeypatch.delenv("EQUIPO_CLAVE_ACCESO", raising=False)
+    importlib.reload(config)
+    assert config.EQUIPO_CLAVE_ACCESO == "300322"
+
+
 def test_identificar_miembro_equipo_solo_nombre(monkeypatch):
     _reload_config(monkeypatch, WHATSAPP_ALESSANDRO="5233123456789")
     assert config.identificar_miembro_equipo("5233123456789") == "Alessandro"

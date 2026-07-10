@@ -25,6 +25,7 @@ from tools import (
     consultar_agenda,
     consultar_mis_citas,
     consultar_precios_y_servicios,
+    consultar_sitio_inpulso,
     consultar_talleres_y_servicios,
     notificar_emergencia_paciente,
     obtener_contexto_citas_paciente,
@@ -43,7 +44,7 @@ from tools import (
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION = "web-2026-07-02a"
+PROMPT_VERSION = "web-2026-07-09a"
 _genai_client = None
 _memoria_web: dict[str, object] = {}
 _prompt_version_web: dict[str, str] = {}
@@ -94,10 +95,11 @@ CANAL WEB — REGLAS ESPECÍFICAS:
    recibir recibo automático, recordatorios de cita, escribir *MI CITA* o *HABLAR CON PERSONA*, invítalos con calidez
    a continuar por WhatsApp: {wa}
 2. Antes de *agendar cita* o *inscribir a taller*, pide su número de WhatsApp (10 dígitos México) y nombre completo.
-   Cuando los tengas, úsalos en las herramientas.
-3. Teléfono del visitante en esta sesión: {tel_ctx}.
-4. Nombre en sesión web: {nombre or "(aún no)"}.
-5. ID de sesión interna (no lo menciones al usuario): {session_id}.
+3. En cada mensaje recibes [Sistema: WEB VIVA] con contenido actualizado de inpulso43.com — úsalo como fuente principal.
+4. Si falta detalle sobre Inpulso, llama 'consultar_sitio_inpulso' antes de responder. No digas que no sabes si puedes leer el sitio.
+5. Preguntas generales (bienestar, emociones, etc.): responde con empatía; datos de Inpulso siempre desde la web oficial.
+6. Teléfono del visitante en esta sesión: {tel_ctx}.
+7. Nombre en sesión web: {nombre or "(aún no)"}.
 
 ORIENTACIÓN INICIAL (modelo 360° mente · cuerpo · propósito):
 - Si no saben qué especialista necesitan, pregunta qué síntomas o motivo les trae ANTES de recomendar.
@@ -113,7 +115,8 @@ INFORMACIÓN CLÍNICA Y WEB:
 - Cancelación con menos de 24 h: penalización 50%.
 
 HERRAMIENTAS:
-- Info talleres/precios: consultar_talleres_y_servicios, consultar_precios_y_servicios.
+- Info del sitio en vivo: consultar_sitio_inpulso (prioridad para talleres, equipo, precios, textos nuevos).
+- Info talleres/precios Drive: consultar_talleres_y_servicios, consultar_precios_y_servicios.
 - Disponibilidad: consultar_agenda. Agendar: agendar_cita (teléfono obligatorio).
 - Ver citas (si ya vinculó teléfono): consultar_mis_citas.
 - Reagendar: reagendar_cita_inteligente → reagendar_cita_atomica.
@@ -138,6 +141,7 @@ def _herramientas_web():
         obtener_ruta_inpulso,
         calcular_gasto_combustible,
         consultar_precios_y_servicios,
+        consultar_sitio_inpulso,
         consultar_talleres_y_servicios,
         registrar_paciente_taller,
         registrar_interes_taller,
@@ -215,6 +219,10 @@ def envolver_mensaje_web(
             "[Sistema: El visitante aún no ha dado su WhatsApp. "
             "Pídelo antes de agendar o inscribir a talleres.]\n"
         )
+    if config.ENABLE_INPULSO_WEB_LIVE:
+        from inpulso_web_live import obtener_contexto_web_en_vivo
+
+        ctx += obtener_contexto_web_en_vivo(mensaje)
     return ctx + mensaje
 
 

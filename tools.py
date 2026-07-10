@@ -684,6 +684,26 @@ def consultar_talleres_y_servicios(especialista: str = "todos"):
     return consultar_catalogo_drive(especialista)
 
 
+def consultar_sitio_inpulso(consulta: str, pagina: str = "auto") -> str:
+    """Lee inpulso43.com en vivo (página oficial) según la pregunta del paciente."""
+    from inpulso_web_live import consultar_sitio_inpulso as _consultar
+
+    return _consultar(consulta, pagina)
+
+
+def _pista_texto_desde_contenido(contenido) -> str:
+    if isinstance(contenido, str):
+        return contenido
+    if isinstance(contenido, list):
+        partes = []
+        for parte in contenido:
+            texto = getattr(parte, "text", None)
+            if texto:
+                partes.append(str(texto))
+        return " ".join(partes)
+    return ""
+
+
 def _inicio_slots_disponibles(base_date: datetime.datetime) -> datetime.datetime:
     """Primera hora ofrecible: 7:00 am, o la hora actual si la fecha es hoy."""
     inicio_dia = base_date.replace(hour=7, minute=0, second=0, microsecond=0)
@@ -1088,6 +1108,11 @@ def envolver_mensaje_con_contexto_paciente(telefono: str, contenido):
         )
     else:
         ctx += obtener_contexto_citas_paciente(telefono)
+    pista = _pista_texto_desde_contenido(contenido)
+    if config.ENABLE_INPULSO_WEB_LIVE:
+        from inpulso_web_live import obtener_contexto_web_en_vivo
+
+        ctx += obtener_contexto_web_en_vivo(pista)
     if isinstance(contenido, str):
         return ctx + contenido
     if isinstance(contenido, list):

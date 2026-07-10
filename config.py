@@ -336,6 +336,14 @@ WHATSAPP_PACIENTES_NUMERO = _normalizar_whatsapp(
 WHATSAPP_PACIENTES_URL = (
     f"https://wa.me/{WHATSAPP_PACIENTES_NUMERO}" if WHATSAPP_PACIENTES_NUMERO else ""
 )
+
+# Contenido en vivo de inpulso43.com en cada respuesta
+ENABLE_INPULSO_WEB_LIVE = os.getenv("ENABLE_INPULSO_WEB_LIVE", "1").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
 ESCALACION_REAVISO_MINUTOS = int(os.getenv("ESCALACION_REAVISO_MINUTOS", "15"))
 
 # Sesiones online (Tier 4.15) — link por defecto o por terapeuta

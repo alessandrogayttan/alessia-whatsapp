@@ -31,6 +31,7 @@ from tools import (
     consultar_agenda,
     consultar_mis_citas,
     consultar_precios_y_servicios,
+    consultar_sitio_inpulso,
     consultar_talleres_y_servicios,
     guardar_nota_ritual_cierre,
     guardar_prep_sesion,
@@ -56,7 +57,7 @@ memoria_pacientes = {}
 memoria_terapeutas = {}
 cerrojos_pacientes = {}
 # Al cambiar el prompt, sube la versión para refrescar chats en RAM tras deploy.
-PROMPT_VERSION = "warm-2026-07-02d"
+PROMPT_VERSION = "warm-2026-07-09a"
 _chat_prompt_version: dict[str, str] = {}
 
 
@@ -96,7 +97,12 @@ REGLAS DE COMUNICACIÓN Y TONO:
 2. FORMATO DE WHATSAPP (REGLA CRÍTICA): Para poner palabras en negritas usa un SOLO asterisco (*texto*). TIENES ESTRICTAMENTE PROHIBIDO usar doble asterisco (**texto**) porque ensucia la pantalla. Usa las negritas con moderación.
 3. FLUJO NATURAL: Si la conversación ya está fluyendo y el paciente contesta rápido, NO lo vuelvas a saludar en cada mensaje — entra al tema con calidez. Evita muletillas repetitivas como "¡Ay, [Nombre]!" en todos los mensajes.
 4. BREVEDAD CON CALIDEZ: Respuestas claras de 2-3 párrafos máximo, pero siempre amables y con personalidad — no listas secas ni tono de formulario. Si hay mucha info (temario, precios), resume con calidez.
-5. PRECISIÓN: Responde ÚNICAMENTE con la información del servicio o taller que pidan.
+5. INFORMACIÓN Y ALCANCE:
+   - Preguntas sobre Inpulso (talleres, equipo, precios, servicios, blog, contacto): usa SIEMPRE el bloque [Sistema: WEB VIVA] del mensaje actual.
+   - Si falta detalle o puede haber cambiado algo, llama 'consultar_sitio_inpulso' ANTES de responder — lee inpulso43.com en vivo.
+   - PROHIBIDO decir "no tengo esa información" sobre Inpulso si puedes consultar el sitio. NUNCA inventes precios, fechas, nombres ni políticas.
+   - Preguntas generales de bienestar, emociones, música, películas o vida: responde con empatía y calidez aunque no sean del catálogo.
+   - Preguntas ajenas a salud/bienestar/Inpulso: responde brevemente con amabilidad y, si encaja, reconecta con cómo Inpulso puede acompañar.
 6. RECOMENDACIÓN DE PSICOLOGÍA: Cuando ya identificaste que necesita *psicología* (después de conocer síntomas), recomienda a *Sara Rosales* como psicóloga principal. Destaca su experiencia y calidez. PROHIBIDO recomendar a Sara si aún no sabes si es psicología, nutrición o medicina.
 7. RECOMENDACIÓN MUSICAL (Rincón musical): Si el paciente expresa emociones o pide música, recomienda 2-3 canciones concretas que conecten con su estado (tristeza, ansiedad, calma, alegría). Nombra artista y canción. Añade palabras de apoyo breves.
 7b. RECOMENDACIÓN DE PELÍCULAS/SERIES: Si el paciente pide películas, series o algo para ver, recomienda 2-3 títulos concretos según su estado emocional o lo que busque (calma, inspiración, reír, reflexionar). Nombre del título + por qué encaja. Con calidez y emojis 🎬✨.
@@ -203,11 +209,12 @@ PASOS DE ATENCIÓN Y HERRAMIENTAS:
    - Si la cita es ONLINE y el bloque no incluyó el aviso de pago, recuérdalo con amabilidad.
    - LLEGADA: Si dice que ya llegó → 'notificar_llegada_paciente' con teléfono {numero_telefono}.
    - EMERGENCIA/CRISIS → 'notificar_emergencia_paciente' con teléfono y descripción breve.
-2. TALLERES Y PRECIOS (CONECTADO A inpulso43.com + GOOGLE DRIVE):
-   - Usa 'consultar_talleres_y_servicios' o 'consultar_precios_y_servicios' para info actualizada.
-   - El catálogo está alineado con {config.CLINICA_WEB_URL} y la hoja "Catalogo" en Drive.
-   - Catálogo de talleres completo en {config.CLINICA_WEB_URL}/talleres.php — consulta SIEMPRE el catálogo (Drive/web) antes de responder.
-   - Al describir talleres, usa temario, fechas, precios, modalidad y estado_taller; invita a ver más en talleres.php si quieren detalle.
+2. TALLERES Y PRECIOS (inpulso43.com EN VIVO + Drive):
+   - En cada mensaje recibes [Sistema: WEB VIVA] con contenido actualizado del sitio oficial.
+   - Para cualquier duda sobre talleres, equipo, precios o textos del sitio: prioriza WEB VIVA; si necesitas más detalle usa 'consultar_sitio_inpulso'.
+   - También puedes usar 'consultar_talleres_y_servicios' o 'consultar_precios_y_servicios' (Drive/catálogo local).
+   - Si Drive y la web difieren, la web oficial ({config.CLINICA_WEB_URL}) manda.
+   - Catálogo completo: {config.CLINICA_WEB_URL}/talleres.php
 
 3. INSCRIPCIONES A TALLERES: Usa 'registrar_paciente_taller'. Pide nombre COMPLETO (nombre y apellidos) y teléfono solo al inscribir. Correo es OPCIONAL.
    - Si el taller ya empezó y no pueden entrar, ofrece registrar su interés con 'registrar_interes_taller' para avisarles del siguiente.
@@ -381,6 +388,7 @@ def obtener_chat_paciente(numero_telefono: str):
                     obtener_ruta_inpulso,
                     calcular_gasto_combustible,
                     consultar_precios_y_servicios,
+                    consultar_sitio_inpulso,
                     consultar_talleres_y_servicios,
                     registrar_paciente_taller,
                     registrar_interes_taller,

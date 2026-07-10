@@ -229,6 +229,14 @@ def init_db():
                 );
                 CREATE INDEX IF NOT EXISTS idx_conversacion_clave
                     ON conversacion_mensajes(clave, id);
+                CREATE TABLE IF NOT EXISTS equipo_acceso (
+                    telefono TEXT PRIMARY KEY,
+                    sesion_activa INTEGER NOT NULL DEFAULT 0,
+                    esperando_clave INTEGER NOT NULL DEFAULT 0,
+                    nombre_miembro TEXT,
+                    expira_at TEXT,
+                    actualizado_at TEXT
+                );
                 CREATE VIRTUAL TABLE IF NOT EXISTS inpulso_rag_fts USING fts5(
                     fuente,
                     url,
@@ -1392,3 +1400,103 @@ def contar_chunks_rag() -> int:
     with _transaction() as conn:
         row = conn.execute("SELECT COUNT(*) AS n FROM inpulso_rag_fts").fetchone()
         return int(row["n"]) if row else 0
+
+
+def _fila_equipo_acceso(telefono: str) -> dict | None:
+    with _transaction() as conn:
+        row = conn.execute(
+            "SELECT * FROM equipo_acceso WHERE telefono = ?",
+            (telefono,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def marcar_esperando_clave_equipo(telefono: str) -> None:
+    ahora = datetime.utcnow().isoformat()
+    with _transaction() as conn:
+        conn.execute(
+            """
+            INSERT INTO equipo_acceso (telefono, sesion_activa, esperando_clave, actualizado_at)
+            VALUES (?, 0, 1, ?)
+            ON CONFLICT(telefono) DO UPDATE SET
+                esperando_clave = 1,
+                sesion_activa = 0,
+                expira_at = NULL,
+                actualizado_at = excluded.actualizado_at
+            """,
+            (telefono, ahora),
+        )
+
+
+def cancelar_esperando_clave_equipo(telefono: str) -> None:
+    with _transaction() as conn:
+        conn.execute(
+            """
+            UPDATE equipo_acceso
+            SET esperando_clave = 0, actualizado_at = ?
+            WHERE telefono = ?
+            """,
+            (datetime.utcnow().isoformat(), telefono),
+        )
+
+
+def esperando_clave_equipo(telefono: str) -> bool:
+    fila = _fila_equipo_acceso(telefono)
+    return bool(fila and fila.get("esperando_clave"))
+
+
+def activar_sesion_equipo(telefono: str, nombre_miembro: str, horas: int) -> None:
+    ahora = datetime.utcnow()
+    expira = (ahora + timedelta(hours=horas)).isoformat()
+    with _transaction() as conn:
+        conn.execute(
+            """
+            INSERT INTO equipo_acceso (
+                telefono, sesion_activa, esperando_clave, nombre_miembro, expira_at, actualizado_at
+            ) VALUES (?, 1, 0, ?, ?, ?)
+            ON CONFLICT(telefono) DO UPDATE SET
+                sesion_activa = 1,
+                esperando_clave = 0,
+                nombre_miembro = excluded.nombre_miembro,
+                expira_at = excluded.expira_at,
+                actualizado_at = excluded.actualizado_at
+            """,
+            (telefono, nombre_miembro, expira, ahora.isoformat()),
+        )
+
+
+def cerrar_sesion_equipo(telefono: str) -> None:
+    with _transaction() as conn:
+        conn.execute(
+            """
+            UPDATE equipo_acceso
+            SET sesion_activa = 0, esperando_clave = 0, expira_at = NULL, actualizado_at = ?
+            WHERE telefono = ?
+            """,
+            (datetime.utcnow().isoformat(), telefono),
+        )
+
+
+def sesion_equipo_activa(telefono: str) -> bool:
+    fila = _fila_equipo_acceso(telefono)
+    if not fila or not fila.get("sesion_activa"):
+        return False
+    expira_at = fila.get("expira_at")
+    if not expira_at:
+        return True
+    try:
+        expira = datetime.fromisoformat(expira_at)
+    except ValueError:
+        cerrar_sesion_equipo(telefono)
+        return False
+    if datetime.utcnow() >= expira:
+        cerrar_sesion_equipo(telefono)
+        return False
+    return True
+
+
+def obtener_nombre_equipo_sesion(telefono: str) -> str:
+    fila = _fila_equipo_acceso(telefono)
+    if fila and fila.get("nombre_miembro"):
+        return str(fila["nombre_miembro"])
+    return "Equipo Inpulso"

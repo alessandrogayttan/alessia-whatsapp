@@ -316,7 +316,9 @@ def webhook():
 
 
 def _registrar_consentimiento_si_aplica(numero: str):
-    if config.identificar_terapeuta(numero) or config.identificar_miembro_equipo(numero):
+    from modo_equipo import sesion_equipo_activa
+
+    if config.identificar_terapeuta(numero) or sesion_equipo_activa(numero):
         return
     if storage.necesita_consentimiento(numero):
         storage.registrar_consentimiento(numero)
@@ -401,7 +403,13 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
     if tipo_mensaje == "text":
         texto_paciente = mensaje_info["text"]["body"].strip()
 
-        if config.identificar_miembro_equipo(numero_remitente):
+        from modo_equipo import MARCADOR_IA, procesar_preflight_equipo, sesion_equipo_activa
+
+        preflight = procesar_preflight_equipo(numero_remitente, texto_paciente)
+        if preflight is not None and preflight != MARCADOR_IA:
+            enviar_mensaje_whatsapp(numero_remitente, preflight)
+            return None
+        if preflight == MARCADOR_IA or sesion_equipo_activa(numero_remitente):
             return texto_paciente
 
         es_terapeuta = config.identificar_terapeuta(numero_remitente)
@@ -636,8 +644,12 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
 
         if file_bytes:
             caption = mensaje_info.get(tipo_clave, {}).get("caption", "")
-            miembro_equipo = config.identificar_miembro_equipo(numero_remitente)
-            if miembro_equipo:
+            from modo_equipo import sesion_equipo_activa
+
+            if sesion_equipo_activa(numero_remitente):
+                from modo_equipo import _nombre_miembro
+
+                miembro_equipo = _nombre_miembro(numero_remitente)
                 if tipo_mensaje in ("audio", "voice"):
                     texto_descriptivo = (
                         "NOTA DE VOZ del equipo Inpulso. Transcribe y responde con lo que necesiten."

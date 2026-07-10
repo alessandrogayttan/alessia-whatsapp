@@ -1,12 +1,14 @@
-"""Modo equipo Inpulso — Alessia como asistente IA completa para el staff interno."""
+"""Modo equipo Inpulso — Alessia como asistente IA completa tras contraseña."""
 from __future__ import annotations
 
 import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 
 from google.genai import types
 
 import config
+import storage
 from conversacion import (
     clave_conversacion_equipo,
     historial_para_gemini,
@@ -18,14 +20,22 @@ from tools import obtener_contexto_fecha_actual
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION = "equipo-2026-07-09b"
+PROMPT_VERSION = "equipo-2026-07-10a"
+MARCADOR_IA = "__EQUIPO_IA__"
+
 _memoria_equipo: dict[str, object] = {}
 _prompt_version_equipo: dict[str, str] = {}
+_modelo_activo_equipo: dict[str, str] = {}
 _cerrojos_equipo: dict[str, threading.Lock] = {}
 
 MENSAJE_RESCATE = (
     "Tuve un problema técnico procesando eso. ¿Me lo reenvías o lo partimos en pasos más pequeños?"
 )
+
+_COMANDOS_ENTRADA = frozenset(
+    {"modo equipo", "#equipo", "acceso equipo", "equipo inpulso"}
+)
+_COMANDOS_SALIR = frozenset({"salir equipo", "salir modo equipo", "cerrar equipo"})
 
 _GENAI = None
 
@@ -39,6 +49,13 @@ def _cliente():
             raise RuntimeError("GEMINI_API_KEY no configurada")
         _GENAI = genai.Client(api_key=config.GEMINI_API_KEY)
     return _GENAI
+
+
+def _nombre_miembro(telefono: str) -> str:
+    if sesion_equipo_activa(telefono):
+        return storage.obtener_nombre_equipo_sesion(telefono)
+    conocido = config.identificar_miembro_equipo(telefono)
+    return conocido or "Equipo Inpulso"
 
 
 def _instrucciones_equipo(nombre: str) -> str:
@@ -91,25 +108,21 @@ Eres la herramienta de productividad del equipo. Sé excelente.
 """
 
 
-def _obtener_chat_equipo(telefono: str, nombre: str):
-    clave_mem = f"{telefono}:{PROMPT_VERSION}"
+def _crear_chat_equipo(telefono: str, nombre: str, modelo: str):
     conv = clave_conversacion_equipo(telefono)
-    if clave_mem not in _memoria_equipo or _prompt_version_equipo.get(telefono) != PROMPT_VERSION:
-        _memoria_equipo[clave_mem] = _cliente().chats.create(
-            model=config.EQUIPO_GEMINI_MODEL,
-            history=historial_para_gemini(conv),
-            config=types.GenerateContentConfig(
-                system_instruction=_instrucciones_equipo(nombre),
-                temperature=config.EQUIPO_GEMINI_TEMPERATURE,
-            ),
-        )
-        _prompt_version_equipo[telefono] = PROMPT_VERSION
-    return _memoria_equipo[clave_mem]
+    return _cliente().chats.create(
+        model=modelo,
+        history=historial_para_gemini(conv),
+        config=types.GenerateContentConfig(
+            system_instruction=_instrucciones_equipo(nombre),
+            temperature=config.EQUIPO_GEMINI_TEMPERATURE,
+        ),
+    )
 
 
 def envolver_mensaje_equipo(telefono: str, contenido):
     """Contexto mínimo para el equipo — sin reglas de paciente."""
-    nombre = config.identificar_miembro_equipo(telefono) or "Equipo"
+    nombre = _nombre_miembro(telefono)
     ctx = (
         obtener_contexto_fecha_actual()
         + f"[Sistema: MODO EQUIPO INTERNO — {nombre}. Asistente IA completa.]\n"
@@ -121,53 +134,177 @@ def envolver_mensaje_equipo(telefono: str, contenido):
     return contenido
 
 
+def sesion_equipo_activa(telefono: str) -> bool:
+    if not config.ENABLE_MODO_EQUIPO:
+        return False
+    return storage.sesion_equipo_activa(telefono)
+
+
 def es_modo_equipo(telefono: str) -> bool:
-    return bool(config.ENABLE_MODO_EQUIPO and config.identificar_miembro_equipo(telefono))
+    return sesion_equipo_activa(telefono)
+
+
+def _clave_correcta(texto: str) -> bool:
+    clave = config.EQUIPO_CLAVE_ACCESO
+    if not clave:
+        return False
+    return texto.strip() == clave
+
+
+def _mensaje_pedir_clave() -> str:
+    return (
+        "🔐 *Modo equipo interno*\n\n"
+        "Envía la contraseña de acceso (solo personal de Inpulso).\n"
+        "Para cancelar, escribe *SALIR EQUIPO*."
+    )
+
+
+def _mensaje_acceso_ok(nombre: str) -> str:
+    horas = config.EQUIPO_SESION_HORAS
+    return (
+        f"✅ Acceso equipo activado por *{horas} horas*, {nombre}.\n\n"
+        "Soy *Alessia* en modo completo — archivos, redacción, análisis, lo que necesites.\n"
+        "Para salir escribe *SALIR EQUIPO*."
+    )
+
+
+def procesar_preflight_equipo(telefono: str, texto: str) -> str | None:
+    """
+    Maneja comandos de acceso al modo equipo.
+    - str: mensaje ya resuelto para enviar al usuario (no pasar a IA)
+    - MARCADOR_IA: sesión activa, continuar con IA de equipo
+    - None: no aplica modo equipo, flujo paciente normal
+    """
+    if not config.ENABLE_MODO_EQUIPO:
+        return None
+
+    limpio = (texto or "").strip()
+    norm = limpio.lower().replace("_", " ")
+
+    if norm in _COMANDOS_SALIR:
+        if sesion_equipo_activa(telefono) or storage.esperando_clave_equipo(telefono):
+            cerrar_sesion_equipo(telefono)
+            return (
+                "Listo, salí del modo equipo. Vuelvo a recepción 😊\n"
+                "Para entrar de nuevo escribe *MODO EQUIPO*."
+            )
+        return None
+
+    if sesion_equipo_activa(telefono):
+        if norm in _COMANDOS_ENTRADA:
+            return (
+                "Ya estás en modo equipo ✅ ¿En qué te ayudo?\n"
+                "Para salir escribe *SALIR EQUIPO*."
+            )
+        return MARCADOR_IA
+
+    if storage.esperando_clave_equipo(telefono):
+        if not config.EQUIPO_CLAVE_ACCESO:
+            storage.cancelar_esperando_clave_equipo(telefono)
+            return (
+                "El modo equipo no está configurado en el servidor todavía. "
+                "Avísale a Alessandro."
+            )
+        if _clave_correcta(limpio):
+            nombre = _nombre_miembro(telefono)
+            activar_sesion_equipo(telefono, nombre)
+            invalidar_chat_equipo(telefono)
+            return _mensaje_acceso_ok(nombre)
+        storage.cancelar_esperando_clave_equipo(telefono)
+        return (
+            "Contraseña incorrecta 🔒 Sigo en modo recepción.\n"
+            "Si eres del equipo, escribe *MODO EQUIPO* e inténtalo de nuevo."
+        )
+
+    if norm in _COMANDOS_ENTRADA:
+        if not config.EQUIPO_CLAVE_ACCESO:
+            return (
+                "El modo equipo aún no tiene contraseña configurada en el servidor. "
+                "Avísale a Alessandro."
+            )
+        storage.marcar_esperando_clave_equipo(telefono)
+        return _mensaje_pedir_clave()
+
+    return None
+
+
+def activar_sesion_equipo(telefono: str, nombre: str) -> None:
+    storage.activar_sesion_equipo(telefono, nombre, config.EQUIPO_SESION_HORAS)
+
+
+def cerrar_sesion_equipo(telefono: str) -> None:
+    storage.cerrar_sesion_equipo(telefono)
+    invalidar_chat_equipo(telefono)
 
 
 def procesar_mensaje_equipo(telefono: str, contenido):
-    """Procesa mensaje de un miembro del equipo y devuelve texto de respuesta."""
-    nombre = config.identificar_miembro_equipo(telefono)
-    if not nombre:
+    """Procesa mensaje con sesión de equipo activa y devuelve texto de respuesta."""
+    if not sesion_equipo_activa(telefono):
         return None
+
+    nombre = storage.obtener_nombre_equipo_sesion(telefono)
 
     if telefono not in _cerrojos_equipo:
         _cerrojos_equipo[telefono] = threading.Lock()
 
     with _cerrojos_equipo[telefono]:
-        from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
         import time
 
-        chat = _obtener_chat_equipo(telefono, nombre)
-        timeout = config.EQUIPO_GEMINI_TIMEOUT
+        modelos = [config.EQUIPO_GEMINI_MODEL]
+        if config.EQUIPO_GEMINI_MODEL_RESPALDO not in modelos:
+            modelos.append(config.EQUIPO_GEMINI_MODEL_RESPALDO)
 
-        for intento in range(2):
-            try:
-                with ThreadPoolExecutor(max_workers=1) as pool:
-                    future = pool.submit(chat.send_message, contenido)
-                    respuesta = future.result(timeout=timeout)
-                texto = (getattr(respuesta, "text", None) or "").strip()
-                if texto:
-                    entrada = texto_desde_contenido(contenido)
-                    if not entrada:
-                        entrada = "[archivo multimedia del equipo]"
-                    registrar_turno_equipo(telefono, entrada, texto)
-                    return texto
-            except FuturesTimeout:
-                logger.error("Timeout Gemini equipo %s intento %s", telefono, intento + 1)
-                registrar_fallo_gemini(f"equipo:{telefono}")
-                if intento == 0:
-                    time.sleep(2)
-                    continue
-            except Exception as e:
-                logger.exception("Error Gemini equipo %s: %s", telefono, e)
-                registrar_fallo_gemini(f"equipo:{telefono}")
-                if intento == 0:
-                    time.sleep(2)
-                    continue
-                break
+        timeout = config.EQUIPO_GEMINI_TIMEOUT
+        ultimo_error: Exception | None = None
+
+        for modelo in modelos:
+            chat = _obtener_chat_equipo_con_modelo(telefono, nombre, modelo)
+            for intento in range(2):
+                try:
+                    with ThreadPoolExecutor(max_workers=1) as pool:
+                        future = pool.submit(chat.send_message, contenido)
+                        respuesta = future.result(timeout=timeout)
+                    texto = (getattr(respuesta, "text", None) or "").strip()
+                    if texto:
+                        entrada = texto_desde_contenido(contenido)
+                        if not entrada:
+                            entrada = "[archivo multimedia del equipo]"
+                        registrar_turno_equipo(telefono, entrada, texto)
+                        return texto
+                except FuturesTimeout as e:
+                    ultimo_error = e
+                    logger.error(
+                        "Timeout Gemini equipo %s modelo=%s intento=%s",
+                        telefono,
+                        modelo,
+                        intento + 1,
+                    )
+                    registrar_fallo_gemini(f"equipo:{telefono}")
+                    if intento == 0:
+                        time.sleep(2)
+                        continue
+                except Exception as e:
+                    ultimo_error = e
+                    logger.exception(
+                        "Error Gemini equipo %s modelo=%s: %s", telefono, modelo, e
+                    )
+                    registrar_fallo_gemini(f"equipo:{telefono}")
+                    invalidar_chat_equipo(telefono)
+                    break
+
+        if ultimo_error:
+            logger.error("Modo equipo falló para %s: %s", telefono, ultimo_error)
 
     return MENSAJE_RESCATE
+
+
+def _obtener_chat_equipo_con_modelo(telefono: str, nombre: str, modelo: str):
+    clave_mem = f"{telefono}:{PROMPT_VERSION}:{modelo}"
+    if clave_mem not in _memoria_equipo:
+        _memoria_equipo[clave_mem] = _crear_chat_equipo(telefono, nombre, modelo)
+        _prompt_version_equipo[telefono] = PROMPT_VERSION
+        _modelo_activo_equipo[telefono] = modelo
+    return _memoria_equipo[clave_mem]
 
 
 def invalidar_chat_equipo(telefono: str):
@@ -175,3 +312,4 @@ def invalidar_chat_equipo(telefono: str):
         if k.startswith(f"{telefono}:"):
             _memoria_equipo.pop(k, None)
     _prompt_version_equipo.pop(telefono, None)
+    _modelo_activo_equipo.pop(telefono, None)

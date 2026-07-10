@@ -184,9 +184,12 @@ ENABLE_MODO_EQUIPO = os.getenv("ENABLE_MODO_EQUIPO", "1").strip().lower() in (
     "yes",
     "on",
 )
-EQUIPO_GEMINI_MODEL = os.getenv("EQUIPO_GEMINI_MODEL", "gemini-2.5-pro")
+EQUIPO_GEMINI_MODEL = os.getenv("EQUIPO_GEMINI_MODEL", "gemini-2.5-flash")
+EQUIPO_GEMINI_MODEL_RESPALDO = os.getenv("EQUIPO_GEMINI_MODEL_RESPALDO", "gemini-2.5-flash")
 EQUIPO_GEMINI_TEMPERATURE = float(os.getenv("EQUIPO_GEMINI_TEMPERATURE", "0.7"))
-EQUIPO_GEMINI_TIMEOUT = int(os.getenv("EQUIPO_GEMINI_TIMEOUT", "180"))
+EQUIPO_GEMINI_TIMEOUT = int(os.getenv("EQUIPO_GEMINI_TIMEOUT", "120"))
+EQUIPO_CLAVE_ACCESO = os.getenv("EQUIPO_CLAVE_ACCESO", "").strip()
+EQUIPO_SESION_HORAS = int(os.getenv("EQUIPO_SESION_HORAS", "12"))
 
 
 def _cargar_equipo_inpulso_whatsapp() -> dict[str, str]:
@@ -221,9 +224,7 @@ EQUIPO_NOMBRES = {
 
 
 def identificar_miembro_equipo(telefono: str) -> str | None:
-    """Si el WhatsApp pertenece al equipo interno, devuelve nombre para modo IA completa."""
-    if not ENABLE_MODO_EQUIPO:
-        return None
+    """Si el WhatsApp está en la lista interna, devuelve nombre (solo para etiqueta, no activa modo)."""
     norm = _normalizar_whatsapp(telefono)
     ultimos_10 = norm[-10:] if len(norm) >= 10 else norm
     vistos: set[str] = set()

@@ -1,7 +1,20 @@
-"""Tests modo equipo interno — IA completa para staff."""
-import os
+"""Tests modo equipo interno — acceso por contraseña."""
+import importlib
 
-import pytest
+import config
+import storage
+
+
+def _reload_config(monkeypatch, db_path=None, **env):
+    if db_path is None:
+        import config as cfg
+
+        db_path = cfg.DATABASE_PATH
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    importlib.reload(config)
+    monkeypatch.setattr(config, "DATABASE_PATH", db_path)
+    storage.init_db()
 
 
 def test_instrucciones_equipo_identidad():
@@ -14,62 +27,85 @@ def test_instrucciones_equipo_identidad():
     assert "Tu nombre es *Alessia*" in texto
 
 
-def test_identificar_miembro_equipo_alessandro(monkeypatch):
-    monkeypatch.setenv("ENABLE_MODO_EQUIPO", "1")
-    monkeypatch.setenv("WHATSAPP_ALESSANDRO", "5233123456789")
-
-    import importlib
-
-    import config
-
-    importlib.reload(config)
-
+def test_identificar_miembro_equipo_solo_nombre(monkeypatch):
+    _reload_config(monkeypatch, WHATSAPP_ALESSANDRO="5233123456789")
     assert config.identificar_miembro_equipo("5233123456789") == "Alessandro"
-    assert config.identificar_miembro_equipo("52133123456789") == "Alessandro"
     assert config.identificar_miembro_equipo("5233999999999") is None
 
 
-def test_identificar_miembro_equipo_desactivado(monkeypatch):
-    monkeypatch.setenv("ENABLE_MODO_EQUIPO", "0")
-    monkeypatch.setenv("WHATSAPP_ALESSANDRO", "5233123456789")
+def test_preflight_pide_clave(monkeypatch, db_temp):
+    _reload_config(
+        monkeypatch,
+        db_temp,
+        ENABLE_MODO_EQUIPO="1",
+        EQUIPO_CLAVE_ACCESO="inpulso2026",
+    )
+    from modo_equipo import procesar_preflight_equipo
 
-    import importlib
-
-    import config
-
-    importlib.reload(config)
-
-    assert config.identificar_miembro_equipo("5233123456789") is None
-
-
-def test_envolver_mensaje_equipo(monkeypatch):
-    monkeypatch.setenv("ENABLE_MODO_EQUIPO", "1")
-    monkeypatch.setenv("WHATSAPP_ALESSANDRO", "5233123456789")
-
-    import importlib
-
-    import config
-    from modo_equipo import envolver_mensaje_equipo
-
-    importlib.reload(config)
-
-    resultado = envolver_mensaje_equipo("5233123456789", "Organiza este borrador")
-    assert "MODO EQUIPO INTERNO" in resultado
-    assert "Alessandro" in resultado
-    assert "Organiza este borrador" in resultado
+    respuesta = procesar_preflight_equipo("5233123456789", "MODO EQUIPO")
+    assert respuesta is not None
+    assert "contraseña" in respuesta.lower()
+    assert storage.esperando_clave_equipo("5233123456789")
 
 
-def test_procesar_mensaje_ia_rutea_equipo(monkeypatch):
-    monkeypatch.setenv("ENABLE_MODO_EQUIPO", "1")
-    monkeypatch.setenv("WHATSAPP_ALESSANDRO", "5233123456789")
+def test_preflight_clave_correcta_activa_sesion(monkeypatch, db_temp):
+    _reload_config(
+        monkeypatch,
+        db_temp,
+        ENABLE_MODO_EQUIPO="1",
+        EQUIPO_CLAVE_ACCESO="inpulso2026",
+        WHATSAPP_ALESSANDRO="5233123456789",
+        EQUIPO_SESION_HORAS="8",
+    )
+    from modo_equipo import MARCADOR_IA, procesar_preflight_equipo, sesion_equipo_activa
 
-    import importlib
+    procesar_preflight_equipo("5233123456789", "MODO EQUIPO")
+    respuesta = procesar_preflight_equipo("5233123456789", "inpulso2026")
+    assert respuesta is not None
+    assert "activado" in respuesta.lower()
+    assert sesion_equipo_activa("5233123456789")
+    assert procesar_preflight_equipo("5233123456789", "Hola") == MARCADOR_IA
 
+
+def test_preflight_clave_incorrecta(monkeypatch, db_temp):
+    _reload_config(
+        monkeypatch,
+        db_temp,
+        ENABLE_MODO_EQUIPO="1",
+        EQUIPO_CLAVE_ACCESO="inpulso2026",
+    )
+    from modo_equipo import procesar_preflight_equipo, sesion_equipo_activa
+
+    procesar_preflight_equipo("5233123456789", "MODO EQUIPO")
+    respuesta = procesar_preflight_equipo("5233123456789", "mala")
+    assert respuesta is not None
+    assert "incorrecta" in respuesta.lower()
+    assert not sesion_equipo_activa("5233123456789")
+
+
+def test_salir_equipo_cierra_sesion(monkeypatch, db_temp):
+    _reload_config(
+        monkeypatch,
+        db_temp,
+        ENABLE_MODO_EQUIPO="1",
+        EQUIPO_CLAVE_ACCESO="inpulso2026",
+    )
+    from modo_equipo import cerrar_sesion_equipo, procesar_preflight_equipo, sesion_equipo_activa
+
+    storage.activar_sesion_equipo("5233123456789", "Equipo", 12)
+    assert sesion_equipo_activa("5233123456789")
+    respuesta = procesar_preflight_equipo("5233123456789", "SALIR EQUIPO")
+    assert respuesta is not None
+    assert "salí" in respuesta.lower()
+    assert not sesion_equipo_activa("5233123456789")
+
+
+def test_procesar_mensaje_ia_rutea_equipo_con_sesion(monkeypatch, db_temp):
+    _reload_config(monkeypatch, db_temp, ENABLE_MODO_EQUIPO="1", EQUIPO_CLAVE_ACCESO="inpulso2026")
     import chat
-    import config
 
-    importlib.reload(config)
     importlib.reload(chat)
+    storage.activar_sesion_equipo("5233123456789", "Alessandro", 12)
 
     llamadas: list[tuple] = []
 
@@ -84,27 +120,26 @@ def test_procesar_mensaje_ia_rutea_equipo(monkeypatch):
     monkeypatch.setattr(chat, "enviar_mensaje_whatsapp", fake_enviar)
 
     chat.procesar_mensaje_ia("5233123456789", "Resume este PDF")
-
-    assert len(llamadas) == 1
-    assert llamadas[0] == ("5233123456789", "Resume este PDF")
+    assert llamadas == [("5233123456789", "Resume este PDF")]
 
 
-def test_preparar_contenido_equipo_salta_flujo_paciente(monkeypatch):
-    monkeypatch.setenv("ENABLE_MODO_EQUIPO", "1")
-    monkeypatch.setenv("WHATSAPP_ALESSANDRO", "5233123456789")
-
-    import importlib
-
-    import config
+def test_preparar_contenido_sin_sesion_usa_flujo_paciente(monkeypatch, db_temp):
+    _reload_config(
+        monkeypatch,
+        db_temp,
+        ENABLE_MODO_EQUIPO="1",
+        EQUIPO_CLAVE_ACCESO="inpulso2026",
+        WHATSAPP_ALESSANDRO="5233123456789",
+    )
     import servidor
 
-    importlib.reload(config)
     importlib.reload(servidor)
+    monkeypatch.setattr(config, "DATABASE_PATH", db_temp)
 
     mensaje = {
         "from": "5233123456789",
         "type": "text",
-        "text": {"body": "MI CITA"},
+        "text": {"body": "MODO EQUIPO"},
     }
     resultado = servidor._preparar_contenido_mensaje(mensaje)
-    assert resultado == "MI CITA"
+    assert resultado is None

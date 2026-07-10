@@ -4,6 +4,16 @@ import os
 import pytest
 
 
+def test_instrucciones_equipo_identidad():
+    from modo_equipo import _instrucciones_equipo
+
+    texto = _instrucciones_equipo("Alessandro")
+    assert "Alessandro Gaytán" in texto
+    assert "Google DeepMind" in texto
+    assert "PROHIBIDO decir que eres Gemini" in texto
+    assert "Tu nombre es *Alessia*" in texto
+
+
 def test_identificar_miembro_equipo_alessandro(monkeypatch):
     monkeypatch.setenv("ENABLE_MODO_EQUIPO", "1")
     monkeypatch.setenv("WHATSAPP_ALESSANDRO", "5233123456789")

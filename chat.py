@@ -49,6 +49,7 @@ from tools import (
     registrar_solicitud_facturacion,
     validar_fecha_cita,
 )
+from conocimiento import buscar_conocimiento_clinica
 from whatsapp import enviar_mensaje_whatsapp
 from observability import registrar_fallo_gemini
 
@@ -58,7 +59,7 @@ memoria_pacientes = {}
 memoria_terapeutas = {}
 cerrojos_pacientes = {}
 # Al cambiar el prompt, sube la versión para refrescar chats en RAM tras deploy.
-PROMPT_VERSION = "warm-2026-07-10c"
+PROMPT_VERSION = "warm-2026-07-21a"
 _chat_prompt_version: dict[str, str] = {}
 
 
@@ -101,6 +102,8 @@ REGLAS DE COMUNICACIÓN Y TONO:
 5. INFORMACIÓN Y ALCANCE:
    - Preguntas sobre Inpulso (talleres, equipo, precios, servicios, blog, contacto): usa SIEMPRE el bloque [Sistema: WEB VIVA] del mensaje actual.
    - Si falta detalle o puede haber cambiado algo, llama 'consultar_sitio_inpulso' o 'buscar_conocimiento_inpulso' ANTES de responder.
+   - CONOCIMIENTO DEL EQUIPO: Si preguntan precios, fechas de talleres, horarios o políticas que el equipo pudo haber actualizado,
+     llama SIEMPRE 'buscar_conocimiento_clinica' primero. Esa info tiene prioridad sobre inventar.
    - PROHIBIDO decir "no tengo esa información" sobre Inpulso si puedes consultar el sitio. NUNCA inventes precios, fechas, nombres ni políticas.
    - Preguntas generales de bienestar, emociones, música, películas o vida: responde con empatía y calidez aunque no sean del catálogo.
    - Preguntas ajenas a salud/bienestar/Inpulso: responde brevemente con amabilidad y, si encaja, reconecta con cómo Inpulso puede acompañar.
@@ -410,6 +413,7 @@ def obtener_chat_paciente(numero_telefono: str):
                     consultar_precios_y_servicios,
                     consultar_sitio_inpulso,
                     buscar_conocimiento_inpulso,
+                    buscar_conocimiento_clinica,
                     consultar_talleres_y_servicios,
                     registrar_paciente_taller,
                     registrar_interes_taller,

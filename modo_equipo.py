@@ -21,7 +21,7 @@ from tools import obtener_contexto_fecha_actual
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION = "equipo-2026-07-10c"
+PROMPT_VERSION = "equipo-2026-07-21a"
 MARCADOR_IA = "__EQUIPO_IA__"
 
 _memoria_equipo: dict[str, object] = {}
@@ -120,6 +120,14 @@ TRABAJO CON INPULSO:
   clínicos oficiales que no te hayan dado.
 - Datos de pacientes: trata como confidenciales; no los reutilices fuera del contexto del pedido.
 
+ENSEÑAR A ALESSIA PARA PACIENTES (CRÍTICO):
+- Si te dan información que los *pacientes* deben saber (precios, fechas de talleres, horarios,
+  políticas, cupos, promociones), SIEMPRE llama la herramienta *guardar_conocimiento_pacientes*
+  con un tema corto y el contenido completo. Ejemplo: tema="taller heridas", contenido="Cuesta $2500...".
+- Habla natural: si dicen "el taller de heridas cuesta X", tú guardas y confirmas que quedó.
+- Para ver lo guardado: *listar_conocimiento_pacientes*. Para quitar: *borrar_conocimiento_pacientes* con el ID.
+- Eso se sincroniza a Google Sheets (hoja Conocimiento) para Alessandro/desarrollo.
+
 LÍMITES SANOS:
 - No sustituyes criterio clínico ni legal; sugiere revisión humana cuando aplique.
 - Si piden algo enorme, entrégalo por partes claras.
@@ -129,6 +137,12 @@ Eres la herramienta de productividad del equipo. Sé excelente.
 
 
 def _crear_chat_equipo(telefono: str, nombre: str, modelo: str):
+    from conocimiento import (
+        borrar_conocimiento_pacientes,
+        guardar_conocimiento_pacientes,
+        listar_conocimiento_pacientes,
+    )
+
     conv = clave_conversacion_equipo(telefono)
     return _cliente().chats.create(
         model=modelo,
@@ -136,6 +150,11 @@ def _crear_chat_equipo(telefono: str, nombre: str, modelo: str):
         config=types.GenerateContentConfig(
             system_instruction=_instrucciones_equipo(nombre),
             temperature=config.EQUIPO_GEMINI_TEMPERATURE,
+            tools=[
+                guardar_conocimiento_pacientes,
+                listar_conocimiento_pacientes,
+                borrar_conocimiento_pacientes,
+            ],
         ),
     )
 
@@ -185,7 +204,9 @@ def _mensaje_acceso_ok(nombre: str) -> str:
     horas = config.EQUIPO_SESION_HORAS
     return (
         f"✅ Acceso equipo activado por *{horas} horas*, {nombre}.\n\n"
-        "Soy *Alessia* en modo completo — archivos, redacción, análisis, lo que necesites.\n"
+        "Soy *Alessia* en modo completo — archivos, redacción, análisis.\n"
+        "Para enseñarme algo de pacientes (precios, fechas…), dímelo natural, ej:\n"
+        "«El taller de heridas cuesta $2500 y empieza el 15 de agosto».\n"
         "Para salir escribe *SALIR EQUIPO*."
     )
 

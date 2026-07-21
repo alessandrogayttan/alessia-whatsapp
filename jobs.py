@@ -531,6 +531,24 @@ def calendario_keepalive_background():
         reset_google_clients()
 
 
+def sincronizar_faq_conocimiento_background():
+    """Sincroniza ranking FAQ y conocimiento a Google Sheets (~cada hora)."""
+    ahora = datetime.datetime.now(ZONA)
+    if ahora.minute > 14:
+        return
+    clave = f"faq_sync_{ahora.strftime('%Y-%m-%d-%H')}"
+    if not storage.reclamar_recordatorio(clave, "global"):
+        return
+    try:
+        from conocimiento import sincronizar_faq_a_sheets
+
+        n = sincronizar_faq_a_sheets()
+        logger.info("FAQ Sheets sincronizado: %s filas", n)
+    except Exception as e:
+        storage.liberar_recordatorio(clave, "global")
+        logger.error("Error sync FAQ conocimiento: %s", e)
+
+
 def procesar_cola_background():
     from message_queue import limpiar_antiguos, procesar_cola, reintentar_fallidos
 

@@ -267,6 +267,24 @@ def init_db():
                     bloqueado_hasta TEXT,
                     actualizado_at TEXT
                 );
+                CREATE TABLE IF NOT EXISTS conocimiento_clinica (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tema TEXT NOT NULL,
+                    contenido TEXT NOT NULL,
+                    palabras_clave TEXT,
+                    quien TEXT,
+                    activo INTEGER NOT NULL DEFAULT 1,
+                    creado_at TEXT NOT NULL,
+                    actualizado_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_conocimiento_activo
+                    ON conocimiento_clinica(activo, actualizado_at);
+                CREATE TABLE IF NOT EXISTS preguntas_frecuentes (
+                    pregunta TEXT PRIMARY KEY,
+                    veces INTEGER NOT NULL DEFAULT 1,
+                    ultima_vez TEXT NOT NULL,
+                    ejemplo_telefono TEXT
+                );
                 CREATE VIRTUAL TABLE IF NOT EXISTS inpulso_rag_fts USING fts5(
                     fuente,
                     url,
@@ -291,6 +309,30 @@ def init_db():
                     mime_type TEXT NOT NULL,
                     data BLOB NOT NULL,
                     creado_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS conocimiento_clinica (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tema TEXT NOT NULL,
+                    contenido TEXT NOT NULL,
+                    palabras_clave TEXT,
+                    quien TEXT,
+                    activo INTEGER NOT NULL DEFAULT 1,
+                    creado_at TEXT NOT NULL,
+                    actualizado_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS preguntas_frecuentes (
+                    pregunta TEXT PRIMARY KEY,
+                    veces INTEGER NOT NULL DEFAULT 1,
+                    ultima_vez TEXT NOT NULL,
+                    ejemplo_telefono TEXT
                 )
                 """
             )
@@ -1766,3 +1808,145 @@ def equipo_clave_bloqueada(telefono: str, max_fallos: int, minutos_bloqueo: int)
             (hasta.isoformat(), _utcnow().isoformat(), telefono),
         )
     return True
+
+def upsert_conocimiento_clinica(
+    tema: str,
+    contenido: str,
+    palabras_clave: str = "",
+    quien: str = "equipo",
+) -> int:
+    """Inserta o actualiza por tema (case-insensitive). Devuelve id."""
+    ahora = _utcnow().isoformat()
+    tema_key = tema.strip().lower()
+    with _transaction() as conn:
+        row = conn.execute(
+            "SELECT id FROM conocimiento_clinica WHERE lower(tema) = ? AND activo = 1",
+            (tema_key,),
+        ).fetchone()
+        if row:
+            conn.execute(
+                """
+                UPDATE conocimiento_clinica
+                SET contenido = ?, palabras_clave = ?, quien = ?, actualizado_at = ?, activo = 1
+                WHERE id = ?
+                """,
+                (contenido, palabras_clave, quien, ahora, row["id"]),
+            )
+            return int(row["id"])
+        cur = conn.execute(
+            """
+            INSERT INTO conocimiento_clinica
+                (tema, contenido, palabras_clave, quien, activo, creado_at, actualizado_at)
+            VALUES (?, ?, ?, ?, 1, ?, ?)
+            """,
+            (tema.strip(), contenido, palabras_clave, quien, ahora, ahora),
+        )
+        return int(cur.lastrowid)
+
+
+def listar_conocimiento_clinica(*, activos_solo: bool = True, limite: int = 100) -> list[dict]:
+    with _transaction() as conn:
+        if activos_solo:
+            rows = conn.execute(
+                """
+                SELECT id, tema, contenido, palabras_clave, quien, activo,
+                       creado_at, actualizado_at
+                FROM conocimiento_clinica
+                WHERE activo = 1
+                ORDER BY actualizado_at DESC
+                LIMIT ?
+                """,
+                (limite,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT id, tema, contenido, palabras_clave, quien, activo,
+                       creado_at, actualizado_at
+                FROM conocimiento_clinica
+                ORDER BY actualizado_at DESC
+                LIMIT ?
+                """,
+                (limite,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def desactivar_conocimiento_clinica(conocimiento_id: int) -> bool:
+    ahora = _utcnow().isoformat()
+    with _transaction() as conn:
+        cur = conn.execute(
+            """
+            UPDATE conocimiento_clinica
+            SET activo = 0, actualizado_at = ?
+            WHERE id = ?
+            """,
+            (ahora, conocimiento_id),
+        )
+        return cur.rowcount > 0
+
+
+def buscar_conocimiento_clinica(consulta: str, limite: int = 5) -> list[dict]:
+    tokens = [
+        t
+        for t in re.findall(r"[a-záéíóúñü0-9]{3,}", (consulta or "").lower())
+        if t not in {"que", "qué", "como", "cómo", "para", "una", "los", "las", "del", "por"}
+    ]
+    with _transaction() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, tema, contenido, palabras_clave, quien, actualizado_at
+            FROM conocimiento_clinica
+            WHERE activo = 1
+            ORDER BY actualizado_at DESC
+            LIMIT 200
+            """
+        ).fetchall()
+    if not rows:
+        return []
+    if not tokens:
+        return [dict(r) for r in rows[:limite]]
+
+    scored = []
+    for r in rows:
+        blob = f"{r['tema']} {r['palabras_clave'] or ''} {r['contenido']}".lower()
+        score = sum(
+            3 if tok in (r["tema"] or "").lower() else 1 for tok in tokens if tok in blob
+        )
+        if score > 0:
+            scored.append((score, dict(r)))
+    scored.sort(key=lambda x: -x[0])
+    return [d for _, d in scored[:limite]]
+
+
+def registrar_pregunta_frecuente(pregunta: str, telefono: str = "") -> None:
+    ahora = _utcnow().isoformat()
+    with _transaction() as conn:
+        conn.execute(
+            """
+            INSERT INTO preguntas_frecuentes (pregunta, veces, ultima_vez, ejemplo_telefono)
+            VALUES (?, 1, ?, ?)
+            ON CONFLICT(pregunta) DO UPDATE SET
+                veces = veces + 1,
+                ultima_vez = excluded.ultima_vez,
+                ejemplo_telefono = COALESCE(
+                    preguntas_frecuentes.ejemplo_telefono, excluded.ejemplo_telefono
+                )
+            """,
+            (pregunta, ahora, (telefono or "")[:20] or None),
+        )
+
+
+def top_preguntas_frecuentes(limite: int = 80) -> list[dict]:
+    with _transaction() as conn:
+        rows = conn.execute(
+            """
+            SELECT pregunta, veces, ultima_vez
+            FROM preguntas_frecuentes
+            ORDER BY veces DESC, ultima_vez DESC
+            LIMIT ?
+            """,
+            (limite,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+

@@ -39,19 +39,13 @@ from jobs import (
     seguimiento_post_cita_background,
     sincronizar_catalogo_web_background,
     sincronizar_catalogo_whatsapp_background,
+    sincronizar_faq_conocimiento_background,
     sincronizar_web_background,
     trivia_semanal_background,
     detectar_nuevos_talleres_background,
     verificar_lista_espera_background,
     experiencia_diaria_background,
     calendario_keepalive_background,
-)
-from whatsapp import (
-    descargar_media_whatsapp,
-    enviar_ack_inmediato,
-    enviar_mensaje_whatsapp,
-    marcar_leido_y_escribiendo,
-    verificar_firma_webhook,
 )
 
 logging.basicConfig(
@@ -115,6 +109,7 @@ def _iniciar_scheduler():
     _add_job(scheduler, dashboard_background, "interval", hours=6)
     _add_job(scheduler, experiencia_diaria_background, "interval", minutes=15)
     _add_job(scheduler, procesar_cola_background, "interval", seconds=5)
+    _add_job(scheduler, sincronizar_faq_conocimiento_background, "interval", minutes=60)
     _add_job(scheduler, calendario_keepalive_background, "interval", minutes=5)
     _add_job(scheduler, renotificar_escalaciones_background, "interval", minutes=5)
     _add_job(scheduler, backup_db_background, "interval", hours=24)
@@ -338,6 +333,15 @@ def webhook():
             continue
 
         numero_remitente = mensaje_info["from"]
+
+        if mensaje_info.get("type") == "text":
+            try:
+                from conocimiento import registrar_consulta_paciente
+
+                body = (mensaje_info.get("text") or {}).get("body") or ""
+                registrar_consulta_paciente(body, numero_remitente)
+            except Exception:
+                pass
 
         contenido_para_ia = _preparar_contenido_mensaje(mensaje_info)
         if contenido_para_ia is None:

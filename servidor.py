@@ -211,9 +211,15 @@ def health_ready():
 @app.route("/health/metrics", methods=["GET"])
 def health_metrics():
     """Métricas operativas básicas (sin PII)."""
-    if config.IS_PRODUCTION and config.HEALTH_CONFIG_SECRET:
+    from seguridad import metrics_requieren_secreto
+
+    if metrics_requieren_secreto(config.IS_PRODUCTION):
+        import hmac
+
+        if not config.HEALTH_CONFIG_SECRET:
+            return {"error": "Not configured"}, 404
         token = request.args.get("secret") or request.headers.get("X-Health-Secret", "")
-        if token != config.HEALTH_CONFIG_SECRET:
+        if not hmac.compare_digest(token, config.HEALTH_CONFIG_SECRET):
             return {"error": "Forbidden"}, 403
     base = {
         "cola_pendiente": storage.contar_cola_pendiente(),
@@ -238,8 +244,10 @@ def health_config():
     if config.IS_PRODUCTION and not config.HEALTH_CONFIG_SECRET:
         return {"error": "Not configured"}, 404
     if config.IS_PRODUCTION:
+        import hmac
+
         token = request.args.get("secret") or request.headers.get("X-Health-Secret", "")
-        if token != config.HEALTH_CONFIG_SECRET:
+        if not hmac.compare_digest(token, config.HEALTH_CONFIG_SECRET):
             return {"error": "Forbidden"}, 403
 
     from pathlib import Path
@@ -704,13 +712,10 @@ def _preparar_contenido_mensaje(mensaje_info: dict):
                 texto_descriptivo += f" Texto adjunto: {caption}"
             instruccion_pago = ""
             if tipo_mensaje in ("image", "document"):
-                instruccion_pago = (
-                    f" [COMPROBANTE DE PAGO — teléfono paciente: {numero_remitente}]. "
-                    "Analiza internamente: monto numérico, cuenta destino, estatus COMPLETADO. "
-                    "Cuentas válidas: BANORTE CLABE 072320003548248000 o "
-                    "BANAMEX CLABE 002320700928855166. "
-                    "OBLIGATORIO: llama confirmar_pago_comprobante con el monto. "
-                    "Al paciente NO le digas que hay confirmación automática por IA."
+                from prompt_pagos import instruccion_comprobante_pago
+
+                instruccion_pago = " " + instruccion_comprobante_pago(
+                    telefono_paciente=numero_remitente
                 )
             return [
                 types.Part(inline_data=types.Blob(data=file_bytes, mime_type=mime_type)),

@@ -1,13 +1,18 @@
+import config
 import storage
 from tools import validar_cuenta_destino
 
 
 def test_validar_cuenta_destino_banorte():
-    assert validar_cuenta_destino("072320003548248000") is True
+    clabe = config.CUENTAS_OFICIALES["BANORTE"]["clabe"]
+    assert clabe
+    assert validar_cuenta_destino(clabe) is True
 
 
 def test_validar_cuenta_destino_banamex():
-    assert validar_cuenta_destino("002320700928855166") is True
+    clabe = config.CUENTAS_OFICIALES["BANAMEX"]["clabe"]
+    assert clabe
+    assert validar_cuenta_destino(clabe) is True
 
 
 def test_validar_cuenta_destino_invalida():
@@ -21,7 +26,6 @@ def test_registrar_consentimiento(db_temp):
 
 
 def test_registrar_solicitud_facturacion_sin_hoja(monkeypatch):
-    import config
     import tools
 
     monkeypatch.setattr(config, "ID_HOJA_CALCULO", "")

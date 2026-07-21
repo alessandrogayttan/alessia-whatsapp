@@ -7,6 +7,5 @@ services:
       - .env
     volumes:
       - ./data:/app/data
-      - ./agente-inpulso-bda72425fab5.json:/app/agente-inpulso-bda72425fab5.json:ro
       - ./precios.json:/app/precios.json:ro
     restart: unless-stopped

@@ -2,9 +2,12 @@
 digitalocean_env.txt
 *.db
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *.json.bak
 agente-inpulso-*.json
+*service-account*.json
+google-service-account.json
 .venv/
 venv/
 env/
@@ -13,3 +16,10 @@ env/
 *.log
 data/
 backups/
+* copia*
+*-copia*
+* - copia*
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/

@@ -10,8 +10,12 @@ def _reload_config(monkeypatch, db_path=None, **env):
         import config as cfg
 
         db_path = cfg.DATABASE_PATH
+    monkeypatch.delenv("EQUIPO_CLAVE_HASH", raising=False)
     for key, value in env.items():
-        monkeypatch.setenv(key, value)
+        if value is None:
+            monkeypatch.delenv(key, raising=False)
+        else:
+            monkeypatch.setenv(key, value)
     importlib.reload(config)
     monkeypatch.setattr(config, "DATABASE_PATH", db_path)
     storage.init_db()
@@ -32,7 +36,7 @@ def test_preflight_entrada_frase_natural(monkeypatch, db_temp):
         monkeypatch,
         db_temp,
         ENABLE_MODO_EQUIPO="1",
-        EQUIPO_CLAVE_ACCESO="300322",
+        EQUIPO_CLAVE_ACCESO="clave-test-300",
     )
     from modo_equipo import procesar_preflight_equipo
 
@@ -44,10 +48,12 @@ def test_preflight_entrada_frase_natural(monkeypatch, db_temp):
     assert "contraseña" in respuesta.lower()
 
 
-def test_clave_por_defecto_300322(monkeypatch):
+def test_clave_sin_default_inseguro(monkeypatch):
     monkeypatch.delenv("EQUIPO_CLAVE_ACCESO", raising=False)
+    monkeypatch.delenv("EQUIPO_CLAVE_HASH", raising=False)
     importlib.reload(config)
-    assert config.EQUIPO_CLAVE_ACCESO == "300322"
+    assert config.EQUIPO_CLAVE_ACCESO == ""
+    assert config.secreto_modo_equipo() == ""
 
 
 def test_identificar_miembro_equipo_solo_nombre(monkeypatch):
@@ -90,6 +96,26 @@ def test_preflight_clave_correcta_activa_sesion(monkeypatch, db_temp):
     assert procesar_preflight_equipo("5233123456789", "Hola") == MARCADOR_IA
 
 
+def test_preflight_clave_con_hash(monkeypatch, db_temp):
+    from seguridad import hash_clave
+
+    hashed = hash_clave("supersecreta")
+    _reload_config(
+        monkeypatch,
+        db_temp,
+        ENABLE_MODO_EQUIPO="1",
+        EQUIPO_CLAVE_HASH=hashed,
+        EQUIPO_CLAVE_ACCESO="",
+    )
+    from modo_equipo import procesar_preflight_equipo, sesion_equipo_activa
+
+    procesar_preflight_equipo("5233123456789", "MODO EQUIPO")
+    respuesta = procesar_preflight_equipo("5233123456789", "supersecreta")
+    assert respuesta is not None
+    assert "activado" in respuesta.lower()
+    assert sesion_equipo_activa("5233123456789")
+
+
 def test_preflight_clave_incorrecta(monkeypatch, db_temp):
     _reload_config(
         monkeypatch,
@@ -113,7 +139,7 @@ def test_salir_equipo_cierra_sesion(monkeypatch, db_temp):
         ENABLE_MODO_EQUIPO="1",
         EQUIPO_CLAVE_ACCESO="inpulso2026",
     )
-    from modo_equipo import cerrar_sesion_equipo, procesar_preflight_equipo, sesion_equipo_activa
+    from modo_equipo import procesar_preflight_equipo, sesion_equipo_activa
 
     storage.activar_sesion_equipo("5233123456789", "Equipo", 12)
     assert sesion_equipo_activa("5233123456789")
@@ -124,7 +150,9 @@ def test_salir_equipo_cierra_sesion(monkeypatch, db_temp):
 
 
 def test_procesar_mensaje_ia_rutea_equipo_con_sesion(monkeypatch, db_temp):
-    _reload_config(monkeypatch, db_temp, ENABLE_MODO_EQUIPO="1", EQUIPO_CLAVE_ACCESO="inpulso2026")
+    _reload_config(
+        monkeypatch, db_temp, ENABLE_MODO_EQUIPO="1", EQUIPO_CLAVE_ACCESO="inpulso2026"
+    )
     import chat
 
     importlib.reload(chat)

@@ -173,10 +173,12 @@ def es_modo_equipo(telefono: str) -> bool:
 
 
 def _clave_correcta(texto: str) -> bool:
-    clave = config.EQUIPO_CLAVE_ACCESO
-    if not clave:
+    from seguridad import verificar_clave
+
+    secreto = config.secreto_modo_equipo()
+    if not secreto:
         return False
-    return texto.strip() == clave
+    return verificar_clave(texto.strip(), secreto)
 
 
 def _mensaje_pedir_clave() -> str:
@@ -219,7 +221,7 @@ def procesar_preflight_equipo(telefono: str, texto: str) -> str | None:
         return None
 
     if sesion_equipo_activa(telefono):
-        if norm in _COMANDOS_ENTRADA:
+        if norm in _COMANDOS_ENTRADA or _es_solicitud_acceso_equipo(limpio):
             return (
                 "Ya estás en modo equipo ✅ ¿En qué te ayudo?\n"
                 "Para salir escribe *SALIR EQUIPO*."
@@ -227,17 +229,28 @@ def procesar_preflight_equipo(telefono: str, texto: str) -> str | None:
         return MARCADOR_IA
 
     if storage.esperando_clave_equipo(telefono):
-        if not config.EQUIPO_CLAVE_ACCESO:
+        if storage.equipo_clave_bloqueada(
+            telefono,
+            config.EQUIPO_CLAVE_MAX_INTENTOS,
+            config.EQUIPO_CLAVE_BLOQUEO_MINUTOS,
+        ):
+            return (
+                "Demasiados intentos fallidos 🔒 El acceso equipo está bloqueado unos minutos. "
+                "Intenta más tarde o escribe *SALIR EQUIPO*."
+            )
+        if not config.secreto_modo_equipo():
             storage.cancelar_esperando_clave_equipo(telefono)
             return (
                 "El modo equipo no está configurado en el servidor todavía. "
                 "Avísale a Alessandro."
             )
         if _clave_correcta(limpio):
+            storage.resetear_intentos_clave_equipo(telefono)
             nombre = _nombre_miembro(telefono)
             activar_sesion_equipo(telefono, nombre)
             invalidar_chat_equipo(telefono)
             return _mensaje_acceso_ok(nombre)
+        storage.registrar_intento_clave_equipo_fallido(telefono)
         storage.cancelar_esperando_clave_equipo(telefono)
         return (
             "Contraseña incorrecta 🔒 Sigo en modo recepción.\n"
@@ -245,7 +258,7 @@ def procesar_preflight_equipo(telefono: str, texto: str) -> str | None:
         )
 
     if _es_solicitud_acceso_equipo(limpio):
-        if not config.EQUIPO_CLAVE_ACCESO:
+        if not config.secreto_modo_equipo():
             return (
                 "El modo equipo aún no tiene contraseña configurada en el servidor. "
                 "Avísale a Alessandro."

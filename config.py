@@ -36,7 +36,7 @@ ID_HOJA_CALCULO = os.getenv("ID_HOJA_CALCULO", "")
 
 SERVICE_ACCOUNT_FILE = os.getenv(
     "GOOGLE_SERVICE_ACCOUNT_FILE",
-    str(BASE_DIR / "agente-inpulso-bda72425fab5.json"),
+    str(DATA_DIR / "google-service-account.json"),
 )
 GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
 DATABASE_PATH = os.getenv("DATABASE_PATH", str(DATA_DIR / "alessia.db"))
@@ -198,8 +198,17 @@ EQUIPO_GEMINI_MODEL = os.getenv("EQUIPO_GEMINI_MODEL", "gemini-2.5-flash")
 EQUIPO_GEMINI_MODEL_RESPALDO = os.getenv("EQUIPO_GEMINI_MODEL_RESPALDO", "gemini-2.5-flash")
 EQUIPO_GEMINI_TEMPERATURE = float(os.getenv("EQUIPO_GEMINI_TEMPERATURE", "0.7"))
 EQUIPO_GEMINI_TIMEOUT = int(os.getenv("EQUIPO_GEMINI_TIMEOUT", "120"))
-EQUIPO_CLAVE_ACCESO = os.getenv("EQUIPO_CLAVE_ACCESO", "300322").strip()
+# Preferir EQUIPO_CLAVE_HASH (pbkdf2). EQUIPO_CLAVE_ACCESO solo texto (sin default inseguro).
+EQUIPO_CLAVE_HASH = os.getenv("EQUIPO_CLAVE_HASH", "").strip()
+EQUIPO_CLAVE_ACCESO = os.getenv("EQUIPO_CLAVE_ACCESO", "").strip()
 EQUIPO_SESION_HORAS = int(os.getenv("EQUIPO_SESION_HORAS", "12"))
+EQUIPO_CLAVE_MAX_INTENTOS = int(os.getenv("EQUIPO_CLAVE_MAX_INTENTOS", "5"))
+EQUIPO_CLAVE_BLOQUEO_MINUTOS = int(os.getenv("EQUIPO_CLAVE_BLOQUEO_MINUTOS", "15"))
+
+
+def secreto_modo_equipo() -> str:
+    """Hash o texto plano configurado para modo equipo."""
+    return EQUIPO_CLAVE_HASH or EQUIPO_CLAVE_ACCESO
 
 
 def _cargar_equipo_inpulso_whatsapp() -> dict[str, str]:
@@ -329,20 +338,9 @@ DIRECTORIO_CALENDARIOS = {
     "talleres": "8b775cab7bdec4a09023eb859dff073d5b87a38c92d42a80220fd4feed90dada@group.calendar.google.com",
 }
 
-CUENTAS_OFICIALES = {
-    "BANORTE": {
-        "tarjeta": "4189 1430 7739 9932",
-        "clabe": "072320003548248000",
-        "titular": "Verónica Esmeralda Delgado Andalón",
-        "factura": False,
-    },
-    "BANAMEX": {
-        "cuenta": "7009 28855 16",
-        "clabe": "002320700928855166",
-        "titular": "Inpulso 43",
-        "factura": True,
-    },
-}
+from cuentas_pago import obtener_cuentas_oficiales  # noqa: E402
+
+CUENTAS_OFICIALES = obtener_cuentas_oficiales()
 
 AVISO_PRIVACIDAD = (
     "🔒 *Aviso de privacidad*\n"
@@ -512,15 +510,23 @@ def advertencias_lanzamiento() -> list[str]:
 
 
 def validar_config_produccion():
-    """Validación extra en producción."""
+    """Validación extra en producción (fail-closed)."""
     if not IS_PRODUCTION:
         return
+    from cuentas_pago import cuentas_completas
+
     requeridas = {
         "WHATSAPP_VERIFY_TOKEN": WHATSAPP_VERIFY_TOKEN,
         "WHATSAPP_APP_SECRET": WHATSAPP_APP_SECRET,
         "ID_HOJA_CALCULO": ID_HOJA_CALCULO,
+        "HEALTH_CONFIG_SECRET": HEALTH_CONFIG_SECRET,
+        "RECEPCION_WHATSAPP": RECEPCION_WHATSAPP,
     }
     faltantes = [k for k, v in requeridas.items() if not v]
+    if ENABLE_MODO_EQUIPO and not secreto_modo_equipo():
+        faltantes.append("EQUIPO_CLAVE_HASH|EQUIPO_CLAVE_ACCESO")
+    if not cuentas_completas(CUENTAS_OFICIALES):
+        faltantes.append("CUENTAS_OFICIALES_JSON|BANORTE_CLABE+BANAMEX_CLABE")
     if faltantes:
         raise RuntimeError(
             f"Variables de entorno faltantes en producción: {', '.join(faltantes)}"

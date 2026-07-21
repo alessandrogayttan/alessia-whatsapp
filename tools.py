@@ -1930,10 +1930,11 @@ def registrar_interes_taller(
     )
 
 
-CUENTAS_CLABE_VALIDAS = {
-    config.CUENTAS_OFICIALES["BANORTE"]["clabe"],
-    config.CUENTAS_OFICIALES["BANAMEX"]["clabe"],
-}
+def _cuentas_clabe_validas() -> set[str]:
+    return {
+        config.CUENTAS_OFICIALES["BANORTE"]["clabe"],
+        config.CUENTAS_OFICIALES["BANAMEX"]["clabe"],
+    }
 
 
 def validar_cuenta_destino(clabe_o_cuenta: str) -> bool:
@@ -1941,7 +1942,9 @@ def validar_cuenta_destino(clabe_o_cuenta: str) -> bool:
     digitos = re.sub(r"\D", "", clabe_o_cuenta or "")
     if len(digitos) < 10:
         return False
-    for valida in CUENTAS_CLABE_VALIDAS:
+    for valida in _cuentas_clabe_validas():
+        if not valida:
+            continue
         if valida in digitos or digitos.endswith(valida[-10:]):
             return True
     return False

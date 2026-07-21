@@ -1,0 +1,36 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+exclude = [
+    ".venv",
+    "venv",
+    "__pycache__",
+    "data",
+    "* copia*",
+    "*-copia*",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "I",
+    "B",
+    "UP",
+    "S",
+]
+ignore = [
+    "S101",  # assert en tests
+    "S105",  # posibles hardcodes de password en tests/config docs
+    "S106",
+    "S107",
+    "E501",  # prompts largos
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S"]
+"scripts/**" = ["S"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

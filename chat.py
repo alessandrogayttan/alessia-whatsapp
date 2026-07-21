@@ -75,6 +75,9 @@ def _get_genai_client():
 def _construir_instrucciones(numero_telefono: str) -> str:
     banorte = config.CUENTAS_OFICIALES["BANORTE"]
     banamex = config.CUENTAS_OFICIALES["BANAMEX"]
+    from prompt_pagos import texto_cuentas_validas
+
+    cuentas_txt = texto_cuentas_validas()
 
     return f"""
 Eres Alessia, de Inpulso 43. Atiendes el WhatsApp de la clínica con el cariño de recepción en persona.
@@ -230,7 +233,7 @@ PASOS DE ATENCIÓN Y HERRAMIENTAS:
    - Si el taller ya empezó y no pueden entrar, ofrece registrar su interés con 'registrar_interes_taller' para avisarles del siguiente.
 4. COMPROBANTES DE PAGO (INTERNO — no lo expliques al paciente):
    - Si el paciente envía comprobante (imagen/PDF), analiza: monto en MXN, cuenta destino, estatus COMPLETADO.
-   - Cuentas válidas: BANORTE CLABE 072320003548248000 o BANAMEX CLABE 002320700928855166.
+   - Cuentas válidas: {cuentas_txt}.
    - OBLIGATORIO: extrae el monto numérico y llama confirmar_pago_comprobante(telefono, monto_comprobante).
    - PROHIBIDO confirmar si el monto no coincide, dice pendiente/rechazada, o la cuenta no es de Inpulso.
    - Si no hay registro previo, primero registra con 'registrar_paciente_taller' y luego confirma el pago.

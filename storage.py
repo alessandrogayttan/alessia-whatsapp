@@ -2,12 +2,18 @@ import re
 import sqlite3
 import threading
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import config
 
 _lock = threading.Lock()
+
+
+def _utcnow() -> datetime:
+    """UTC naive (mismo contrato que utcnow; evita mezclar aware/naive en SQLite)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
 
 
 def _ensure_db_dir():
@@ -248,6 +254,12 @@ def init_db():
                 );
                 CREATE INDEX IF NOT EXISTS idx_escalaciones_estado
                     ON escalaciones_local(estado, creado_at);
+                CREATE TABLE IF NOT EXISTS equipo_clave_intentos (
+                    telefono TEXT PRIMARY KEY,
+                    fallos INTEGER NOT NULL DEFAULT 0,
+                    bloqueado_hasta TEXT,
+                    actualizado_at TEXT
+                );
                 CREATE VIRTUAL TABLE IF NOT EXISTS inpulso_rag_fts USING fts5(
                     fuente,
                     url,
@@ -277,11 +289,11 @@ def reservar_mensaje_para_procesar(mensaje_id: str) -> bool:
     with _transaction() as conn:
         cur = conn.execute(
             "INSERT OR IGNORE INTO mensajes_procesados (mensaje_id, procesado_at) VALUES (?, ?)",
-            (mensaje_id, datetime.utcnow().isoformat()),
+            (mensaje_id, _utcnow().isoformat()),
         )
         if cur.rowcount == 0:
             return False
-        cutoff = (datetime.utcnow() - timedelta(days=7)).isoformat()
+        cutoff = (_utcnow() - timedelta(days=7)).isoformat()
         conn.execute(
             "DELETE FROM mensajes_procesados WHERE procesado_at < ?",
             (cutoff,),
@@ -302,7 +314,7 @@ def marcar_recordatorio_enviado(event_id: str, tipo: str):
     with _transaction() as conn:
         conn.execute(
             "INSERT OR IGNORE INTO recordatorios_enviados (event_id, tipo, enviado_at) VALUES (?, ?, ?)",
-            (event_id, tipo, datetime.utcnow().isoformat()),
+            (event_id, tipo, _utcnow().isoformat()),
         )
 
 
@@ -317,7 +329,7 @@ def guardar_ubicacion(telefono: str, lat: float, lng: float):
                 lng = excluded.lng,
                 actualizado_at = excluded.actualizado_at
             """,
-            (telefono, lat, lng, datetime.utcnow().isoformat()),
+            (telefono, lat, lng, _utcnow().isoformat()),
         )
 
 
@@ -349,7 +361,7 @@ def registrar_consentimiento(telefono: str):
             VALUES (?, ?)
             ON CONFLICT(telefono) DO UPDATE SET consentimiento_at = excluded.consentimiento_at
             """,
-            (telefono, datetime.utcnow().isoformat()),
+            (telefono, _utcnow().isoformat()),
         )
 
 
@@ -394,7 +406,7 @@ def marcar_cita_proactiva_mencionada(telefono: str, cita_clave: str):
             VALUES (?, ?, ?)
             ON CONFLICT(telefono, cita_clave) DO UPDATE SET mencionado_at = excluded.mencionado_at
             """,
-            (telefono, cita_clave, datetime.utcnow().isoformat()),
+            (telefono, cita_clave, _utcnow().isoformat()),
         )
 
 
@@ -415,7 +427,7 @@ def guardar_nombre_paciente(telefono: str, nombre: str):
             VALUES (?, ?, ?)
             ON CONFLICT(telefono) DO UPDATE SET nombre = excluded.nombre
             """,
-            (telefono, nombre, datetime.utcnow().isoformat()),
+            (telefono, nombre, _utcnow().isoformat()),
         )
 
 
@@ -536,7 +548,7 @@ def registrar_uso_referido(codigo: str, telefono_nuevo: str) -> bool:
             return False
         conn.execute(
             "INSERT INTO referidos_log (codigo, telefono_nuevo, creado_at) VALUES (?, ?, ?)",
-            (codigo.upper(), telefono_nuevo, datetime.utcnow().isoformat()),
+            (codigo.upper(), telefono_nuevo, _utcnow().isoformat()),
         )
         _ensure_extra(conn, telefono_nuevo)
         conn.execute(
@@ -551,7 +563,7 @@ def guardar_checkin_emocional(telefono: str, escala: int, event_id: str = "", no
         _ensure_extra(conn, telefono)
         conn.execute(
             "INSERT INTO checkins_emocionales (telefono, event_id, escala, notas, creado_at) VALUES (?, ?, ?, ?, ?)",
-            (telefono, event_id, escala, notas, datetime.utcnow().isoformat()),
+            (telefono, event_id, escala, notas, _utcnow().isoformat()),
         )
         conn.execute(
             "UPDATE paciente_extra SET ultimo_animo = ? WHERE telefono = ?",
@@ -638,7 +650,7 @@ def telefonos_pacientes_con_nombre() -> list[str]:
 
 
 def estadisticas_globales() -> dict:
-    mes = datetime.utcnow().strftime("%Y-%m")
+    mes = _utcnow().strftime("%Y-%m")
     with _transaction() as conn:
         pacientes = conn.execute("SELECT COUNT(*) AS c FROM pacientes").fetchone()["c"]
         referidos = conn.execute("SELECT COUNT(*) AS c FROM referidos_log").fetchone()["c"]
@@ -668,7 +680,7 @@ def marcar_prep_pendiente(telefono: str, event_id: str):
                 event_id = excluded.event_id,
                 creado_at = excluded.creado_at
             """,
-            (telefono, event_id, datetime.utcnow().isoformat()),
+            (telefono, event_id, _utcnow().isoformat()),
         )
 
 
@@ -715,7 +727,7 @@ def marcar_asistencia_confirmada(
                 fecha_cita,
                 hora_cita,
                 especialista,
-                datetime.utcnow().isoformat(),
+                _utcnow().isoformat(),
             ),
         )
 
@@ -730,7 +742,7 @@ def marcar_reagendar_pendiente(telefono: str, event_id: str):
                 event_id = excluded.event_id,
                 creado_at = excluded.creado_at
             """,
-            (telefono, event_id, datetime.utcnow().isoformat()),
+            (telefono, event_id, _utcnow().isoformat()),
         )
 
 
@@ -758,7 +770,7 @@ def marcar_nps_pendiente(telefono: str, event_id: str = ""):
                 event_id = excluded.event_id,
                 creado_at = excluded.creado_at
             """,
-            (telefono, event_id, datetime.utcnow().isoformat()),
+            (telefono, event_id, _utcnow().isoformat()),
         )
 
 
@@ -787,7 +799,7 @@ def guardar_respuesta_nps(telefono: str, puntaje: int, event_id: str = ""):
                 event_id = excluded.event_id,
                 respondido_at = excluded.respondido_at
             """,
-            (telefono, puntaje, event_id, datetime.utcnow().isoformat()),
+            (telefono, puntaje, event_id, _utcnow().isoformat()),
         )
         conn.execute("DELETE FROM nps_pendiente WHERE telefono = ?", (telefono,))
 
@@ -828,7 +840,7 @@ def registrar_recibo_enviado(
                 nombre,
                 concepto,
                 monto,
-                datetime.utcnow().isoformat(),
+                _utcnow().isoformat(),
             ),
         )
 
@@ -852,7 +864,7 @@ def guardar_prep_sesion(
                 tema,
                 es_primera,
                 animo or None,
-                datetime.utcnow().isoformat(),
+                _utcnow().isoformat(),
             ),
         )
         conn.execute("DELETE FROM prep_pendiente WHERE telefono = ?", (telefono,))
@@ -886,7 +898,7 @@ def marcar_ritual_pendiente(telefono: str, event_id: str):
                 event_id = excluded.event_id,
                 creado_at = excluded.creado_at
             """,
-            (telefono, event_id, datetime.utcnow().isoformat()),
+            (telefono, event_id, _utcnow().isoformat()),
         )
 
 
@@ -911,7 +923,7 @@ def guardar_nota_ritual(telefono: str, event_id: str, nota: str):
             INSERT INTO notas_ritual (telefono, event_id, nota, creado_at)
             VALUES (?, ?, ?, ?)
             """,
-            (telefono, event_id, nota, datetime.utcnow().isoformat()),
+            (telefono, event_id, nota, _utcnow().isoformat()),
         )
         conn.execute("DELETE FROM ritual_pendiente WHERE telefono = ?", (telefono,))
 
@@ -946,7 +958,7 @@ def marcar_aniversario_enviado(telefono: str, anio: int):
             INSERT OR IGNORE INTO aniversarios_enviados (telefono, anio, enviado_at)
             VALUES (?, ?, ?)
             """,
-            (telefono, anio, datetime.utcnow().isoformat()),
+            (telefono, anio, _utcnow().isoformat()),
         )
 
 
@@ -963,7 +975,7 @@ def marcar_taller_bienvenida(clave: str):
     with _transaction() as conn:
         conn.execute(
             "INSERT OR IGNORE INTO taller_bienvenida (clave, enviado_at) VALUES (?, ?)",
-            (clave, datetime.utcnow().isoformat()),
+            (clave, _utcnow().isoformat()),
         )
 
 
@@ -985,14 +997,14 @@ def crear_tarea_terapeutica(
                 telefono_terapeuta,
                 descripcion,
                 dias_semana.lower(),
-                datetime.utcnow().isoformat(),
+                _utcnow().isoformat(),
             ),
         )
         return cur.lastrowid
 
 
 def tareas_pendientes_hoy(dia_nombre: str) -> list[dict]:
-    hoy = datetime.utcnow().strftime("%Y-%m-%d")
+    hoy = _utcnow().strftime("%Y-%m-%d")
     with _transaction() as conn:
         rows = conn.execute(
             """
@@ -1028,7 +1040,7 @@ def registrar_interes_taller(
                 terapeuta.strip(),
                 nombre or None,
                 taller_origen or None,
-                datetime.utcnow().isoformat(),
+                _utcnow().isoformat(),
             ),
         )
 
@@ -1080,7 +1092,7 @@ def marcar_taller_catalogo_visto(clave: str):
             INSERT OR IGNORE INTO catalogo_talleres_vistos (clave, visto_at)
             VALUES (?, ?)
             """,
-            (clave, datetime.utcnow().isoformat()),
+            (clave, _utcnow().isoformat()),
         )
 
 
@@ -1103,7 +1115,7 @@ def marcar_notificacion_nuevo_taller(telefono: str, taller_clave: str):
             INSERT OR IGNORE INTO notificaciones_nuevo_taller (telefono, taller_clave, enviado_at)
             VALUES (?, ?, ?)
             """,
-            (telefono, taller_clave, datetime.utcnow().isoformat()),
+            (telefono, taller_clave, _utcnow().isoformat()),
         )
 
 
@@ -1116,7 +1128,7 @@ def marcar_tarea_enviada_hoy(tarea_id: int, fecha: str):
 
 
 def encolar_mensaje_ia(telefono: str, contenido: str) -> int:
-    ahora = datetime.utcnow().isoformat()
+    ahora = _utcnow().isoformat()
     with _transaction() as conn:
         cur = conn.execute(
             """
@@ -1144,7 +1156,7 @@ def obtener_mensajes_pendientes(limite: int = 10) -> list[dict]:
 
 
 def marcar_mensaje_procesando(msg_id: int) -> bool:
-    ahora = datetime.utcnow().isoformat()
+    ahora = _utcnow().isoformat()
     with _transaction() as conn:
         cur = conn.execute(
             """
@@ -1158,7 +1170,7 @@ def marcar_mensaje_procesando(msg_id: int) -> bool:
 
 
 def marcar_mensaje_completado(msg_id: int):
-    ahora = datetime.utcnow().isoformat()
+    ahora = _utcnow().isoformat()
     with _transaction() as conn:
         conn.execute(
             """
@@ -1171,7 +1183,7 @@ def marcar_mensaje_completado(msg_id: int):
 
 
 def marcar_mensaje_fallido(msg_id: int, intentos: int, error: str = ""):
-    ahora = datetime.utcnow().isoformat()
+    ahora = _utcnow().isoformat()
     estado = "fallido" if intentos >= 3 else "pendiente"
     with _transaction() as conn:
         conn.execute(
@@ -1185,7 +1197,7 @@ def marcar_mensaje_fallido(msg_id: int, intentos: int, error: str = ""):
 
 
 def reencolar_mensajes_fallidos(limite: int = 5) -> int:
-    ahora = datetime.utcnow().isoformat()
+    ahora = _utcnow().isoformat()
     with _transaction() as conn:
         cur = conn.execute(
             """
@@ -1234,7 +1246,7 @@ def necesita_consentimiento(telefono: str) -> bool:
 
 
 def crear_sesion_web(session_id: str) -> None:
-    ahora = datetime.utcnow().isoformat()
+    ahora = _utcnow().isoformat()
     with _transaction() as conn:
         conn.execute(
             """
@@ -1263,7 +1275,7 @@ def actualizar_sesion_web(
     telefono: str | None = None,
     nombre: str | None = None,
 ) -> None:
-    ahora = datetime.utcnow().isoformat()
+    ahora = _utcnow().isoformat()
     with _transaction() as conn:
         if telefono is not None and nombre is not None:
             conn.execute(
@@ -1303,7 +1315,7 @@ def actualizar_sesion_web(
 
 def registrar_hit_web_chat(ip_hash: str, limite_por_minuto: int) -> bool:
     """True si el hit está permitido (bajo el rate limit)."""
-    minuto = datetime.utcnow().strftime("%Y-%m-%dT%H:%M")
+    minuto = _utcnow().strftime("%Y-%m-%dT%H:%M")
     with _transaction() as conn:
         row = conn.execute(
             "SELECT hits FROM web_chat_hits WHERE ip_hash = ? AND minuto = ?",
@@ -1337,7 +1349,7 @@ def guardar_mensaje_conversacion(
             INSERT INTO conversacion_mensajes (clave, canal, rol, contenido, creado_at)
             VALUES (?, ?, ?, ?, ?)
             """,
-            (clave, canal, rol, texto[:8000], datetime.utcnow().isoformat()),
+            (clave, canal, rol, texto[:8000], _utcnow().isoformat()),
         )
 
 
@@ -1423,7 +1435,7 @@ def _fila_equipo_acceso(telefono: str) -> dict | None:
 
 
 def marcar_esperando_clave_equipo(telefono: str) -> None:
-    ahora = datetime.utcnow().isoformat()
+    ahora = _utcnow().isoformat()
     with _transaction() as conn:
         conn.execute(
             """
@@ -1447,7 +1459,7 @@ def cancelar_esperando_clave_equipo(telefono: str) -> None:
             SET esperando_clave = 0, actualizado_at = ?
             WHERE telefono = ?
             """,
-            (datetime.utcnow().isoformat(), telefono),
+            (_utcnow().isoformat(), telefono),
         )
 
 
@@ -1457,7 +1469,7 @@ def esperando_clave_equipo(telefono: str) -> bool:
 
 
 def activar_sesion_equipo(telefono: str, nombre_miembro: str, horas: int) -> None:
-    ahora = datetime.utcnow()
+    ahora = _utcnow()
     expira = (ahora + timedelta(hours=horas)).isoformat()
     with _transaction() as conn:
         conn.execute(
@@ -1484,7 +1496,7 @@ def cerrar_sesion_equipo(telefono: str) -> None:
             SET sesion_activa = 0, esperando_clave = 0, expira_at = NULL, actualizado_at = ?
             WHERE telefono = ?
             """,
-            (datetime.utcnow().isoformat(), telefono),
+            (_utcnow().isoformat(), telefono),
         )
 
 
@@ -1500,7 +1512,7 @@ def sesion_equipo_activa(telefono: str) -> bool:
     except ValueError:
         cerrar_sesion_equipo(telefono)
         return False
-    if datetime.utcnow() >= expira:
+    if _utcnow() >= expira:
         cerrar_sesion_equipo(telefono)
         return False
     return True
@@ -1520,7 +1532,7 @@ def guardar_escalacion_local(telefono: str, nombre: str, motivo: str) -> int:
             INSERT INTO escalaciones_local (telefono, nombre, motivo, estado, notificado, creado_at)
             VALUES (?, ?, ?, 'PENDIENTE', 0, ?)
             """,
-            (telefono, nombre or "", motivo, datetime.utcnow().isoformat()),
+            (telefono, nombre or "", motivo, _utcnow().isoformat()),
         )
         return int(cur.lastrowid)
 
@@ -1566,3 +1578,70 @@ def resumen_metricas_operativas() -> dict:
         "conversaciones_activas": int(conv["n"]) if conv else 0,
         "recepcion_configurada": bool(config.RECEPCION_WHATSAPP),
     }
+
+
+def registrar_intento_clave_equipo_fallido(telefono: str) -> int:
+    ahora = _utcnow()
+    with _transaction() as conn:
+        row = conn.execute(
+            "SELECT fallos FROM equipo_clave_intentos WHERE telefono = ?",
+            (telefono,),
+        ).fetchone()
+        fallos = int(row["fallos"]) + 1 if row else 1
+        conn.execute(
+            """
+            INSERT INTO equipo_clave_intentos (telefono, fallos, bloqueado_hasta, actualizado_at)
+            VALUES (?, ?, NULL, ?)
+            ON CONFLICT(telefono) DO UPDATE SET
+                fallos = excluded.fallos,
+                actualizado_at = excluded.actualizado_at
+            """,
+            (telefono, fallos, ahora.isoformat()),
+        )
+        return fallos
+
+
+def resetear_intentos_clave_equipo(telefono: str) -> None:
+    with _transaction() as conn:
+        conn.execute(
+            """
+            INSERT INTO equipo_clave_intentos (telefono, fallos, bloqueado_hasta, actualizado_at)
+            VALUES (?, 0, NULL, ?)
+            ON CONFLICT(telefono) DO UPDATE SET
+                fallos = 0,
+                bloqueado_hasta = NULL,
+                actualizado_at = excluded.actualizado_at
+            """,
+            (telefono, _utcnow().isoformat()),
+        )
+
+
+def equipo_clave_bloqueada(telefono: str, max_fallos: int, minutos_bloqueo: int) -> bool:
+    with _transaction() as conn:
+        row = conn.execute(
+            "SELECT fallos, bloqueado_hasta FROM equipo_clave_intentos WHERE telefono = ?",
+            (telefono,),
+        ).fetchone()
+    if not row:
+        return False
+    if row["bloqueado_hasta"]:
+        try:
+            hasta = datetime.fromisoformat(row["bloqueado_hasta"])
+            if _utcnow() < hasta:
+                return True
+        except ValueError:
+            pass
+    fallos = int(row["fallos"] or 0)
+    if fallos < max_fallos:
+        return False
+    hasta = _utcnow() + timedelta(minutes=minutos_bloqueo)
+    with _transaction() as conn:
+        conn.execute(
+            """
+            UPDATE equipo_clave_intentos
+            SET bloqueado_hasta = ?, fallos = 0, actualizado_at = ?
+            WHERE telefono = ?
+            """,
+            (hasta.isoformat(), _utcnow().isoformat(), telefono),
+        )
+    return True

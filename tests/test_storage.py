@@ -85,9 +85,9 @@ def test_ritual_cierre(db_temp):
 
 
 def test_tareas_terapeuticas(db_temp):
-    from datetime import datetime
+    from datetime import datetime, timezone
 
-    hoy = datetime.utcnow().strftime("%Y-%m-%d")
+    hoy = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     tid = storage.crear_tarea_terapeutica(
         "523311111111", "523322222222", "Respirar 5 min", "lunes,miercoles"
     )

@@ -22,17 +22,14 @@ bp = Blueprint("web_chat", __name__)
 
 
 def _origen_permitido() -> bool:
-    if not config.IS_PRODUCTION:
-        return True
-    origin = (request.headers.get("Origin") or "").rstrip("/")
-    referer = (request.headers.get("Referer") or "").rstrip("/")
-    if origin and origin in config.WEB_CHAT_ORIGINS:
-        return True
-    if referer:
-        for allowed in config.WEB_CHAT_ORIGINS:
-            if referer.startswith(allowed):
-                return True
-    return not origin and not referer
+    from seguridad import origen_web_permitido
+
+    return origen_web_permitido(
+        is_production=config.IS_PRODUCTION,
+        origin=request.headers.get("Origin") or "",
+        referer=request.headers.get("Referer") or "",
+        allowed=list(config.WEB_CHAT_ORIGINS),
+    )
 
 
 def _cors_headers(response):

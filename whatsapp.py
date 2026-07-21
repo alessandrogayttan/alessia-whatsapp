@@ -13,12 +13,16 @@ logger = logging.getLogger(__name__)
 
 
 def verificar_firma_webhook(payload: bytes, signature_header: str | None) -> bool:
-    if not config.WHATSAPP_APP_SECRET:
+    from seguridad import webhook_debe_verificar_firma
+
+    if not webhook_debe_verificar_firma(config.IS_PRODUCTION, config.WHATSAPP_APP_SECRET):
         logger.warning(
-            "WHATSAPP_APP_SECRET no configurado: se omite verificación de firma. "
-            "Agrégalo desde Meta Developers > Configuración > Básica."
+            "WHATSAPP_APP_SECRET no configurado (solo desarrollo): se omite firma."
         )
         return True
+    if not config.WHATSAPP_APP_SECRET:
+        logger.error("WHATSAPP_APP_SECRET obligatorio: firma rechazada")
+        return False
     if not signature_header:
         return False
     expected = hmac.new(

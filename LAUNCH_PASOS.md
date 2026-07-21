@@ -99,7 +99,8 @@ Copia/pega y completa **cada una** (las SECRET no deben ir en GitHub):
 
 ### Cómo pegar `GOOGLE_SERVICE_ACCOUNT_JSON` en DigitalOcean ✋
 
-1. Abre el archivo `agente-inpulso-bda72425fab5.json` en tu PC
+1. Coloca el JSON de service account en `data/google-service-account.json` (gitignored)
+   o pega el contenido en `GOOGLE_SERVICE_ACCOUNT_JSON` en DigitalOcean.
 2. Copia **todo** el contenido
 3. En DO, crea variable `GOOGLE_SERVICE_ACCOUNT_JSON`, tipo **Encrypted**
 4. Pega el JSON completo (una sola línea está bien)

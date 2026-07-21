@@ -68,11 +68,10 @@ _SESSION_ID_RE = re.compile(
     re.I,
 )
 
-_INSTRUCCION_COMPROBANTE = (
-    "[COMPROBANTE DE PAGO — analiza monto, cuenta destino y estatus COMPLETADO. "
-    "Cuentas válidas: BANORTE CLABE 072320003548248000 o BANAMEX CLABE 002320700928855166. "
-    "Si es válido, llama confirmar_pago_comprobante con el teléfono del paciente y el monto.]"
-)
+def _instruccion_comprobante() -> str:
+    from prompt_pagos import instruccion_comprobante_web
+
+    return instruccion_comprobante_web()
 
 
 def _get_genai_client():
@@ -251,7 +250,7 @@ def _construir_contenido_multimodal(
         types.Part(inline_data=types.Blob(data=imagen_bytes, mime_type=mime_type))
     )
     if mime_type.startswith("image/") or mime_type == "application/pdf":
-        partes.append(types.Part(text=_INSTRUCCION_COMPROBANTE))
+        partes.append(types.Part(text=_instruccion_comprobante()))
     return partes
 
 

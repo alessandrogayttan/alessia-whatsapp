@@ -20,6 +20,41 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install ruff
+
+      - name: Ruff (lint crítico)
+        run: ruff check seguridad.py cuentas_pago.py prompt_pagos.py modo_equipo.py web_chat_api.py --select=E,F,S106,S107
+
+      - name: Guardia anti-secretos en repo
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          forbidden = [
+              "agente-inpulso-",
+              "BEGIN PRIVATE KEY",
+          ]
+          bad = []
+          for p in Path(".").rglob("*"):
+              if not p.is_file():
+                  continue
+              if any(x in p.parts for x in (".git", ".venv", "venv", "__pycache__", "data")):
+                  continue
+              if p.suffix.lower() in {".pyc", ".db", ".png", ".jpg", ".webp"}:
+                  continue
+              try:
+                  text = p.read_text(encoding="utf-8", errors="ignore")
+              except OSError:
+                  continue
+              for needle in forbidden:
+                  if needle in text and "hash_equipo_clave" not in p.name:
+                      bad.append(f"{p}: contiene {needle}")
+          # Service account JSON no debe estar versionado
+          for p in Path(".").glob("agente-inpulso-*.json"):
+              bad.append(f"archivo versionado: {p}")
+          if bad:
+              raise SystemExit("\\n".join(bad))
+          print("ok")
+          PY
 
       - name: Run tests
         env:
@@ -28,4 +63,7 @@ jobs:
           ID_TELEFONO: "123456789"
           GEMINI_API_KEY: test-gemini
           GOOGLE_SERVICE_ACCOUNT_JSON: '{"type":"service_account","project_id":"test"}'
+          BANORTE_CLABE: "072320000000000001"
+          BANAMEX_CLABE: "002320000000000001"
+          EQUIPO_CLAVE_ACCESO: test-equipo-clave
         run: pytest -q

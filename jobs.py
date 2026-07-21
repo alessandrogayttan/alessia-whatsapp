@@ -522,31 +522,30 @@ def renotificar_escalaciones_background():
 
 
 def backup_db_background():
-    """Backup diario de alessia.db (3:00 am México)."""
+    """Backup diario de alessia.db (3:00 am México) con API SQLite online."""
     ahora = datetime.datetime.now(ZONA)
     if ahora.hour != 3 or ahora.minute > 14:
         return
     clave = f"backup_{ahora.strftime('%Y-%m-%d')}"
-    if storage.recordatorio_ya_enviado(clave, "global"):
+    if not storage.reclamar_recordatorio(clave, "global"):
         return
     try:
         from pathlib import Path
-        import shutil
+
+        from db_backup import backup_sqlite, prune_backups
 
         src = Path(config.DATABASE_PATH)
         if not src.is_file():
+            storage.liberar_recordatorio(clave, "global")
             return
         dest_dir = Path(config.BACKUP_DIR)
-        dest_dir.mkdir(parents=True, exist_ok=True)
         stamp = ahora.strftime("%Y%m%d_%H%M%S")
         dest = dest_dir / f"alessia_{stamp}.db"
-        shutil.copy2(src, dest)
-        backups = sorted(dest_dir.glob("alessia_*.db"), key=lambda p: p.stat().st_mtime)
-        for viejo in backups[:-14]:
-            viejo.unlink(missing_ok=True)
-        storage.marcar_recordatorio_enviado(clave, "global")
+        backup_sqlite(src, dest)
+        prune_backups(dest_dir, keep=14)
         logger.info("Backup DB creado: %s", dest)
     except Exception as e:
+        storage.liberar_recordatorio(clave, "global")
         logger.error("Error backup DB: %s", e)
 
 

@@ -1,12 +1,12 @@
 import logging
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+from concurrent.futures import TimeoutError as FuturesTimeout
 
-from google import genai
 from google.genai import types
 
 import config
+from gemini_runtime import get_genai_client, send_message_con_timeout
 from terapeutas import (
     identificar_terapeuta,
     terapeuta_actualizar_taller,
@@ -54,22 +54,12 @@ from observability import registrar_fallo_gemini
 
 logger = logging.getLogger(__name__)
 
-_genai_client = None
 memoria_pacientes = {}
 memoria_terapeutas = {}
 cerrojos_pacientes = {}
 # Al cambiar el prompt, sube la versión para refrescar chats en RAM tras deploy.
 PROMPT_VERSION = "warm-2026-07-10c"
 _chat_prompt_version: dict[str, str] = {}
-
-
-def _get_genai_client():
-    global _genai_client
-    if _genai_client is None:
-        if not config.GEMINI_API_KEY:
-            raise RuntimeError("GEMINI_API_KEY no configurada")
-        _genai_client = genai.Client(api_key=config.GEMINI_API_KEY)
-    return _genai_client
 
 
 def _construir_instrucciones(numero_telefono: str) -> str:
@@ -381,7 +371,7 @@ def reiniciar_chat_paciente(numero_telefono: str):
 
 def _obtener_chat_terapeuta(numero_telefono: str, nombre_terapeuta: str):
     if numero_telefono not in memoria_terapeutas:
-        memoria_terapeutas[numero_telefono] = _get_genai_client().chats.create(
+        memoria_terapeutas[numero_telefono] = get_genai_client().chats.create(
             model="gemini-2.5-flash",
             config=types.GenerateContentConfig(
                 system_instruction=_construir_instrucciones_terapeuta(nombre_terapeuta),
@@ -400,7 +390,7 @@ def obtener_chat_paciente(numero_telefono: str):
         numero_telefono not in memoria_pacientes
         or _chat_prompt_version.get(numero_telefono) != PROMPT_VERSION
     ):
-        memoria_pacientes[numero_telefono] = _get_genai_client().chats.create(
+        memoria_pacientes[numero_telefono] = get_genai_client().chats.create(
             model="gemini-2.5-flash",
             history=_cargar_historial_persistente(numero_telefono),
             config=types.GenerateContentConfig(
@@ -442,10 +432,7 @@ def obtener_chat_paciente(numero_telefono: str):
 
 
 def _gemini_send_message(chat, contenido, timeout: int = 120):
-    """Llama a Gemini con timeout para evitar hilos colgados sin respuesta."""
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        future = pool.submit(chat.send_message, contenido)
-        return future.result(timeout=timeout)
+    return send_message_con_timeout(chat, contenido, timeout=timeout)
 
 
 MENSAJE_RESCATE = (

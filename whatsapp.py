@@ -89,6 +89,14 @@ def _enviar_payload(telefono_destino: str, payload: dict, max_intentos: int | No
                 intentos,
                 res.text[:500],
             )
+            if res.status_code == 429 and intento < intentos:
+                retry_after = res.headers.get("Retry-After")
+                try:
+                    espera = min(int(retry_after), 60) if retry_after else min(2 ** intento * 2, 30)
+                except ValueError:
+                    espera = min(2 ** intento * 2, 30)
+                time.sleep(espera)
+                continue
         except requests.RequestException as e:
             logger.error(
                 "Error enviando mensaje WhatsApp (intento %s/%s): %s",
@@ -98,6 +106,13 @@ def _enviar_payload(telefono_destino: str, payload: dict, max_intentos: int | No
             )
         if intento < intentos:
             time.sleep(min(2 ** intento, 8))
+
+    try:
+        from observability import registrar_fallo_whatsapp
+
+        registrar_fallo_whatsapp(telefono_destino)
+    except Exception:
+        pass
     return False
 
 

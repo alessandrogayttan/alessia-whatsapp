@@ -7,9 +7,9 @@ import re
 import threading
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 
-from google import genai
+from concurrent.futures import TimeoutError as FuturesTimeout
+
 from google.genai import types
 
 import config
@@ -20,6 +20,7 @@ from conversacion import (
     registrar_turno_web,
     vincular_conversacion_web,
 )
+from gemini_runtime import get_genai_client, send_message_con_timeout
 from observability import registrar_fallo_gemini
 from tools import (
     agendar_cita,
@@ -53,7 +54,6 @@ from tools import (
 logger = logging.getLogger(__name__)
 
 PROMPT_VERSION = "web-2026-07-09b"
-_genai_client = None
 _memoria_web: dict[str, object] = {}
 _prompt_version_web: dict[str, str] = {}
 _cerrojos_web: dict[str, threading.Lock] = {}
@@ -72,15 +72,6 @@ def _instruccion_comprobante() -> str:
     from prompt_pagos import instruccion_comprobante_web
 
     return instruccion_comprobante_web()
-
-
-def _get_genai_client():
-    global _genai_client
-    if _genai_client is None:
-        if not config.GEMINI_API_KEY:
-            raise RuntimeError("GEMINI_API_KEY no configurada")
-        _genai_client = genai.Client(api_key=config.GEMINI_API_KEY)
-    return _genai_client
 
 
 def _construir_instrucciones_web(
@@ -166,7 +157,7 @@ def _obtener_chat_web(session_id: str, telefono: str | None, nombre: str | None)
     clave = _memoria_clave(session_id, telefono)
     conv_clave = clave_conversacion_web(session_id, telefono)
     if clave not in _memoria_web or _prompt_version_web.get(conv_clave) != PROMPT_VERSION:
-        _memoria_web[clave] = _get_genai_client().chats.create(
+        _memoria_web[clave] = get_genai_client().chats.create(
             model="gemini-2.5-flash",
             history=historial_para_gemini(conv_clave),
             config=types.GenerateContentConfig(
@@ -181,9 +172,7 @@ def _obtener_chat_web(session_id: str, telefono: str | None, nombre: str | None)
 
 
 def _gemini_send_message(chat, contenido, timeout: int = 120):
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        future = pool.submit(chat.send_message, contenido)
-        return future.result(timeout=timeout)
+    return send_message_con_timeout(chat, contenido, timeout=timeout)
 
 
 def _normalizar_telefono_mexico(texto: str) -> str | None:

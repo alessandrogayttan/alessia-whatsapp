@@ -23,7 +23,7 @@ jobs:
           pip install ruff
 
       - name: Ruff (lint crítico)
-        run: ruff check seguridad.py cuentas_pago.py prompt_pagos.py modo_equipo.py web_chat_api.py --select=E,F,S106,S107
+        run: ruff check seguridad.py cuentas_pago.py prompt_pagos.py modo_equipo.py web_chat_api.py gemini_runtime.py db_backup.py message_queue.py whatsapp_inbound.py --select=E,F,S106,S107
 
       - name: Guardia anti-secretos en repo
         run: |

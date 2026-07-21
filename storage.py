@@ -318,6 +318,25 @@ def marcar_recordatorio_enviado(event_id: str, tipo: str):
         )
 
 
+def reclamar_recordatorio(event_id: str, tipo: str) -> bool:
+    """Claim atómico: True solo si este proceso insertó la fila (evita dobles envíos)."""
+    with _transaction() as conn:
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO recordatorios_enviados (event_id, tipo, enviado_at) VALUES (?, ?, ?)",
+            (event_id, tipo, _utcnow().isoformat()),
+        )
+        return cur.rowcount > 0
+
+
+def liberar_recordatorio(event_id: str, tipo: str) -> None:
+    """Revierte un claim si el envío falló (permite reintento)."""
+    with _transaction() as conn:
+        conn.execute(
+            "DELETE FROM recordatorios_enviados WHERE event_id = ? AND tipo = ?",
+            (event_id, tipo),
+        )
+
+
 def guardar_ubicacion(telefono: str, lat: float, lng: float):
     with _transaction() as conn:
         conn.execute(
@@ -1194,6 +1213,31 @@ def marcar_mensaje_fallido(msg_id: int, intentos: int, error: str = ""):
             """,
             (estado, intentos, error, ahora, msg_id),
         )
+
+
+def reencolar_mensajes_procesando_atascados(minutos: int = 10) -> int:
+    """Recupera filas 'procesando' viejas (crash a mitad de proceso)."""
+    cutoff = (_utcnow() - timedelta(minutes=max(1, minutos))).isoformat()
+    ahora = _utcnow().isoformat()
+    with _transaction() as conn:
+        cur = conn.execute(
+            """
+            UPDATE cola_mensajes
+            SET estado = 'pendiente', actualizado_at = ?,
+                error = COALESCE(error, '') || ' [reclaim-stuck]'
+            WHERE estado = 'procesando' AND actualizado_at < ?
+            """,
+            (ahora, cutoff),
+        )
+        return cur.rowcount
+
+
+def contar_cola_por_estado() -> dict[str, int]:
+    with _transaction() as conn:
+        rows = conn.execute(
+            "SELECT estado, COUNT(*) AS n FROM cola_mensajes GROUP BY estado"
+        ).fetchall()
+        return {r["estado"]: r["n"] for r in rows}
 
 
 def reencolar_mensajes_fallidos(limite: int = 5) -> int:

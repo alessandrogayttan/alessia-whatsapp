@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+from concurrent.futures import TimeoutError as FuturesTimeout
 
 from google.genai import types
 
@@ -15,6 +15,7 @@ from conversacion import (
     registrar_turno_equipo,
     texto_desde_contenido,
 )
+from gemini_runtime import get_genai_client, send_message_con_timeout
 from observability import registrar_fallo_gemini
 from tools import obtener_contexto_fecha_actual
 
@@ -45,18 +46,9 @@ _COMANDOS_ENTRADA = frozenset(
 )
 _COMANDOS_SALIR = frozenset({"salir equipo", "salir modo equipo", "cerrar equipo"})
 
-_GENAI = None
-
 
 def _cliente():
-    global _GENAI
-    if _GENAI is None:
-        from google import genai
-
-        if not config.GEMINI_API_KEY:
-            raise RuntimeError("GEMINI_API_KEY no configurada")
-        _GENAI = genai.Client(api_key=config.GEMINI_API_KEY)
-    return _GENAI
+    return get_genai_client()
 
 
 def _nombre_miembro(telefono: str) -> str:
@@ -302,9 +294,9 @@ def procesar_mensaje_equipo(telefono: str, contenido):
             chat = _obtener_chat_equipo_con_modelo(telefono, nombre, modelo)
             for intento in range(2):
                 try:
-                    with ThreadPoolExecutor(max_workers=1) as pool:
-                        future = pool.submit(chat.send_message, contenido)
-                        respuesta = future.result(timeout=timeout)
+                    respuesta = send_message_con_timeout(
+                        chat, contenido, timeout=timeout
+                    )
                     texto = (getattr(respuesta, "text", None) or "").strip()
                     if texto:
                         entrada = texto_desde_contenido(contenido)

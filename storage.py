@@ -79,7 +79,8 @@ def init_db():
                     codigo_referido TEXT UNIQUE,
                     referido_por TEXT,
                     ultimo_animo INTEGER,
-                    ultima_trivia_semana INTEGER DEFAULT 0
+                    ultima_trivia_semana INTEGER DEFAULT 0,
+                    aviso_privacidad_at TEXT
                 );
                 CREATE TABLE IF NOT EXISTS checkins_emocionales (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -175,6 +176,12 @@ def init_db():
                     actualizado_at TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS idx_cola_estado ON cola_mensajes(estado, creado_at);
+                CREATE TABLE IF NOT EXISTS cola_media (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    mime_type TEXT NOT NULL,
+                    data BLOB NOT NULL,
+                    creado_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS confirmaciones_asistencia (
                     event_id TEXT NOT NULL,
                     telefono TEXT NOT NULL,
@@ -266,6 +273,25 @@ def init_db():
                     chunk,
                     tokenize='unicode61 remove_diacritics 2'
                 );
+                """
+            )
+            # Migraciones ligeras (DBs ya existentes)
+            cols = {
+                r[1]
+                for r in conn.execute("PRAGMA table_info(paciente_extra)").fetchall()
+            }
+            if "aviso_privacidad_at" not in cols:
+                conn.execute(
+                    "ALTER TABLE paciente_extra ADD COLUMN aviso_privacidad_at TEXT"
+                )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS cola_media (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    mime_type TEXT NOT NULL,
+                    data BLOB NOT NULL,
+                    creado_at TEXT NOT NULL
+                )
                 """
             )
             conn.commit()
@@ -1157,6 +1183,57 @@ def encolar_mensaje_ia(telefono: str, contenido: str) -> int:
             (telefono, contenido, ahora, ahora),
         )
         return cur.lastrowid
+
+
+def guardar_cola_media(mime_type: str, data: bytes) -> int:
+    ahora = _utcnow().isoformat()
+    with _transaction() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO cola_media (mime_type, data, creado_at)
+            VALUES (?, ?, ?)
+            """,
+            (mime_type, data, ahora),
+        )
+        return int(cur.lastrowid)
+
+
+def obtener_cola_media(media_id: int) -> tuple[str, bytes] | None:
+    with _transaction() as conn:
+        row = conn.execute(
+            "SELECT mime_type, data FROM cola_media WHERE id = ?",
+            (media_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return row["mime_type"], row["data"]
+
+
+def borrar_cola_media(media_id: int) -> None:
+    with _transaction() as conn:
+        conn.execute("DELETE FROM cola_media WHERE id = ?", (media_id,))
+
+
+def marcar_aviso_privacidad_enviado(telefono: str) -> None:
+    with _transaction() as conn:
+        conn.execute(
+            """
+            INSERT INTO paciente_extra (telefono, aviso_privacidad_at)
+            VALUES (?, ?)
+            ON CONFLICT(telefono) DO UPDATE SET
+                aviso_privacidad_at = excluded.aviso_privacidad_at
+            """,
+            (telefono, _utcnow().isoformat()),
+        )
+
+
+def aviso_privacidad_ya_enviado(telefono: str) -> bool:
+    with _transaction() as conn:
+        row = conn.execute(
+            "SELECT aviso_privacidad_at FROM paciente_extra WHERE telefono = ?",
+            (telefono,),
+        ).fetchone()
+        return bool(row and row["aviso_privacidad_at"])
 
 
 def obtener_mensajes_pendientes(limite: int = 10) -> list[dict]:

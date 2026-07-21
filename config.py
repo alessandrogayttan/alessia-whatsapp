@@ -305,6 +305,7 @@ AVISO_PRIVACIDAD_URL = os.getenv(
 CLINICA_DIRECCION = "Av. Hidalgo 533, República, 45146 Zapopan, Jal."
 CLINICA_MAPS_URL = "https://maps.google.com/?q=Av.+Hidalgo+533,+Zapopan,+Jalisco"
 WHATSAPP_MAX_CHARS = 4000
+MEDIA_MAX_BYTES = int(os.getenv("MEDIA_MAX_BYTES", str(15 * 1024 * 1024)))
 CITAS_CACHE_TTL = int(os.getenv("CITAS_CACHE_TTL", "180"))
 CALENDAR_API_RETRIES = int(os.getenv("CALENDAR_API_RETRIES", "4"))
 CALENDAR_CONSULTA_REINTENTOS = int(os.getenv("CALENDAR_CONSULTA_REINTENTOS", "3"))
@@ -383,6 +384,12 @@ ZONA_MEXICO = "America/Mexico_City"
 SENTRY_DSN = os.getenv("SENTRY_DSN", "")
 ALERTA_FALLOS_UMBRAL = int(os.getenv("ALERTA_FALLOS_UMBRAL", "5"))
 BACKUP_DIR = os.getenv("BACKUP_DIR", str(DATA_DIR / "backups"))
+# Backup offsite opcional (DigitalOcean Spaces / S3 compatible)
+BACKUP_S3_ENDPOINT = os.getenv("BACKUP_S3_ENDPOINT", "").strip()
+BACKUP_S3_BUCKET = os.getenv("BACKUP_S3_BUCKET", "").strip()
+BACKUP_S3_ACCESS_KEY = os.getenv("BACKUP_S3_ACCESS_KEY", "").strip()
+BACKUP_S3_SECRET_KEY = os.getenv("BACKUP_S3_SECRET_KEY", "").strip()
+BACKUP_S3_REGION = os.getenv("BACKUP_S3_REGION", "nyc3").strip()
 WEBHOOK_RATE_LIMIT = int(os.getenv("WEBHOOK_RATE_LIMIT", "120"))  # req/min por IP
 
 # Chat web inpulso43.com (canal separado de WhatsApp; desactivado por defecto)

@@ -368,6 +368,7 @@ def enviar_imagen_whatsapp(
 def descargar_media_whatsapp(media_id: str):
     url_info = f"https://graph.facebook.com/v19.0/{media_id}"
     headers = {"Authorization": f"Bearer {config.TOKEN_WHATSAPP}"}
+    max_bytes = int(getattr(config, "MEDIA_MAX_BYTES", 15 * 1024 * 1024))
     try:
         res_info = requests.get(url_info, headers=headers, timeout=30)
         if res_info.status_code != 200:
@@ -377,9 +378,20 @@ def descargar_media_whatsapp(media_id: str):
         mime_type = datos_media.get("mime_type")
         if not url_descarga:
             return None, None
-        res_archivo = requests.get(url_descarga, headers=headers, timeout=60)
-        if res_archivo.status_code == 200:
-            return res_archivo.content, mime_type
+        res_archivo = requests.get(url_descarga, headers=headers, timeout=60, stream=True)
+        if res_archivo.status_code != 200:
+            return None, None
+        chunks = []
+        total = 0
+        for chunk in res_archivo.iter_content(chunk_size=65536):
+            if not chunk:
+                continue
+            total += len(chunk)
+            if total > max_bytes:
+                logger.warning("Media %s excede límite %s bytes", media_id, max_bytes)
+                return None, None
+            chunks.append(chunk)
+        return b"".join(chunks), mime_type
     except requests.RequestException as e:
         logger.error("Error descargando media: %s", e)
     return None, None

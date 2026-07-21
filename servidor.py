@@ -1,7 +1,6 @@
 import datetime
 import logging
 import sys
-import threading
 import time
 from collections import defaultdict
 
@@ -10,8 +9,7 @@ from flask import Flask, request
 
 import config
 import storage
-from chat import procesar_mensaje_ia
-from message_queue import encolar_mensaje_texto, procesar_cola
+from message_queue import encolar_contenido_ia, procesar_cola
 from observability import init_sentry, metricas_fallos
 from tools import envolver_mensaje_con_contexto_paciente
 from whatsapp import (
@@ -22,12 +20,13 @@ from whatsapp import (
 from whatsapp_inbound import (
     _extraer_mensajes_whatsapp,
     _procesar_estados_whatsapp,
-    _registrar_consentimiento_si_aplica,
+    manejar_privacidad_entrada,
     preparar_contenido_mensaje,
 )
 
 # Compat tests / imports antiguos
 _preparar_contenido_mensaje = preparar_contenido_mensaje
+_registrar_consentimiento_si_aplica = manejar_privacidad_entrada
 
 from jobs import (
     alertas_citas_background,
@@ -321,8 +320,7 @@ def webhook():
         logger.warning("Webhook POST con firma inválida")
         return "Forbidden", 403
 
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")
-    client_ip = client_ip.split(",")[0].strip()
+    client_ip = (request.remote_addr or "unknown").strip()
     if not _rate_limit_ok(client_ip):
         logger.warning("Rate limit webhook excedido: %s", client_ip)
         return "Too Many Requests", 429
@@ -341,25 +339,24 @@ def webhook():
             logger.info("Mensaje duplicado ignorado: %s", mensaje_id)
             continue
 
+        numero_remitente = mensaje_info["from"]
+        texto_plano = ""
+        if mensaje_info.get("type") == "text":
+            texto_plano = (mensaje_info.get("text") or {}).get("body") or ""
+        priv = manejar_privacidad_entrada(numero_remitente, texto_plano)
+        if priv == "bloqueado":
+            continue
+
         contenido_para_ia = _preparar_contenido_mensaje(mensaje_info)
         if contenido_para_ia is None:
             continue
 
-        numero_remitente = mensaje_info["from"]
         marcar_leido_y_escribiendo(mensaje_id)
         enviar_ack_inmediato(numero_remitente)
-        _registrar_consentimiento_si_aplica(numero_remitente)
         contenido_con_citas = envolver_mensaje_con_contexto_paciente(
             numero_remitente, contenido_para_ia
         )
-        if isinstance(contenido_con_citas, str):
-            encolar_mensaje_texto(numero_remitente, contenido_con_citas)
-        else:
-            threading.Thread(
-                target=procesar_mensaje_ia,
-                args=(numero_remitente, contenido_con_citas),
-                daemon=True,
-            ).start()
+        encolar_contenido_ia(numero_remitente, contenido_con_citas)
 
     return "OK", 200
 

@@ -17,6 +17,20 @@ logger = logging.getLogger(__name__)
 ZONA = pytz.timezone(config.ZONA_MEXICO)
 
 
+def _con_claim_recordatorio(event_id: str, tipo: str, enviar_fn) -> bool:
+    """Claim atómico → enviar → liberar si falla (evita dobles y pierde reintento)."""
+    if not storage.reclamar_recordatorio(event_id, tipo):
+        return False
+    try:
+        ok = bool(enviar_fn())
+        if not ok:
+            storage.liberar_recordatorio(event_id, tipo)
+        return ok
+    except Exception:
+        storage.liberar_recordatorio(event_id, tipo)
+        raise
+
+
 def limpiar_inscripciones_pendientes_background():
     if not config.ID_HOJA_CALCULO:
         return
@@ -73,99 +87,102 @@ def limpiar_inscripciones_pendientes_background():
 def _enviar_recordatorio_24h(telefono: str, hora_cita: datetime.datetime, event_id: str):
     from experiencia import mensaje_recordatorio_24h
 
-    if storage.recordatorio_ya_enviado(event_id, "24h"):
-        return
-    hora_txt = hora_cita.strftime("%H:%M")
-    nombre = (
-        storage.primer_nombre(telefono)
-        or storage.obtener_nombre_paciente(telefono)
-        or "hola"
-    )
-    msg = mensaje_recordatorio_24h(hora_cita)
-    if enviar_recordatorio(
-        telefono,
-        msg,
-        config.WHATSAPP_TEMPLATE_24H,
-        [nombre, hora_txt],
-    ):
-        storage.marcar_recordatorio_enviado(event_id, "24h")
-        storage.marcar_prep_pendiente(telefono, event_id)
+    def _do():
+        hora_txt = hora_cita.strftime("%H:%M")
+        nombre = (
+            storage.primer_nombre(telefono)
+            or storage.obtener_nombre_paciente(telefono)
+            or "hola"
+        )
+        msg = mensaje_recordatorio_24h(hora_cita)
+        ok = enviar_recordatorio(
+            telefono,
+            msg,
+            config.WHATSAPP_TEMPLATE_24H,
+            [nombre, hora_txt],
+        )
+        if ok:
+            storage.marcar_prep_pendiente(telefono, event_id)
+        return ok
+
+    _con_claim_recordatorio(event_id, "24h", _do)
 
 
 def _enviar_recordatorio_2h(telefono: str, hora_cita: datetime.datetime, event_id: str):
-    if storage.recordatorio_ya_enviado(event_id, "2h"):
-        return
-
-    ubicacion = storage.obtener_ubicacion(telefono)
-    if ubicacion and config.API_KEY_MAPS:
-        try:
-            url = (
-                "https://maps.googleapis.com/maps/api/distancematrix/json"
-                f"?origins={ubicacion}"
-                "&destinations=Av.+Hidalgo+533,Zapopan"
-                "&departure_time=now"
-                f"&key={config.API_KEY_MAPS}"
-            )
-            res = requests.get(url, timeout=15).json()
-            if res.get("status") == "OK":
-                elemento = res["rows"][0]["elements"][0]
-                duracion_normal = elemento["duration"]["value"] / 60
-                duracion_trafico = (
-                    elemento.get("duration_in_traffic", elemento["duration"])["value"] / 60
+    def _do():
+        ubicacion = storage.obtener_ubicacion(telefono)
+        if ubicacion and config.API_KEY_MAPS:
+            try:
+                url = (
+                    "https://maps.googleapis.com/maps/api/distancematrix/json"
+                    f"?origins={ubicacion}"
+                    "&destinations=Av.+Hidalgo+533,Zapopan"
+                    "&departure_time=now"
+                    f"&key={config.API_KEY_MAPS}"
                 )
-                if duracion_trafico > duracion_normal + 10:
-                    msg = (
-                        f"🚗 *Alerta de Tráfico*\n¡Hola! Tu cita es en 2 horas ({hora_cita.strftime('%H:%M')}). "
-                        f"Detecté tráfico en tu ruta (aprox {int(duracion_trafico)} min).\n\n"
-                        f"📍 {config.CLINICA_DIRECCION}\n"
-                        f"🗺️ {config.CLINICA_MAPS_URL}\n\n"
-                        f"¡Te sugiero salir con anticipación! ✨"
+                res = requests.get(url, timeout=15).json()
+                if res.get("status") == "OK":
+                    elemento = res["rows"][0]["elements"][0]
+                    duracion_normal = elemento["duration"]["value"] / 60
+                    duracion_trafico = (
+                        elemento.get("duration_in_traffic", elemento["duration"])["value"]
+                        / 60
                     )
-                else:
-                    msg = (
-                        f"🚗 *Recordatorio Inpulso*\n¡Hola! Tu cita es en 2 horas ({hora_cita.strftime('%H:%M')}). "
-                        f"El tráfico está fluido ({int(duracion_trafico)} min).\n\n"
-                        f"📍 {config.CLINICA_DIRECCION}\n"
-                        f"🗺️ {config.CLINICA_MAPS_URL}\n\n"
-                        f"¡Te esperamos! 😊"
+                    if duracion_trafico > duracion_normal + 10:
+                        msg = (
+                            f"🚗 *Alerta de Tráfico*\n¡Hola! Tu cita es en 2 horas "
+                            f"({hora_cita.strftime('%H:%M')}). "
+                            f"Detecté tráfico en tu ruta (aprox {int(duracion_trafico)} min).\n\n"
+                            f"📍 {config.CLINICA_DIRECCION}\n"
+                            f"🗺️ {config.CLINICA_MAPS_URL}\n\n"
+                            f"¡Te sugiero salir con anticipación! ✨"
+                        )
+                    else:
+                        msg = (
+                            f"🚗 *Recordatorio Inpulso*\n¡Hola! Tu cita es en 2 horas "
+                            f"({hora_cita.strftime('%H:%M')}). "
+                            f"El tráfico está fluido ({int(duracion_trafico)} min).\n\n"
+                            f"📍 {config.CLINICA_DIRECCION}\n"
+                            f"🗺️ {config.CLINICA_MAPS_URL}\n\n"
+                            f"¡Te esperamos! 😊"
+                        )
+                    return enviar_recordatorio(
+                        telefono,
+                        msg,
+                        config.WHATSAPP_TEMPLATE_2H,
+                        [
+                            storage.primer_nombre(telefono)
+                            or storage.obtener_nombre_paciente(telefono)
+                            or "hola",
+                            hora_cita.strftime("%H:%M"),
+                        ],
                     )
-                if enviar_recordatorio(
-                    telefono,
-                    msg,
-                    config.WHATSAPP_TEMPLATE_2H,
-                    [
-                        storage.primer_nombre(telefono)
-                        or storage.obtener_nombre_paciente(telefono)
-                        or "hola",
-                        hora_cita.strftime("%H:%M"),
-                    ],
-                ):
-                    storage.marcar_recordatorio_enviado(event_id, "2h")
-                return
-        except requests.RequestException as e:
-            logger.warning("Error Maps en recordatorio: %s", e)
+            except requests.RequestException as e:
+                logger.warning("Error Maps en recordatorio: %s", e)
 
-    clima = obtener_clima_zapopan()
-    clima_txt = f"\n\n{clima}" if clima else ""
-    msg = (
-        f"🚗 *Recordatorio Inpulso*\n¡Hola! Tu cita es en aprox 2 horas ({hora_cita.strftime('%H:%M')}).\n\n"
-        f"📍 {config.CLINICA_DIRECCION}\n"
-        f"🗺️ {config.CLINICA_MAPS_URL}\n\n"
-        f"Contempla el estacionamiento (sujeto a un cajón disponible). ¡Te esperamos! ✨"
-        f"{clima_txt}"
-    )
-    if enviar_recordatorio(
-        telefono,
-        msg,
-        config.WHATSAPP_TEMPLATE_2H,
-        [
-            storage.primer_nombre(telefono)
-            or storage.obtener_nombre_paciente(telefono)
-            or "hola",
-            hora_cita.strftime("%H:%M"),
-        ],
-    ):
-        storage.marcar_recordatorio_enviado(event_id, "2h")
+        clima = obtener_clima_zapopan()
+        clima_txt = f"\n\n{clima}" if clima else ""
+        msg = (
+            f"🚗 *Recordatorio Inpulso*\n¡Hola! Tu cita es en aprox 2 horas "
+            f"({hora_cita.strftime('%H:%M')}).\n\n"
+            f"📍 {config.CLINICA_DIRECCION}\n"
+            f"🗺️ {config.CLINICA_MAPS_URL}\n\n"
+            f"Contempla el estacionamiento (sujeto a un cajón disponible). ¡Te esperamos! ✨"
+            f"{clima_txt}"
+        )
+        return enviar_recordatorio(
+            telefono,
+            msg,
+            config.WHATSAPP_TEMPLATE_2H,
+            [
+                storage.primer_nombre(telefono)
+                or storage.obtener_nombre_paciente(telefono)
+                or "hola",
+                hora_cita.strftime("%H:%M"),
+            ],
+        )
+
+    _con_claim_recordatorio(event_id, "2h", _do)
 
 
 def alertas_citas_background():
@@ -218,84 +235,86 @@ def alertas_citas_background():
 
 
 def _enviar_resumen_terapeuta(event, telefono: str, hora_cita, cal_id: str, event_id: str):
-    if storage.recordatorio_ya_enviado(event_id, "pre30m"):
-        return
-    from experiencia import texto_prep_para_terapeuta
-    from tools import _resolver_whatsapp_terapeuta
+    def _do():
+        from experiencia import texto_prep_para_terapeuta
+        from tools import _resolver_whatsapp_terapeuta
 
-    esp = _especialista_desde_calendario(cal_id)
-    info = _resolver_whatsapp_terapeuta(esp)
-    if not info:
-        return
-    display, whatsapp = info
-    nombre = storage.obtener_nombre_paciente(telefono) or event.get("summary", "Paciente")
-    animo = storage.obtener_ultimo_animo(telefono)
-    animo_txt = f"\nÚltimo check-in emocional: {animo}/10" if animo else ""
-    prep_txt = texto_prep_para_terapeuta(telefono)
-    prep_bloque = f"\n\n📝 Prep del paciente:\n{prep_txt}" if prep_txt else ""
-    citas_prev = storage.citas_completadas(telefono)
-    tipo = "Primera cita" if citas_prev == 0 else f"Cita #{citas_prev + 1}"
-    msg = (
-        f"📋 *Resumen pre-sesión (30 min)*\n"
-        f"Paciente: {nombre}\n"
-        f"Tel: {telefono}\n"
-        f"Hora: {hora_cita.strftime('%H:%M')}\n"
-        f"Tipo: {tipo}{animo_txt}{prep_bloque}\n"
-        f"Servicio: {event.get('description', '')[:120]}"
-    )
-    if enviar_mensaje_whatsapp(whatsapp, msg):
-        storage.marcar_recordatorio_enviado(event_id, "pre30m")
+        esp = _especialista_desde_calendario(cal_id)
+        info = _resolver_whatsapp_terapeuta(esp)
+        if not info:
+            return False
+        _display, whatsapp = info
+        nombre = storage.obtener_nombre_paciente(telefono) or event.get("summary", "Paciente")
+        animo = storage.obtener_ultimo_animo(telefono)
+        animo_txt = f"\nÚltimo check-in emocional: {animo}/10" if animo else ""
+        prep_txt = texto_prep_para_terapeuta(telefono)
+        prep_bloque = f"\n\n📝 Prep del paciente:\n{prep_txt}" if prep_txt else ""
+        citas_prev = storage.citas_completadas(telefono)
+        tipo = "Primera cita" if citas_prev == 0 else f"Cita #{citas_prev + 1}"
+        msg = (
+            f"📋 *Resumen pre-sesión (30 min)*\n"
+            f"Paciente: {nombre}\n"
+            f"Tel: {telefono}\n"
+            f"Hora: {hora_cita.strftime('%H:%M')}\n"
+            f"Tipo: {tipo}{animo_txt}{prep_bloque}\n"
+            f"Servicio: {event.get('description', '')[:120]}"
+        )
+        return enviar_mensaje_whatsapp(whatsapp, msg)
+
+    _con_claim_recordatorio(event_id, "pre30m", _do)
 
 
 def _enviar_eta_salida(telefono: str, hora_cita: datetime.datetime, event_id: str):
     """Tier 4.14: sugiere salir en X minutos según ubicación y tráfico."""
-    if storage.recordatorio_ya_enviado(event_id, "eta30m"):
-        return
-    from experiencia import calcular_minutos_ruta
 
-    minutos = calcular_minutos_ruta(telefono)
-    if not minutos:
-        return
-    salir_en = max(minutos - 25, 5)
-    msg = (
-        f"🚗 *Hora de salir*\n\n"
-        f"Tu cita es a las {hora_cita.strftime('%H:%M')}. "
-        f"Con el tráfico actual, te sugiero salir en unos *{salir_en} minutos* "
-        f"(ruta ~{minutos} min).\n\n"
-        f"📍 {config.CLINICA_DIRECCION}\n"
-        f"🗺️ {config.CLINICA_MAPS_URL}"
-    )
-    if enviar_mensaje_whatsapp(telefono, msg):
-        storage.marcar_recordatorio_enviado(event_id, "eta30m")
+    def _do():
+        from experiencia import calcular_minutos_ruta
+
+        minutos = calcular_minutos_ruta(telefono)
+        if not minutos:
+            return False
+        salir_en = max(minutos - 25, 5)
+        msg = (
+            f"🚗 *Hora de salir*\n\n"
+            f"Tu cita es a las {hora_cita.strftime('%H:%M')}. "
+            f"Con el tráfico actual, te sugiero salir en unos *{salir_en} minutos* "
+            f"(ruta ~{minutos} min).\n\n"
+            f"📍 {config.CLINICA_DIRECCION}\n"
+            f"🗺️ {config.CLINICA_MAPS_URL}"
+        )
+        return enviar_mensaje_whatsapp(telefono, msg)
+
+    _con_claim_recordatorio(event_id, "eta30m", _do)
 
 
 def _enviar_link_online(event, telefono: str, hora_cita, cal_id: str, event_id: str):
     """Envía link de videollamada 5 min antes si la cita es online y hay link configurado."""
-    if storage.recordatorio_ya_enviado(event_id, "online5m"):
-        return
-    from experiencia import es_cita_online, link_sesion_online
 
-    if not es_cita_online(event):
-        return
-    esp = _especialista_desde_calendario(cal_id)
-    nombre_esp = esp.title() if esp else "Tu terapeuta"
-    link = link_sesion_online(esp)
-    if link:
-        msg = (
-            f"💻 *Tu sesión online empieza pronto*\n\n"
-            f"Cita: {hora_cita.strftime('%H:%M')} con {nombre_esp}\n"
-            f"🔗 Conéctate aquí:\n{link}\n\n"
-            f"Lugar tranquilo, buena conexión y audífonos 🎧"
-        )
-    else:
-        msg = (
-            f"💻 *Tu sesión online es hoy*\n\n"
-            f"Tu cita es a las {hora_cita.strftime('%H:%M')}.\n"
-            f"*{nombre_esp}* te contactará por aquí con el link de Zoom para conectarte ✨\n\n"
-            f"Lugar tranquilo, buena conexión y audífonos si puedes 🎧"
-        )
-    if enviar_mensaje_whatsapp(telefono, msg):
-        storage.marcar_recordatorio_enviado(event_id, "online5m")
+    def _do():
+        from experiencia import es_cita_online, link_sesion_online
+
+        if not es_cita_online(event):
+            return False
+        esp = _especialista_desde_calendario(cal_id)
+        nombre_esp = esp.title() if esp else "Tu terapeuta"
+        link = link_sesion_online(esp)
+        if link:
+            msg = (
+                f"💻 *Tu sesión online empieza pronto*\n\n"
+                f"Cita: {hora_cita.strftime('%H:%M')} con {nombre_esp}\n"
+                f"🔗 Conéctate aquí:\n{link}\n\n"
+                f"Lugar tranquilo, buena conexión y audífonos 🎧"
+            )
+        else:
+            msg = (
+                f"💻 *Tu sesión online es hoy*\n\n"
+                f"Tu cita es a las {hora_cita.strftime('%H:%M')}.\n"
+                f"*{nombre_esp}* te contactará por aquí con el link de Zoom para conectarte ✨\n\n"
+                f"Lugar tranquilo, buena conexión y audífonos si puedes 🎧"
+            )
+        return enviar_mensaje_whatsapp(telefono, msg)
+
+    _con_claim_recordatorio(event_id, "online5m", _do)
 
 
 def seguimiento_post_cita_background():
@@ -317,26 +336,28 @@ def seguimiento_post_cita_background():
                 if not start_str:
                     continue
                 event_id = event.get("id", "")
-                if storage.recordatorio_ya_enviado(event_id, "post48h"):
-                    continue
-                desc = event.get("description", "")
-                phone_match = re.search(r"Teléfono:\s*(\+?\d+)", desc)
-                if not phone_match:
-                    continue
-                telefono = phone_match.group(1)
-                nombre = storage.obtener_nombre_paciente(telefono) or storage.primer_nombre(telefono)
-                saludo = f"Hola {nombre.split()[0]}" if nombre else "Hola"
-                msg = (
-                    f"💙 *Seguimiento Inpulso*\n\n"
-                    f"{saludo}, hace un par de días tuviste sesión con nosotros. "
-                    "¿Cómo te has sentido desde entonces?\n\n"
-                    "🌿 *Ritual de cierre* (opcional y privado): "
-                    "Si quieres, escribe en un mensaje qué te llevas de esa sesión "
-                    "— es solo para ti, no se comparte con tu terapeuta."
-                )
-                if enviar_mensaje_whatsapp(telefono, msg):
-                    storage.marcar_recordatorio_enviado(event_id, "post48h")
-                    storage.marcar_ritual_pendiente(telefono, event_id)
+
+                def _do_post(ev=event, eid=event_id):
+                    desc = ev.get("description", "")
+                    phone_match = re.search(r"Teléfono:\s*(\+?\d+)", desc)
+                    if not phone_match:
+                        return False
+                    telefono = phone_match.group(1)
+                    nombre = storage.obtener_nombre_paciente(telefono) or storage.primer_nombre(
+                        telefono
+                    )
+                    saludo = f"Hola {nombre.split()[0]}" if nombre else "Hola"
+                    msg = (
+                        f"💙 *Seguimiento Inpulso*\n\n"
+                        f"{saludo}, hace un par de días tuviste sesión con nosotros. "
+                        "¿Cómo te has sentido desde entonces?\n\n"
+                        "🌿 *Ritual de cierre* (opcional y privado): "
+                        "Si quieres, escribe en un mensaje qué te llevas de esa sesión "
+                        "— es solo para ti, no se comparte con tu terapeuta."
+                    )
+                    if not enviar_mensaje_whatsapp(telefono, msg):
+                        return False
+                    storage.marcar_ritual_pendiente(telefono, eid)
                     total = storage.incrementar_citas_completadas(telefono)
                     if total >= 3 and not storage.nps_ya_enviado(telefono):
                         nps = (
@@ -347,7 +368,10 @@ def seguimiento_post_cita_background():
                         )
                         enviar_mensaje_whatsapp(telefono, nps)
                         storage.marcar_nps_enviado(telefono)
-                        storage.marcar_nps_pendiente(telefono, event_id)
+                        storage.marcar_nps_pendiente(telefono, eid)
+                    return True
+
+                _con_claim_recordatorio(event_id, "post48h", _do_post)
     except Exception as e:
         logger.error("Error seguimiento post-cita: %s", e)
 
@@ -358,17 +382,20 @@ def frase_del_dia_background():
     if ahora.hour != 8 or ahora.minute > 14:
         return
     clave = f"frase_{ahora.strftime('%Y-%m-%d')}"
-    if storage.recordatorio_ya_enviado(clave, "global"):
-        return
-    frase = frase_del_dia()
-    enviados = 0
-    for telefono in storage.pacientes_frase_dia_activa():
-        msg = f"☀️ *Frase del día — Inpulso 43*\n\n{frase}"
-        if enviar_mensaje_whatsapp(telefono, msg):
-            enviados += 1
-    if enviados:
-        storage.marcar_recordatorio_enviado(clave, "global")
-        logger.info("Frases del día enviadas: %s", enviados)
+
+    def _do():
+        frase = frase_del_dia()
+        enviados = 0
+        for telefono in storage.pacientes_frase_dia_activa():
+            msg = f"☀️ *Frase del día — Inpulso 43*\n\n{frase}"
+            if enviar_mensaje_whatsapp(telefono, msg):
+                enviados += 1
+        if enviados:
+            logger.info("Frases del día enviadas: %s", enviados)
+        # Claim se mantiene aunque 0 enviados (evita reintentos masivos el mismo día)
+        return True
+
+    _con_claim_recordatorio(clave, "global", _do)
 
 
 def trivia_semanal_background():
@@ -395,22 +422,23 @@ def reporte_semanal_background():
     if ahora.weekday() != 0 or ahora.hour != 8 or ahora.minute > 14:
         return
     clave = f"reporte_{ahora.strftime('%Y-%W')}"
-    if storage.recordatorio_ya_enviado(clave, "global"):
-        return
     destino = config.TERAPEUTAS_WHATSAPP.get("sara")
     if not destino:
         return
-    actualizar_dashboard()
-    stats = storage.estadisticas_globales()
-    msg = (
-        f"📊 *Reporte semanal Inpulso 43*\n\n"
-        f"Pacientes registrados: {stats.get('pacientes', 0)}\n"
-        f"Referidos activados: {stats.get('referidos', 0)}\n"
-        f"Check-ins emocionales (mes): {stats.get('checkins_mes', 0)}\n\n"
-        f"Revisa la pestaña *Dashboard* en Google Sheets para más detalle."
-    )
-    if enviar_mensaje_whatsapp(destino, msg):
-        storage.marcar_recordatorio_enviado(clave, "global")
+
+    def _do():
+        actualizar_dashboard()
+        stats = storage.estadisticas_globales()
+        msg = (
+            f"📊 *Reporte semanal Inpulso 43*\n\n"
+            f"Pacientes registrados: {stats.get('pacientes', 0)}\n"
+            f"Referidos activados: {stats.get('referidos', 0)}\n"
+            f"Check-ins emocionales (mes): {stats.get('checkins_mes', 0)}\n\n"
+            f"Revisa la pestaña *Dashboard* en Google Sheets para más detalle."
+        )
+        return enviar_mensaje_whatsapp(destino, msg)
+
+    _con_claim_recordatorio(clave, "global", _do)
 
 
 def dashboard_background():
@@ -543,6 +571,9 @@ def backup_db_background():
         dest = dest_dir / f"alessia_{stamp}.db"
         backup_sqlite(src, dest)
         prune_backups(dest_dir, keep=14)
+        from db_backup import subir_backup_offsite
+
+        subir_backup_offsite(dest)
         logger.info("Backup DB creado: %s", dest)
     except Exception as e:
         storage.liberar_recordatorio(clave, "global")
@@ -579,16 +610,15 @@ def sincronizar_web_background():
     if ahora.hour != 6 or ahora.minute > 14:
         return
     clave = f"web_sync_{ahora.strftime('%Y-%m-%d')}"
-    if storage.recordatorio_ya_enviado(clave, "global"):
-        return
-    try:
+
+    def _do():
         from catalogo_web import TALLERES_WEB
 
         url = config.CLINICA_WEB_URL.rstrip("/") + "/talleres.php"
         res = requests.get(url, timeout=30, headers={"User-Agent": "AlessiaBot/1.0"})
         if res.status_code != 200:
             logger.warning("Web sync: HTTP %s", res.status_code)
-            return
+            return False
         html = res.text.lower()
         faltantes = []
         for t in TALLERES_WEB:
@@ -606,7 +636,10 @@ def sincronizar_web_background():
                     + "\n\nRevisa catalogo_web.py o la web."
                 )
                 enviar_mensaje_whatsapp(destino, msg)
-        storage.marcar_recordatorio_enviado(clave, "global")
+        return True
+
+    try:
+        _con_claim_recordatorio(clave, "global", _do)
     except Exception as e:
         logger.error("Error sync web: %s", e)
 

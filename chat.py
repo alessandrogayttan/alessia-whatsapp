@@ -431,14 +431,18 @@ def obtener_chat_paciente(numero_telefono: str):
     return memoria_pacientes[numero_telefono]
 
 
-def _gemini_send_message(chat, contenido, timeout: int = 120):
-    return send_message_con_timeout(chat, contenido, timeout=timeout)
+def _gemini_send_message(chat, contenido, timeout: int | None = None):
+    return send_message_con_timeout(
+        chat, contenido, timeout=timeout or config.GEMINI_PACIENTE_TIMEOUT
+    )
 
 
 MENSAJE_RESCATE = (
     "Perdóname, tuve un pequeño tropiezo técnico 🙈 "
     "¿Me repites tu mensaje? Estoy aquí contigo."
 )
+
+MENSAJE_ESPERA = "Un momentito, ya lo estoy revisando ✨"
 
 
 def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
@@ -468,6 +472,21 @@ def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
         import tools as tools_ctx
 
         tools_ctx._telefono_contexto = numero_paciente
+        listo = {"ok": False}
+
+        def _aviso_espera():
+            if listo["ok"]:
+                return
+            try:
+                enviar_mensaje_whatsapp(numero_paciente, MENSAJE_ESPERA)
+            except Exception:
+                pass
+
+        timer = threading.Timer(
+            max(3.0, config.GEMINI_AVISO_ESPERA_SEGUNDOS), _aviso_espera
+        )
+        timer.daemon = True
+        timer.start()
         try:
             chat_alessia = obtener_chat_paciente(numero_paciente)
             nombre_terapeuta = identificar_terapeuta(numero_paciente)
@@ -482,6 +501,8 @@ def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
                     respuesta_ia = _gemini_send_message(chat_alessia, contenido_para_ia)
                     texto = (getattr(respuesta_ia, "text", None) or "").strip()
                     if texto:
+                        listo["ok"] = True
+                        timer.cancel()
                         enviar_mensaje_whatsapp(numero_paciente, texto)
                         try:
                             from conversacion import registrar_turno_whatsapp
@@ -504,7 +525,7 @@ def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
                     )
                     registrar_fallo_gemini(numero_paciente)
                     if intento == 0:
-                        time.sleep(2)
+                        time.sleep(1)
                         continue
                 except Exception as e:
                     logger.exception(
@@ -515,15 +536,15 @@ def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
                     )
                     registrar_fallo_gemini(numero_paciente)
                     if intento == 0:
-                        time.sleep(2)
+                        time.sleep(1)
                         continue
-                    break
-        except Exception as e:
-            logger.exception("Error fatal procesando mensaje de %s: %s", numero_paciente, e)
         finally:
+            listo["ok"] = True
+            timer.cancel()
             tools_ctx._telefono_contexto = None
-            if not enviado:
-                for intento in range(3):
-                    if enviar_mensaje_whatsapp(numero_paciente, MENSAJE_RESCATE):
-                        break
-                    time.sleep(2)
+
+        if not enviado:
+            for _ in range(3):
+                if enviar_mensaje_whatsapp(numero_paciente, MENSAJE_RESCATE):
+                    break
+                time.sleep(1)

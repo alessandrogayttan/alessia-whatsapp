@@ -197,6 +197,9 @@ ENABLE_MODO_EQUIPO = os.getenv("ENABLE_MODO_EQUIPO", "1").strip().lower() in (
 EQUIPO_GEMINI_MODEL = os.getenv("EQUIPO_GEMINI_MODEL", "gemini-2.5-flash")
 EQUIPO_GEMINI_MODEL_RESPALDO = os.getenv("EQUIPO_GEMINI_MODEL_RESPALDO", "gemini-2.5-flash")
 EQUIPO_GEMINI_TEMPERATURE = float(os.getenv("EQUIPO_GEMINI_TEMPERATURE", "0.7"))
+GEMINI_PACIENTE_TIMEOUT = int(os.getenv("GEMINI_PACIENTE_TIMEOUT", "45"))
+# Aviso breve si Gemini tarda (evita sensación de congelamiento)
+GEMINI_AVISO_ESPERA_SEGUNDOS = float(os.getenv("GEMINI_AVISO_ESPERA_SEGUNDOS", "10"))
 EQUIPO_GEMINI_TIMEOUT = int(os.getenv("EQUIPO_GEMINI_TIMEOUT", "120"))
 # Preferir EQUIPO_CLAVE_HASH (pbkdf2). EQUIPO_CLAVE_ACCESO solo texto (sin default inseguro).
 EQUIPO_CLAVE_HASH = os.getenv("EQUIPO_CLAVE_HASH", "").strip()

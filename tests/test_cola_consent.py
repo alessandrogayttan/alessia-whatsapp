@@ -31,11 +31,7 @@ def test_encolar_contenido_multimodal_durable(db_temp):
     assert any(p["id"] == msg_id for p in pendientes)
 
 
-def test_consentimiento_no_automatico(db_temp):
-    assert storage.necesita_consentimiento("523355555555") is True
-    assert storage.aviso_privacidad_ya_enviado("523355555555") is False
-    storage.marcar_aviso_privacidad_enviado("523355555555")
-    assert storage.aviso_privacidad_ya_enviado("523355555555") is True
+def test_consentimiento_helpers(db_temp):
     assert storage.necesita_consentimiento("523355555555") is True
     storage.registrar_consentimiento("523355555555")
     assert storage.necesita_consentimiento("523355555555") is False

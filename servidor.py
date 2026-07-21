@@ -20,13 +20,11 @@ from whatsapp import (
 from whatsapp_inbound import (
     _extraer_mensajes_whatsapp,
     _procesar_estados_whatsapp,
-    manejar_privacidad_entrada,
     preparar_contenido_mensaje,
 )
 
 # Compat tests / imports antiguos
 _preparar_contenido_mensaje = preparar_contenido_mensaje
-_registrar_consentimiento_si_aplica = manejar_privacidad_entrada
 
 from jobs import (
     alertas_citas_background,
@@ -340,12 +338,6 @@ def webhook():
             continue
 
         numero_remitente = mensaje_info["from"]
-        texto_plano = ""
-        if mensaje_info.get("type") == "text":
-            texto_plano = (mensaje_info.get("text") or {}).get("body") or ""
-        priv = manejar_privacidad_entrada(numero_remitente, texto_plano)
-        if priv == "bloqueado":
-            continue
 
         contenido_para_ia = _preparar_contenido_mensaje(mensaje_info)
         if contenido_para_ia is None:

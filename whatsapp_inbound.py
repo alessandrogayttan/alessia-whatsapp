@@ -33,46 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 def manejar_privacidad_entrada(telefono: str, texto: str) -> str | None:
-    """
-    Consentimiento explícito (no silencioso).
-    Retorna:
-      - None: continuar flujo normal
-      - "bloqueado": ya se respondió al usuario; no seguir con IA
-    """
-    from modo_equipo import sesion_equipo_activa
-
-    if config.identificar_terapeuta(telefono) or sesion_equipo_activa(telefono):
-        return None
-
-    limpio = (texto or "").strip().upper().replace("_", " ")
-    aceptaciones = {
-        "ACEPTO",
-        "ACEPTO PRIVACIDAD",
-        "ACEPTO EL AVISO",
-        "ACEPTO AVISO",
-        "SI ACEPTO",
-        "SÍ ACEPTO",
-    }
-    if limpio in aceptaciones or limpio.startswith("ACEPTO "):
-        storage.registrar_consentimiento(telefono)
-        enviar_mensaje_whatsapp(
-            telefono,
-            "Gracias 🙏 Guardé tu aceptación del aviso de privacidad. "
-            "¿En qué te ayudo?",
-        )
-        return "bloqueado"
-
-    if not storage.necesita_consentimiento(telefono):
-        return None
-
-    if not storage.aviso_privacidad_ya_enviado(telefono):
-        storage.marcar_aviso_privacidad_enviado(telefono)
-        enviar_mensaje_whatsapp(
-            telefono,
-            config.AVISO_PRIVACIDAD
-            + "\n\nSi estás de acuerdo, responde *ACEPTO* para continuar.",
-        )
-        # No bloqueamos el resto del mensaje: puede ser su primera duda.
+    """Compat no-op: ya no empujamos aviso ni pedimos ACEPTO."""
     return None
 
 

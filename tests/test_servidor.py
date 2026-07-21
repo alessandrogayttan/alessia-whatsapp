@@ -23,7 +23,6 @@ def test_webhook_envia_ack_antes_de_procesar(monkeypatch):
         "encolar_contenido_ia",
         lambda tel, contenido: llamadas.append(("queue", tel, contenido)) or 1,
     )
-    monkeypatch.setattr(servidor, "manejar_privacidad_entrada", lambda tel, txt: None)
 
     payload = {
         "entry": [

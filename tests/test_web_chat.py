@@ -92,3 +92,20 @@ def test_widget_estatico_existe():
     assert "alessia-launcher" in texto
     assert "resolveApiBase" in texto
     assert "__ALESSIA_WEB_API__" in texto
+
+
+def test_prompt_web_igual_whatsapp_con_ajustes():
+    prompt = web_chat._construir_instrucciones_web(
+        "550e8400-e29b-41d4-a716-446655440000", None, None
+    )
+    assert "Mente en Capítulos" in prompt
+    assert "buscar_conocimiento_clinica" in prompt
+    assert "CANAL WEB" in prompt
+    assert "déjame revisar" in prompt
+
+
+def test_herramientas_web_incluye_conocimiento_clinica():
+    nombres = {fn.__name__ for fn in web_chat._herramientas_web()}
+    assert "buscar_conocimiento_clinica" in nombres
+    assert "consultar_sitio_inpulso" in nombres
+    assert "consultar_talleres_y_servicios" in nombres

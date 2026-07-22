@@ -1,4 +1,4 @@
-"""Chat web de Alessia — canal independiente de WhatsApp."""
+"""Chat web de Alessia — mismo cerebro que WhatsApp, canal HTTP aparte."""
 from __future__ import annotations
 
 import hashlib
@@ -20,9 +20,11 @@ from conversacion import (
     registrar_turno_web,
     vincular_conversacion_web,
 )
+from conocimiento import buscar_conocimiento_clinica
 from gemini_runtime import get_genai_client, send_message_con_timeout
 from observability import registrar_fallo_gemini
 from tools import (
+    actualizar_pago_paciente,
     agendar_cita,
     agregar_lista_espera,
     buscar_cita_paciente,
@@ -36,10 +38,14 @@ from tools import (
     consultar_precios_y_servicios,
     consultar_sitio_inpulso,
     consultar_talleres_y_servicios,
+    guardar_nota_ritual_cierre,
+    guardar_prep_sesion,
     notificar_emergencia_paciente,
+    notificar_llegada_paciente,
     obtener_contexto_citas_paciente,
     obtener_contexto_fecha_actual,
     obtener_contexto_perfil_paciente,
+    obtener_mi_codigo_referido,
     obtener_ruta_inpulso,
     recordar_nombre_paciente,
     reagendar_cita_atomica,
@@ -53,7 +59,7 @@ from tools import (
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION = "web-2026-07-09b"
+PROMPT_VERSION = "web-2026-07-22a"
 _memoria_web: dict[str, object] = {}
 _prompt_version_web: dict[str, str] = {}
 _cerrojos_web: dict[str, threading.Lock] = {}
@@ -68,10 +74,15 @@ _SESSION_ID_RE = re.compile(
     re.I,
 )
 
+
 def _instruccion_comprobante() -> str:
     from prompt_pagos import instruccion_comprobante_web
 
     return instruccion_comprobante_web()
+
+
+def _id_operaciones(session_id: str, telefono: str | None) -> str:
+    return telefono or f"web:{session_id}"
 
 
 def _construir_instrucciones_web(
@@ -79,46 +90,45 @@ def _construir_instrucciones_web(
     telefono: str | None,
     nombre: str | None,
 ) -> str:
-    banorte = config.CUENTAS_OFICIALES["BANORTE"]
-    banamex = config.CUENTAS_OFICIALES["BANAMEX"]
-    tel_ctx = telefono or "(aún no proporcionado — pídelo antes de agendar o inscribir)"
+    """Mismo prompt de pacientes WhatsApp + ajustes mínimos del canal web."""
+    from chat import _construir_instrucciones
+
+    id_ops = _id_operaciones(session_id, telefono)
+    base = _construir_instrucciones(id_ops)
     wa = config.WHATSAPP_PACIENTES_URL or "WhatsApp de Inpulso 43"
     unificado = (
         "Su historial está unificado con WhatsApp."
         if telefono
-        else "Cuando den su WhatsApp, el historial se unifica con ese número."
+        else "Cuando den su WhatsApp (10 dígitos MX), el historial se unifica con ese número."
     )
 
-    return f"""
-Eres Alessia, de Inpulso 43. Atiendes el *chat en vivo* del sitio web {config.CLINICA_WEB_URL}
-con el mismo cariño que recepción en persona. Este canal es la WEB.
+    return (
+        base
+        + f"""
 
-IDENTIDAD (REGLA DE HIERRO):
-- Preséntate solo como "Alessia, de Inpulso 43" o "Alessia de Inpulso".
-- PROHIBIDO decir: asistente virtual, IA, inteligencia artificial, bot, automatizado, robot, modelo, Gemini.
-- Usa emojis con naturalidad (😊 ✨ 💙 🌿).
-
-CANAL WEB:
-1. SÍ puedes recibir *imágenes* (comprobantes de pago). Analízalas y usa confirmar_pago_comprobante si aplica.
-2. Recordatorios, *MI CITA* y *HABLAR CON PERSONA* siguen siendo más cómodos por WhatsApp: {wa}
-3. Antes de agendar o inscribir, pide WhatsApp (10 dígitos MX) y nombre completo si faltan.
-4. Usa [WEB VIVA] y [RAG] del mensaje; si falta info: consultar_sitio_inpulso o buscar_conocimiento_inpulso.
-5. Preguntas generales de bienestar: responde con empatía. Datos de Inpulso: solo del sitio oficial.
-6. Teléfono sesión: {tel_ctx}. Nombre: {nombre or "(aún no)"}. {unificado}
-
-HERRAMIENTAS: consultar_sitio_inpulso, buscar_conocimiento_inpulso, consultar_talleres_y_servicios,
-agendar_cita, confirmar_pago_comprobante (con imagen de comprobante), registrar_solicitud_facturacion, etc.
-
-Pagos: BANORTE CLABE {banorte['clabe']}; factura BANAMEX CLABE {banamex['clabe']}.
-Ubicación: {config.CLINICA_DIRECCION}
+CANAL WEB (mismas reglas e información que WhatsApp):
+- Atiendes el chat en vivo de {config.CLINICA_WEB_URL}. Capacidad de información = WhatsApp.
+- PROHIBIDO responder solo con "déjame revisar", "un momentito", "busco en recursos" o similares
+  sin entregar la información concreta en ESE mismo mensaje.
+- Si [WEB VIVA], [RAG] o el catálogo del system prompt ya traen el dato (talleres, club de lectura,
+  precios, equipo), RESPONDE YA con esos datos. No digas que vas a buscar.
+- Si aún falta detalle: llama consultar_sitio_inpulso, buscar_conocimiento_inpulso,
+  buscar_conocimiento_clinica o consultar_talleres_y_servicios ANTES de responder, y luego da la info.
+- SÍ puedes recibir imágenes/comprobantes; usa confirmar_pago_comprobante si aplica.
+- Antes de agendar o inscribir sin WhatsApp vinculado, pídelo con calidez.
+- *MI CITA*, recordatorios automáticos y *HABLAR CON PERSONA* son más cómodos por WhatsApp: {wa}
+- Teléfono sesión: {telefono or "(aún no)"}. Nombre: {nombre or "(aún no)"}. {unificado}
 """
+    )
 
 
 def _herramientas_web():
+    """Misma batería de herramientas que pacientes en WhatsApp."""
     return [
         consultar_agenda,
         consultar_mis_citas,
         validar_fecha_cita,
+        notificar_llegada_paciente,
         notificar_emergencia_paciente,
         agendar_cita,
         cancelar_cita_paciente,
@@ -129,16 +139,21 @@ def _herramientas_web():
         consultar_precios_y_servicios,
         consultar_sitio_inpulso,
         buscar_conocimiento_inpulso,
+        buscar_conocimiento_clinica,
         consultar_talleres_y_servicios,
         registrar_paciente_taller,
         registrar_interes_taller,
+        confirmar_pago_comprobante,
+        actualizar_pago_paciente,
         agregar_lista_espera,
+        obtener_mi_codigo_referido,
         recordar_nombre_paciente,
         reagendar_cita_inteligente,
         reagendar_cita_atomica,
+        guardar_prep_sesion,
+        guardar_nota_ritual_cierre,
         registrar_solicitud_facturacion,
         registrar_escalacion_humana,
-        confirmar_pago_comprobante,
     ]
 
 
@@ -171,8 +186,10 @@ def _obtener_chat_web(session_id: str, telefono: str | None, nombre: str | None)
     return _memoria_web[clave]
 
 
-def _gemini_send_message(chat, contenido, timeout: int = 120):
-    return send_message_con_timeout(chat, contenido, timeout=timeout)
+def _gemini_send_message(chat, contenido, timeout: int | None = None):
+    return send_message_con_timeout(
+        chat, contenido, timeout=timeout or config.GEMINI_PACIENTE_TIMEOUT
+    )
 
 
 def _normalizar_telefono_mexico(texto: str) -> str | None:
@@ -233,7 +250,9 @@ def _construir_contenido_multimodal(
         return envolver_mensaje_web(session_id, telefono, nombre, mensaje)
 
     partes = []
-    envuelto = envolver_mensaje_web(session_id, telefono, nombre, mensaje or "(imagen enviada)")
+    envuelto = envolver_mensaje_web(
+        session_id, telefono, nombre, mensaje or "(imagen enviada)"
+    )
     partes.append(types.Part(text=envuelto))
     partes.append(
         types.Part(inline_data=types.Blob(data=imagen_bytes, mime_type=mime_type))
@@ -302,8 +321,7 @@ def procesar_mensaje_web(
     with _cerrojos_web[session_id]:
         import tools as tools_ctx
 
-        id_ops = telefono or f"web:{session_id}"
-        tools_ctx._telefono_contexto = id_ops
+        tools_ctx._telefono_contexto = _id_operaciones(session_id, telefono)
         try:
             chat = _obtener_chat_web(session_id, telefono, nombre)
             contenido = _construir_contenido_multimodal(

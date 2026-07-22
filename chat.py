@@ -474,77 +474,110 @@ def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
     enviado = False
     with cerrojos_pacientes[numero_paciente]:
         import tools as tools_ctx
+        from respuesta_fiable import asegurar_respuesta_util, intentar_respuesta_catalogo
 
         tools_ctx._telefono_contexto = numero_paciente
         listo = {"ok": False}
 
-        def _aviso_espera():
-            if listo["ok"]:
-                return
-            try:
-                enviar_mensaje_whatsapp(numero_paciente, MENSAJE_ESPERA)
-            except Exception:
-                pass
-
-        timer = threading.Timer(
-            max(3.0, config.GEMINI_AVISO_ESPERA_SEGUNDOS), _aviso_espera
-        )
-        timer.daemon = True
-        timer.start()
         try:
-            chat_alessia = obtener_chat_paciente(numero_paciente)
-            nombre_terapeuta = identificar_terapeuta(numero_paciente)
-            if nombre_terapeuta and isinstance(contenido_para_ia, str):
-                contenido_para_ia = (
-                    f"[Sistema: MODO STAFF — Terapeuta autenticado: {nombre_terapeuta}]\n"
-                    + contenido_para_ia
-                )
-
-            for intento in range(2):
+            # Hechos de catálogo: no dependen de Gemini (evita "déjame revisar…")
+            texto_fiable = intentar_respuesta_catalogo(contenido_para_ia)
+            if texto_fiable and not identificar_terapeuta(numero_paciente):
+                listo["ok"] = True
+                enviar_mensaje_whatsapp(numero_paciente, texto_fiable)
                 try:
-                    respuesta_ia = _gemini_send_message(chat_alessia, contenido_para_ia)
-                    texto = (getattr(respuesta_ia, "text", None) or "").strip()
-                    if texto:
-                        listo["ok"] = True
-                        timer.cancel()
-                        enviar_mensaje_whatsapp(numero_paciente, texto)
-                        try:
-                            from conversacion import registrar_turno_whatsapp
+                    from conversacion import registrar_turno_whatsapp
 
-                            registrar_turno_whatsapp(
-                                numero_paciente, contenido_para_ia, texto
-                            )
-                        except Exception as e:
-                            logger.debug("Historial WA no guardado: %s", e)
-                        enviado = True
-                        break
-                    logger.warning(
-                        "Gemini respuesta vacía para %s (intento %s)",
-                        numero_paciente,
-                        intento + 1,
+                    registrar_turno_whatsapp(
+                        numero_paciente, contenido_para_ia, texto_fiable
                     )
-                except FuturesTimeout:
-                    logger.error(
-                        "Timeout Gemini para %s (intento %s)", numero_paciente, intento + 1
-                    )
-                    registrar_fallo_gemini(numero_paciente)
-                    if intento == 0:
-                        time.sleep(1)
-                        continue
                 except Exception as e:
-                    logger.exception(
-                        "Error Gemini para %s (intento %s): %s",
-                        numero_paciente,
-                        intento + 1,
-                        e,
-                    )
-                    registrar_fallo_gemini(numero_paciente)
-                    if intento == 0:
-                        time.sleep(1)
-                        continue
+                    logger.debug("Historial WA no guardado: %s", e)
+                enviado = True
+            else:
+
+                def _aviso_espera():
+                    if listo["ok"]:
+                        return
+                    try:
+                        enviar_mensaje_whatsapp(numero_paciente, MENSAJE_ESPERA)
+                    except Exception:
+                        pass
+
+                timer = threading.Timer(
+                    max(3.0, config.GEMINI_AVISO_ESPERA_SEGUNDOS), _aviso_espera
+                )
+                timer.daemon = True
+                timer.start()
+                try:
+                    chat_alessia = obtener_chat_paciente(numero_paciente)
+                    nombre_terapeuta = identificar_terapeuta(numero_paciente)
+                    if nombre_terapeuta and isinstance(contenido_para_ia, str):
+                        contenido_para_ia = (
+                            f"[Sistema: MODO STAFF — Terapeuta autenticado: {nombre_terapeuta}]\n"
+                            + contenido_para_ia
+                        )
+
+                    for intento in range(2):
+                        try:
+                            respuesta_ia = _gemini_send_message(
+                                chat_alessia, contenido_para_ia
+                            )
+                            texto = (getattr(respuesta_ia, "text", None) or "").strip()
+                            if texto:
+
+                                def _regen(msg):
+                                    r = _gemini_send_message(chat_alessia, msg)
+                                    return (getattr(r, "text", None) or "").strip()
+
+                                texto = asegurar_respuesta_util(
+                                    contenido_para_ia, texto, regenerar=_regen
+                                )
+                                if not texto:
+                                    continue
+                                listo["ok"] = True
+                                timer.cancel()
+                                enviar_mensaje_whatsapp(numero_paciente, texto)
+                                try:
+                                    from conversacion import registrar_turno_whatsapp
+
+                                    registrar_turno_whatsapp(
+                                        numero_paciente, contenido_para_ia, texto
+                                    )
+                                except Exception as e:
+                                    logger.debug("Historial WA no guardado: %s", e)
+                                enviado = True
+                                break
+                            logger.warning(
+                                "Gemini respuesta vacía para %s (intento %s)",
+                                numero_paciente,
+                                intento + 1,
+                            )
+                        except FuturesTimeout:
+                            logger.error(
+                                "Timeout Gemini para %s (intento %s)",
+                                numero_paciente,
+                                intento + 1,
+                            )
+                            registrar_fallo_gemini(numero_paciente)
+                            if intento == 0:
+                                time.sleep(1)
+                                continue
+                        except Exception as e:
+                            logger.exception(
+                                "Error Gemini para %s (intento %s): %s",
+                                numero_paciente,
+                                intento + 1,
+                                e,
+                            )
+                            registrar_fallo_gemini(numero_paciente)
+                            if intento == 0:
+                                time.sleep(1)
+                                continue
+                finally:
+                    listo["ok"] = True
+                    timer.cancel()
         finally:
-            listo["ok"] = True
-            timer.cancel()
             tools_ctx._telefono_contexto = None
 
         if not enviado:

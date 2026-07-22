@@ -318,6 +318,16 @@ def procesar_mensaje_web(
 
     registro_usuario = mensaje or "[imagen/comprobante enviado]"
 
+    from respuesta_fiable import asegurar_respuesta_util, intentar_respuesta_catalogo
+
+    # Preguntas claras de catálogo: respuesta inmediata (igual en WhatsApp)
+    if not tiene_imagen:
+        fijo = intentar_respuesta_catalogo(mensaje)
+        if fijo:
+            storage.actualizar_sesion_web(session_id)
+            registrar_turno_web(session_id, telefono, registro_usuario, fijo)
+            return fijo
+
     with _cerrojos_web[session_id]:
         import tools as tools_ctx
 
@@ -332,6 +342,16 @@ def procesar_mensaje_web(
                     respuesta = _gemini_send_message(chat, contenido)
                     texto = (getattr(respuesta, "text", None) or "").strip()
                     if texto:
+
+                        def _regen(msg):
+                            r = _gemini_send_message(chat, msg)
+                            return (getattr(r, "text", None) or "").strip()
+
+                        texto = asegurar_respuesta_util(
+                            mensaje, texto, regenerar=_regen
+                        )
+                        if not texto:
+                            continue
                         storage.actualizar_sesion_web(session_id)
                         registrar_turno_web(session_id, telefono, registro_usuario, texto)
                         return texto

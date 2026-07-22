@@ -2,12 +2,30 @@
 (function () {
   "use strict";
 
-  var script = document.currentScript;
-  var apiBase = (script && script.getAttribute("data-api")) || "";
-  if (!apiBase) {
-    var src = (script && script.src) || "";
-    apiBase = src.replace(/\/static\/web-chat\/widget\.js.*$/, "");
+  function resolveApiBase() {
+    // currentScript es null si el script se inyectó dinámicamente (loader de inpulso43.com)
+    var script = document.currentScript;
+    var base = (script && script.getAttribute("data-api")) || "";
+    if (base) return base.replace(/\/$/, "");
+    if (script && script.src) {
+      return script.src.replace(/\/static\/web-chat\/widget\.js.*$/, "");
+    }
+    if (typeof window !== "undefined" && window.__ALESSIA_WEB_API__) {
+      return String(window.__ALESSIA_WEB_API__).replace(/\/$/, "");
+    }
+    var tags = document.getElementsByTagName("script");
+    for (var i = tags.length - 1; i >= 0; i--) {
+      var s = tags[i];
+      var attr = s.getAttribute("data-api");
+      if (attr) return attr.replace(/\/$/, "");
+      if (s.src && /\/static\/web-chat\/widget\.js/i.test(s.src)) {
+        return s.src.replace(/\/static\/web-chat\/widget\.js.*$/, "");
+      }
+    }
+    return "";
   }
+
+  var apiBase = resolveApiBase();
 
   var COLORS = {
     azul: "#2563A8",
@@ -120,9 +138,36 @@
   }
 
   function api(path, options) {
+    if (!apiBase) {
+      return Promise.reject(new Error("API base no configurada"));
+    }
     return fetch(apiBase + path, options).then(function (r) {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
+      return r.json().catch(function () {
+        return {};
+      }).then(function (data) {
+        if (!r.ok) {
+          var err = new Error((data && data.error) || "HTTP " + r.status);
+          err.status = r.status;
+          err.data = data;
+          throw err;
+        }
+        return data;
+      });
+    });
+  }
+
+  function clearSession() {
+    sessionId = null;
+    try {
+      localStorage.removeItem(storageKey());
+    } catch (e) {}
+  }
+
+  function createSession() {
+    return api("/api/web-chat/session", { method: "POST" }).then(function (data) {
+      sessionId = data.session_id;
+      saveSession(sessionId);
+      return sessionId;
     });
   }
 
@@ -133,15 +178,48 @@
       sessionId = saved;
       return Promise.resolve(sessionId);
     }
-    return api("/api/web-chat/session", { method: "POST" }).then(function (data) {
-      sessionId = data.session_id;
-      saveSession(sessionId);
-      return sessionId;
+    return createSession();
+  }
+
+  function postMessage(sid, text, imageFile) {
+    if (imageFile) {
+      var fd = new FormData();
+      fd.append("session_id", sid);
+      fd.append("message", text || "");
+      fd.append("image", imageFile);
+      return fetch(apiBase + "/api/web-chat/message", {
+        method: "POST",
+        body: fd,
+      }).then(function (r) {
+        return r.json().catch(function () {
+          return {};
+        }).then(function (data) {
+          if (!r.ok) {
+            var err = new Error((data && data.error) || "HTTP " + r.status);
+            err.status = r.status;
+            err.data = data;
+            throw err;
+          }
+          return data;
+        });
+      });
+    }
+    return api("/api/web-chat/message", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sid, message: text }),
     });
   }
 
   function sendMessage(text, imageFile) {
     if (busy || (!text.trim() && !imageFile)) return;
+    if (!apiBase) {
+      appendMessage(
+        "No pude conectar en este momento. Si prefieres, escríbenos por WhatsApp 💙",
+        "bot"
+      );
+      return;
+    }
     busy = true;
     if (text.trim()) appendMessage(text, "user");
     else if (imageFile) appendMessage("📎 Comprobante enviado", "user");
@@ -153,23 +231,15 @@
 
     ensureSession()
       .then(function (sid) {
-        if (imageFile) {
-          var fd = new FormData();
-          fd.append("session_id", sid);
-          fd.append("message", text || "");
-          fd.append("image", imageFile);
-          return fetch(apiBase + "/api/web-chat/message", {
-            method: "POST",
-            body: fd,
-          }).then(function (r) {
-            if (!r.ok) throw new Error("HTTP " + r.status);
-            return r.json();
-          });
-        }
-        return api("/api/web-chat/message", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ session_id: sid, message: text }),
+        return postMessage(sid, text, imageFile).catch(function (err) {
+          // Sesión vieja en localStorage tras redeploy → nueva sesión y un reintento
+          if (err && (err.status === 400 || err.status === 404)) {
+            clearSession();
+            return createSession().then(function (fresh) {
+              return postMessage(fresh, text, imageFile);
+            });
+          }
+          throw err;
         });
       })
       .then(function (data) {

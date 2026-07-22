@@ -88,4 +88,7 @@ def test_widget_estatico_existe():
 
     p = Path(__file__).resolve().parent.parent / "static" / "web-chat" / "widget.js"
     assert p.is_file()
-    assert "alessia-launcher" in p.read_text(encoding="utf-8")
+    texto = p.read_text(encoding="utf-8")
+    assert "alessia-launcher" in texto
+    assert "resolveApiBase" in texto
+    assert "__ALESSIA_WEB_API__" in texto

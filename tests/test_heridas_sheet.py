@@ -46,20 +46,23 @@ def test_es_pedido_sync_panel_heridas():
     assert not es_pedido_sync_panel_heridas("sincroniza analytics")
 
 
-def test_comando_sync_solo_personal(monkeypatch):
+def test_comando_sync_requiere_modo_pro(monkeypatch, db_temp):
     from heridas_sheet import intentar_comando_sync_heridas
 
     monkeypatch.setattr(
         "heridas_sheet.sincronizar_panel_heridas",
         lambda: "ÉXITO: ok",
     )
-    # Paciente: no ejecuta
+    # Sin Modo Pro: no ejecuta (aunque sea número de staff)
     assert (
-        intentar_comando_sync_heridas("5219999999999", "sincroniza la hoja de heridas")
+        intentar_comando_sync_heridas(
+            "523310265936", "sincroniza la hoja de heridas", requerir_modo_pro=True
+        )
         is None
     )
-    # Staff (Sara): sí
+    # Con sesión Modo Pro: sí
+    storage.activar_sesion_equipo("523310265936", "Sara Rosales", 12)
     out = intentar_comando_sync_heridas(
-        "523310265936", "sincroniza la hoja de heridas"
+        "523310265936", "sincroniza la hoja de heridas", requerir_modo_pro=True
     )
-    assert out and "Sara" in out and "ÉXITO" in out
+    assert out and "ÉXITO" in out and "Sara" in out

@@ -161,7 +161,7 @@ def _iniciar_scheduler():
         ):
             logger.info(
                 "Sync heridas diferido omitido. "
-                "Usa modo equipo → «sincroniza la hoja de heridas»."
+                "Usa Modo Pro → «sincroniza la hoja de heridas»."
             )
             return
         time.sleep(180)

@@ -1091,16 +1091,25 @@ def es_pedido_sync_panel_heridas(texto: str) -> bool:
     return False
 
 
-def intentar_comando_sync_heridas(telefono: str, texto: str) -> str | None:
+def intentar_comando_sync_heridas(
+    telefono: str,
+    texto: str,
+    *,
+    requerir_modo_pro: bool = True,
+) -> str | None:
     """
-    Si el mensaje pide sync del panel heridas y el número es personal Inpulso,
-    ejecuta el sync y devuelve el texto de respuesta. Si no aplica, None.
+    Si el mensaje pide sync del panel heridas, ejecuta y devuelve respuesta.
+    Por defecto solo con sesión Modo Pro activa.
     """
     if not es_pedido_sync_panel_heridas(texto):
         return None
-    quien = config.identificar_personal_inpulso(telefono)
-    if not quien:
+    if requerir_modo_pro and not storage.sesion_equipo_activa(telefono):
         return None
-    logger.info("Sync heridas por comando de %s (%s)", quien, telefono[-4:])
+    quien = (
+        config.identificar_personal_inpulso(telefono)
+        or storage.obtener_nombre_equipo_sesion(telefono)
+        or "Equipo"
+    )
+    logger.info("Sync heridas por comando Modo Pro de %s (%s)", quien, telefono[-4:])
     resultado = sincronizar_panel_heridas()
     return f"Listo, *{quien}* ✨\n\n{resultado}"

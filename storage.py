@@ -2018,9 +2018,29 @@ def metricas_mensajes_por_dia(dias: int = 90) -> list[dict]:
             }
 
     hoy = date.today()
+    try:
+        from datetime import datetime as _dt
+
+        import pytz
+
+        hoy = _dt.now(pytz.timezone(config.ZONA_MEXICO)).date()
+    except Exception:
+        pass
+
+    inicio = hoy - timedelta(days=dias)
+    dias_orden = []
+    cursor = inicio
+    while cursor <= hoy:
+        dias_orden.append(cursor.isoformat())
+        cursor += timedelta(days=1)
+    # Incluye días UTC fuera del calendario México (mensajes guardados en UTC)
+    for extra in sorted(por_dia.keys()):
+        if extra not in dias_orden:
+            dias_orden.append(extra)
+    dias_orden.sort()
+
     out = []
-    for i in range(dias, -1, -1):
-        d = (hoy - timedelta(days=i)).isoformat()
+    for d in dias_orden:
         if d in por_dia:
             out.append(por_dia[d])
         else:

@@ -167,6 +167,20 @@ def preparar_contenido_mensaje(mensaje_info: dict):
     if tipo_mensaje == "text":
         texto_paciente = mensaje_info["text"]["body"].strip()
 
+        # Personal Inpulso (por número): sync hoja heridas sin modo equipo
+        try:
+            from heridas_sheet import intentar_comando_sync_heridas
+
+            sync_msg = intentar_comando_sync_heridas(numero_remitente, texto_paciente)
+            if sync_msg:
+                enviar_mensaje_whatsapp(numero_remitente, sync_msg)
+                logger.info(
+                    "Comando sync heridas atendido para %s", numero_remitente[-4:]
+                )
+                return None
+        except Exception as e:
+            logger.warning("Comando sync heridas: %s", e)
+
         from modo_equipo import MARCADOR_IA, procesar_preflight_equipo, sesion_equipo_activa
 
         preflight = procesar_preflight_equipo(numero_remitente, texto_paciente)

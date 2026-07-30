@@ -268,6 +268,14 @@ def identificar_miembro_equipo(telefono: str) -> str | None:
     return None
 
 
+def identificar_personal_inpulso(telefono: str) -> str | None:
+    """
+    Terapeuta o miembro del equipo interno (por WhatsApp).
+    No activa modo equipo; solo identifica personal autorizado.
+    """
+    return identificar_terapeuta(telefono) or identificar_miembro_equipo(telefono)
+
+
 PALABRAS_LLEGADA = (
     "ya llegué",
     "ya llegue",

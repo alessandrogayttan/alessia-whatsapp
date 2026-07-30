@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import re
+import unicodedata
 from datetime import datetime
 
 import pytz
@@ -1040,7 +1041,7 @@ def marcar_interesado_como_inscrito(telefono: str) -> None:
 
 def sincronizar_panel_heridas() -> str:
     """
-    Modo equipo: fuerza actualizar Heridas_Cupo + Inscritos + Interesados en Google Sheets.
+    Modo equipo / comando staff: fuerza actualizar Heridas_Cupo + Inscritos + Interesados.
     Usar cuando pidan sincronizar/llenar/actualizar la hoja del taller de heridas.
     """
     try:
@@ -1064,3 +1065,42 @@ def sincronizar_panel_heridas() -> str:
             f"ERROR: No pude actualizar la hoja heridas ({msg}). "
             "Revisa que la cuenta de servicio tenga acceso de editor al Sheet de Alessia."
         )
+
+
+def es_pedido_sync_panel_heridas(texto: str) -> bool:
+    """Detecta pedidos naturales de sincronizar el panel heridas en Sheets."""
+    if not texto:
+        return False
+    n = unicodedata.normalize("NFD", texto.lower())
+    n = "".join(c for c in n if unicodedata.category(c) != "Mn")
+    n = re.sub(r"\s+", " ", n).strip()
+    if "herida" not in n and "heridas_cupo" not in n.replace(" ", "_"):
+        return False
+    if re.search(
+        r"(sincroniz\w*|actualiz\w*|llen\w*|rellen\w*|refresc\w*|sync)\w*.{0,40}"
+        r"(hoja|sheet|panel|cupo|inscritos|interesados|pestana)",
+        n,
+    ):
+        return True
+    if re.search(r"(hoja|panel|sheet).{0,30}heridas", n) and re.search(
+        r"(sincroniz|actualiz|llen|rellen|refresc|sync)", n
+    ):
+        return True
+    if re.search(r"\b(sync|sincroniza|sincronizar)\s+heridas\b", n):
+        return True
+    return False
+
+
+def intentar_comando_sync_heridas(telefono: str, texto: str) -> str | None:
+    """
+    Si el mensaje pide sync del panel heridas y el número es personal Inpulso,
+    ejecuta el sync y devuelve el texto de respuesta. Si no aplica, None.
+    """
+    if not es_pedido_sync_panel_heridas(texto):
+        return None
+    quien = config.identificar_personal_inpulso(telefono)
+    if not quien:
+        return None
+    logger.info("Sync heridas por comando de %s (%s)", quien, telefono[-4:])
+    resultado = sincronizar_panel_heridas()
+    return f"Listo, *{quien}* ✨\n\n{resultado}"

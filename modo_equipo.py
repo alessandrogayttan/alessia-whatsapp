@@ -133,6 +133,7 @@ ENSEÑAR A ALESSIA PARA PACIENTES (CRÍTICO):
 - Para ver lo guardado: *listar_conocimiento_pacientes*. Para quitar: *borrar_conocimiento_pacientes* con el ID.
 - HOJA HERIDAS: si piden "actualiza la hoja", "sincroniza inscritos", "llena Heridas_Cupo" o similar,
   llama *sincronizar_panel_heridas*. Confirma el resultado (cuántos inscritos/interesados y el link).
+  (Fuera de modo equipo, el personal registrado por WhatsApp puede pedir lo mismo y Alessia lo ejecuta sola.)
 - Eso se sincroniza a Google Sheets (hoja Conocimiento) para Alessandro/desarrollo.
 
 LÍMITES SANOS:
@@ -218,7 +219,8 @@ def _mensaje_acceso_ok(nombre: str) -> str:
         "en la base para cuando pregunten.\n"
         "También puedes enseñarme por texto, ej:\n"
         "«El taller de heridas cuesta $2500 y empieza el 15 de agosto».\n"
-        "Para llenar Google Sheets del taller heridas: *sincroniza la hoja de heridas*.\n"
+        "Para la hoja heridas (también sin entrar a modo equipo, desde tu WhatsApp "
+        "registrado): *sincroniza la hoja de heridas*.\n"
         "Para salir escribe *SALIR EQUIPO*."
     )
 

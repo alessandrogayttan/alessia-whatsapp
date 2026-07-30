@@ -1,4 +1,4 @@
-"""Pestaña Analytics en Google Sheets: flujo histórico + heridas (con gráfico)."""
+"""Pestaña Analytics en Google Sheets: tablas compactas con color + gráfico."""
 from __future__ import annotations
 
 import logging
@@ -15,7 +15,15 @@ from google_client import get_calendar_service, get_sheets_service
 logger = logging.getLogger(__name__)
 ZONA = pytz.timezone(config.ZONA_MEXICO)
 TAB = "Analytics"
-CHART_TITLE = "Actividad Alessia (mensajes, heridas y citas)"
+CHART_TITLE = "Actividad reciente — Alessia"
+
+# Colores Inpulso (0–1 RGB para Sheets API)
+AZUL = {"red": 0.18, "green": 0.31, "blue": 0.51}  # #2d4f82
+ROJO = {"red": 0.78, "green": 0.29, "blue": 0.29}  # #C64A49
+VERDE = {"red": 0.22, "green": 0.45, "blue": 0.38}
+CREMA = {"red": 0.96, "green": 0.94, "blue": 0.90}
+BLANCO = {"red": 1.0, "green": 1.0, "blue": 1.0}
+GRIS = {"red": 0.45, "green": 0.45, "blue": 0.48}
 
 
 def _sheet_id(service, titulo: str) -> int | None:
@@ -42,7 +50,52 @@ def _asegurar_hoja(service) -> int:
     return res["replies"][0]["addSheet"]["properties"]["sheetId"]
 
 
-def _quitar_charts_analytics(service, sheet_id: int) -> None:
+def _paint(sheet_id: int, r0: int, r1: int, c0: int, c1: int, bg: dict, *, bold=False, white_text=False):
+    fmt: dict = {"backgroundColor": bg}
+    tf: dict = {}
+    if bold:
+        tf["bold"] = True
+    if white_text:
+        tf["foregroundColor"] = BLANCO
+    if tf:
+        fmt["textFormat"] = tf
+    return {
+        "repeatCell": {
+            "range": {
+                "sheetId": sheet_id,
+                "startRowIndex": r0,
+                "endRowIndex": r1,
+                "startColumnIndex": c0,
+                "endColumnIndex": c1,
+            },
+            "cell": {"userEnteredFormat": fmt},
+            "fields": "userEnteredFormat(backgroundColor,textFormat)",
+        }
+    }
+
+
+def _col_widths(sheet_id: int) -> list[dict]:
+    anchos = {0: 210, 1: 120, 2: 150, 3: 120, 4: 120, 6: 320, 7: 80, 8: 140}
+    reqs = []
+    for col, px in anchos.items():
+        reqs.append(
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "dimension": "COLUMNS",
+                        "startIndex": col,
+                        "endIndex": col + 1,
+                    },
+                    "properties": {"pixelSize": px},
+                    "fields": "pixelSize",
+                }
+            }
+        )
+    return reqs
+
+
+def _quitar_charts(service, sheet_id: int) -> None:
     meta = service.spreadsheets().get(
         spreadsheetId=config.ID_HOJA_CALCULO,
         fields="sheets(properties,charts)",
@@ -62,20 +115,20 @@ def _quitar_charts_analytics(service, sheet_id: int) -> None:
         ).execute()
 
 
-def _crear_grafico(service, sheet_id: int, num_filas_datos: int) -> None:
-    if num_filas_datos < 1:
+def _crear_grafico(service, sheet_id: int, header_row: int, num_filas: int) -> None:
+    """header_row = índice 0-based de la fila de encabezados de la tabla de actividad."""
+    if num_filas < 1:
         return
-    # Header en fila índice 8 (tras resumen ampliado)
-    start = 8
-    end = start + 1 + num_filas_datos
-    _quitar_charts_analytics(service, sheet_id)
+    start = header_row
+    end = header_row + 1 + num_filas
+    _quitar_charts(service, sheet_id)
     request = {
         "addChart": {
             "chart": {
                 "spec": {
                     "title": CHART_TITLE,
                     "basicChart": {
-                        "chartType": "LINE",
+                        "chartType": "COLUMN",
                         "legendPosition": "BOTTOM_LEGEND",
                         "headerCount": 1,
                         "domains": [
@@ -120,11 +173,11 @@ def _crear_grafico(service, sheet_id: int, num_filas_datos: int) -> None:
                     "overlayPosition": {
                         "anchorCell": {
                             "sheetId": sheet_id,
-                            "rowIndex": start,
+                            "rowIndex": header_row,
                             "columnIndex": 6,
                         },
-                        "widthPixels": 680,
-                        "heightPixels": 380,
+                        "widthPixels": 520,
+                        "heightPixels": 300,
                     }
                 },
             }
@@ -137,7 +190,6 @@ def _crear_grafico(service, sheet_id: int, num_filas_datos: int) -> None:
 
 
 def _citas_por_dia(dias: int = 90) -> dict[str, int]:
-    """Cuenta eventos en calendarios de terapeutas (proxy de actividad histórica)."""
     out: dict[str, int] = defaultdict(int)
     try:
         service = get_calendar_service()
@@ -174,7 +226,6 @@ def _citas_por_dia(dias: int = 90) -> dict[str, int]:
 
 
 def _inscripciones_por_dia() -> tuple[dict[str, int], int, int]:
-    """Lee pestaña Inscripciones del Sheet si existe."""
     por_dia: dict[str, int] = defaultdict(int)
     pagados = pendientes = 0
     if not config.ID_HOJA_CALCULO:
@@ -187,8 +238,7 @@ def _inscripciones_por_dia() -> tuple[dict[str, int], int, int]:
             .get(spreadsheetId=config.ID_HOJA_CALCULO, range="Inscripciones!A:F")
             .execute()
         )
-        rows = result.get("values", [])
-        for row in rows[1:]:
+        for row in result.get("values", [])[1:]:
             if not row:
                 continue
             m = re.match(r"(\d{4}-\d{2}-\d{2})", str(row[0]))
@@ -204,114 +254,145 @@ def _inscripciones_por_dia() -> tuple[dict[str, int], int, int]:
     return dict(por_dia), pagados, pendientes
 
 
+def _tabla_actividad_compacta(
+    diarios: list[dict],
+    citas: dict[str, int],
+    insc: dict[str, int],
+    *,
+    max_filas: int = 14,
+) -> list[list]:
+    """Solo días con movimiento; si no hay, últimos 7 días."""
+    filas = []
+    for d in diarios:
+        dia = d.get("dia") or ""
+        msgs = int(d.get("mensajes") or 0)
+        her = int(d.get("menciones_heridas") or 0)
+        cit = int(citas.get(dia, 0))
+        ins = int(insc.get(dia, 0))
+        if msgs or her or cit or ins:
+            filas.append([dia, msgs, her, cit, ins])
+    if not filas:
+        for d in diarios[-7:]:
+            dia = d.get("dia") or ""
+            filas.append(
+                [
+                    dia,
+                    int(d.get("mensajes") or 0),
+                    int(d.get("menciones_heridas") or 0),
+                    int(citas.get(dia, 0)),
+                    int(insc.get(dia, 0)),
+                ]
+            )
+    return filas[-max_filas:]
+
+
 def actualizar_analytics(*, dias: int = 90) -> str:
-    """Escribe Analytics con historial de BD + citas Calendar + Inscripciones."""
     if not config.ID_HOJA_CALCULO:
         return "ID_HOJA_CALCULO no configurado"
+
     service = get_sheets_service()
     sheet_id = _asegurar_hoja(service)
     ahora = datetime.now(ZONA).strftime("%Y-%m-%d %H:%M")
+
     diarios = storage.metricas_mensajes_por_dia(dias)
     hist = storage.metricas_resumen_historico()
-    faq_heridas = storage.metricas_faq_heridas()
+    faq_heridas = storage.metricas_faq_heridas()[:12]
+    top = storage.top_preguntas_frecuentes(12)
     interes = storage.metricas_interes_heridas()
-    top = storage.top_preguntas_frecuentes(25)
     citas = _citas_por_dia(dias)
     insc_dia, insc_pag, insc_pend = _inscripciones_por_dia()
+    actividad = _tabla_actividad_compacta(diarios, citas, insc_dia)
 
-    total_msgs = sum(int(d.get("mensajes") or 0) for d in diarios)
-    total_heridas = sum(int(d.get("menciones_heridas") or 0) for d in diarios)
     total_citas = sum(citas.values())
+    nota = "Datos: BD + Calendar + Sheets"
+    if hist.get("mensajes_totales", 0) == 0 and total_citas > 0:
+        nota = "Chats aún escasos en BD; citas/inscripciones sí tienen histórico"
+    elif hist.get("mensajes_totales", 0) == 0 and total_citas == 0:
+        nota = "Sin histórico todavía — se llenará con el uso"
 
-    nota = ""
-    if hist.get("mensajes_totales", 0) == 0 and total_citas == 0:
-        nota = (
-            "Aún no hay historial de chats en la BD del servidor. "
-            "De ahora en adelante se irá llenando. Revisa también FAQ_Pacientes."
-        )
-    elif hist.get("mensajes_totales", 0) == 0 and total_citas > 0:
-        nota = (
-            "No hay chats guardados en BD (posible reinicio del disco), "
-            "pero sí hay citas en Calendar / inscripciones en Sheets como histórico."
-        )
+    # —— Layout en bloques separados ——
+    # Filas 1–2 título
+    # Filas 4–11 resumen KPI
+    # Fila 13 título actividad + header + N filas
+    # Columna G: FAQ heridas y top
 
-    resumen = [
-        ["Analytics Alessia — Inpulso 43 (histórico)", "", "", "", ""],
-        ["Actualizado", ahora, "Periodo gráfico (días)", dias, ""],
-        [
-            "Mensajes en gráfico",
-            total_msgs,
-            "Menciones heridas (gráfico)",
-            total_heridas,
-            "",
-        ],
-        [
-            "Mensajes TOTAL BD (desde inicio)",
-            hist.get("mensajes_totales", 0),
-            "Mensajes pacientes BD",
-            hist.get("mensajes_pacientes", 0),
-            "",
-        ],
-        [
-            "Menciones heridas/historia (total BD)",
-            hist.get("menciones_heridas_totales", 0),
-            "FAQ veces totales",
-            hist.get("faq_veces_totales", 0),
-            "",
-        ],
-        [
-            "Pacientes registrados",
-            hist.get("pacientes", 0),
-            "Interés talleres activo",
-            hist.get("interes_talleres_activo", 0),
-            "",
-        ],
-        [
-            "Citas en calendarios (periodo)",
-            total_citas,
-            "Inscripciones pagadas / pendientes",
-            f"{insc_pag} / {insc_pend}",
-            "",
-        ],
-        [
-            "Historial BD desde",
-            hist.get("historial_desde") or "(sin chats)",
-            "Hasta",
-            hist.get("historial_hasta") or "(sin chats)",
-            "",
-        ],
-        ["Nota", nota or "OK — datos combinados BD + Calendar + Sheets", "", "", ""],
-        ["Fecha", "Mensajes chat", "Menciones heridas", "Citas Calendar", "Inscripciones"],
+    grid: list[list] = [[""] * 9 for _ in range(40)]
+
+    def put(r: int, c: int, val):
+        while len(grid) <= r:
+            grid.append([""] * 9)
+        row = grid[r]
+        while len(row) <= c:
+            row.append("")
+        row[c] = val
+
+    put(0, 0, "Analytics Alessia · Inpulso 43")
+    put(1, 0, f"Actualizado: {ahora}")
+    put(1, 2, nota)
+
+    # Tabla 1 — Resumen
+    put(3, 0, "1. RESUMEN")
+    put(4, 0, "Métrica")
+    put(4, 1, "Valor")
+    kpis = [
+        ("Mensajes chat (total BD)", hist.get("mensajes_totales", 0)),
+        ("Mensajes de pacientes", hist.get("mensajes_pacientes", 0)),
+        ("Menciones heridas / historia", hist.get("menciones_heridas_totales", 0)),
+        ("Preguntas FAQ (veces)", hist.get("faq_veces_totales", 0)),
+        ("Pacientes registrados", hist.get("pacientes", 0)),
+        ("Interés talleres activo", hist.get("interes_talleres_activo", 0)),
+        ("Citas en calendarios (90 d)", total_citas),
+        ("Inscripciones pagadas", insc_pag),
+        ("Inscripciones pendientes", insc_pend),
+        ("Interés heridas (7 d)", interes.get("interes_7d_heridas", 0)),
     ]
+    for i, (label, val) in enumerate(kpis):
+        put(5 + i, 0, label)
+        put(5 + i, 1, val)
 
-    for d in diarios:
-        dia = d.get("dia") or ""
-        resumen.append(
-            [
-                dia,
-                int(d.get("mensajes") or 0),
-                int(d.get("menciones_heridas") or 0),
-                int(citas.get(dia, 0)),
-                int(insc_dia.get(dia, 0)),
-            ]
-        )
+    # Tabla 2 — Actividad compacta
+    act_title_row = 16
+    act_header_row = 17
+    put(act_title_row, 0, "2. ACTIVIDAD CON MOVIMIENTO (máx. 14 días)")
+    put(act_header_row, 0, "Fecha")
+    put(act_header_row, 1, "Mensajes")
+    put(act_header_row, 2, "Heridas")
+    put(act_header_row, 3, "Citas")
+    put(act_header_row, 4, "Inscripciones")
+    for i, fila in enumerate(actividad):
+        for j, val in enumerate(fila):
+            put(act_header_row + 1 + i, j, val)
+    if not actividad:
+        put(act_header_row + 1, 0, "(sin datos aún)")
 
-    faq_block = [["Preguntas FAQ heridas/historia", "Veces", "Última vez"]]
-    for f in faq_heridas:
-        faq_block.append(
-            [f.get("pregunta") or "", int(f.get("veces") or 0), f.get("ultima_vez") or ""]
-        )
-    if len(faq_block) == 1:
-        faq_block.append(["(aún sin FAQ de heridas registradas)", 0, ""])
+    # Tabla 3 — FAQ heridas (col G)
+    put(3, 6, "3. FAQ · HERIDAS / HISTORIA")
+    put(4, 6, "Pregunta")
+    put(4, 7, "Veces")
+    put(4, 8, "Última vez")
+    if faq_heridas:
+        for i, f in enumerate(faq_heridas):
+            put(5 + i, 6, (f.get("pregunta") or "")[:80])
+            put(5 + i, 7, int(f.get("veces") or 0))
+            put(5 + i, 8, (f.get("ultima_vez") or "")[:16])
+    else:
+        put(5, 6, "(sin preguntas aún)")
 
-    top_block = [["Top preguntas generales (FAQ)", "Veces", "Última vez"]]
-    for f in top:
-        top_block.append(
-            [f.get("pregunta") or "", int(f.get("veces") or 0), f.get("ultima_vez") or ""]
-        )
-    if len(top_block) == 1:
-        top_block.append(["(aún sin FAQ)", 0, ""])
+    # Tabla 4 — Top FAQ
+    top_start = 5 + max(len(faq_heridas), 1) + 2
+    put(top_start, 6, "4. TOP PREGUNTAS GENERALES")
+    put(top_start + 1, 6, "Pregunta")
+    put(top_start + 1, 7, "Veces")
+    put(top_start + 1, 8, "Última vez")
+    if top:
+        for i, f in enumerate(top):
+            put(top_start + 2 + i, 6, (f.get("pregunta") or "")[:80])
+            put(top_start + 2 + i, 7, int(f.get("veces") or 0))
+            put(top_start + 2 + i, 8, (f.get("ultima_vez") or "")[:16])
+    else:
+        put(top_start + 2, 6, "(sin FAQ aún)")
 
+    # Escribir
     service.spreadsheets().values().clear(
         spreadsheetId=config.ID_HOJA_CALCULO,
         range=f"{TAB}!A:L",
@@ -320,36 +401,43 @@ def actualizar_analytics(*, dias: int = 90) -> str:
         spreadsheetId=config.ID_HOJA_CALCULO,
         range=f"{TAB}!A1",
         valueInputOption="USER_ENTERED",
-        body={"values": resumen},
-    ).execute()
-    service.spreadsheets().values().update(
-        spreadsheetId=config.ID_HOJA_CALCULO,
-        range=f"{TAB}!H1",
-        valueInputOption="USER_ENTERED",
-        body={"values": faq_block},
-    ).execute()
-    service.spreadsheets().values().update(
-        spreadsheetId=config.ID_HOJA_CALCULO,
-        range=f"{TAB}!H{len(faq_block) + 3}",
-        valueInputOption="USER_ENTERED",
-        body={"values": top_block},
+        body={"values": grid},
     ).execute()
 
+    # Formato de colores
+    n_act = max(len(actividad), 1)
+    n_faq = max(len(faq_heridas), 1)
+    fmt_reqs = _col_widths(sheet_id) + [
+        _paint(sheet_id, 0, 1, 0, 5, AZUL, bold=True, white_text=True),
+        _paint(sheet_id, 3, 4, 0, 2, AZUL, bold=True, white_text=True),
+        _paint(sheet_id, 4, 5, 0, 2, CREMA, bold=True),
+        _paint(sheet_id, 5, 5 + len(kpis), 0, 2, CREMA),
+        _paint(sheet_id, act_title_row, act_title_row + 1, 0, 5, AZUL, bold=True, white_text=True),
+        _paint(sheet_id, act_header_row, act_header_row + 1, 0, 5, CREMA, bold=True),
+        _paint(sheet_id, act_header_row + 1, act_header_row + 1 + n_act, 0, 5, BLANCO),
+        _paint(sheet_id, 3, 4, 6, 9, ROJO, bold=True, white_text=True),
+        _paint(sheet_id, 4, 5, 6, 9, CREMA, bold=True),
+        _paint(sheet_id, 5, 5 + n_faq, 6, 9, BLANCO),
+        _paint(sheet_id, top_start, top_start + 1, 6, 9, VERDE, bold=True, white_text=True),
+        _paint(sheet_id, top_start + 1, top_start + 2, 6, 9, CREMA, bold=True),
+    ]
     try:
-        _crear_grafico(service, sheet_id, len(diarios))
+        service.spreadsheets().batchUpdate(
+            spreadsheetId=config.ID_HOJA_CALCULO,
+            body={"requests": fmt_reqs},
+        ).execute()
     except Exception as e:
-        logger.warning("No se pudo crear gráfico Analytics: %s", e)
+        logger.warning("Formato Analytics: %s", e)
+
+    try:
+        _crear_grafico(service, sheet_id, act_header_row, len(actividad) or 1)
+    except Exception as e:
+        logger.warning("Gráfico Analytics: %s", e)
 
     url = (
         f"https://docs.google.com/spreadsheets/d/{config.ID_HOJA_CALCULO}/edit#gid={sheet_id}"
     )
-    logger.info(
-        "Analytics actualizado (%sd, msgs=%s, citas=%s, hist=%s)",
-        dias,
-        total_msgs,
-        total_citas,
-        hist.get("mensajes_totales"),
-    )
+    logger.info("Analytics compacto OK (%s días con movimiento)", len(actividad))
     return url
 
 

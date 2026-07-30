@@ -1946,7 +1946,7 @@ def buscar_conocimiento_clinica(consulta: str, limite: int = 5) -> list[dict]:
     if not rows:
         return []
     if not tokens:
-        return [dict(r) for r in rows[:limite]]
+        return []
 
     scored = []
     for r in rows:

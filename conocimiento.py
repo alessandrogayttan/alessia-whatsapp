@@ -4,6 +4,7 @@ from __future__ import annotations
 import io
 import logging
 import re
+import unicodedata
 from datetime import datetime
 
 import pytz
@@ -58,7 +59,20 @@ def parece_consulta_informativa(texto: str) -> bool:
         return False
     if any(x in t for x in ("modo pro", "modo equipo", "salir pro", "salir equipo", "eliminar datos")):
         return False
+    # Charla: "cómo estás" no es consulta de catálogo
+    tn = unicodedata.normalize("NFD", t)
+    tn = "".join(c for c in tn if unicodedata.category(c) != "Mn")
+    if re.search(r"\bcomo (estas|esta|te va|andas)\b", tn) or re.search(
+        r"\b(que tal|hola|buenas tardes|buenas noches)\b", tn
+    ):
+        if not re.search(
+            r"\b(taller|precio|cuesta|agendar|cita|heridas|horario|inscrib)\b", tn
+        ):
+            return False
     if "¿" in texto or "?" in texto:
+        # "?" solo no basta si es charla corta
+        if len(t) <= 25 and re.search(r"como estas|que tal|todo bien", tn):
+            return False
         return True
     inicios = (
         "cuanto",
@@ -67,8 +81,6 @@ def parece_consulta_informativa(texto: str) -> bool:
         "cuándo",
         "donde",
         "dónde",
-        "como",
-        "cómo",
         "que costo",
         "qué costo",
         "precio",

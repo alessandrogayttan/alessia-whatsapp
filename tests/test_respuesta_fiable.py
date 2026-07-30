@@ -27,15 +27,22 @@ def test_heridas():
 
 
 def test_saludo_no_dispara_catalogo():
-    from respuesta_fiable import _es_solo_saludo
+    from respuesta_fiable import _es_solo_saludo, _es_charla_casual
 
     assert _es_solo_saludo("Hola buenas tardes")
     assert _es_solo_saludo("hola")
+    assert _es_charla_casual("Cómo estás?")
+    assert _es_charla_casual("Como estas")
     assert not _es_solo_saludo("hola, info del taller de heridas")
     assert intentar_respuesta_catalogo("Hola buenas tardes") is None
+    assert intentar_respuesta_catalogo("Cómo estás?") is None
     assert intentar_respuesta_catalogo(
         "[Sistema: Mensaje recibido el X] Hola buenas tardes"
     ) is None
+    # Sí responde si piden el taller
+    assert intentar_respuesta_catalogo(
+        "hola, info del taller de heridas del pasado"
+    )
 
 
 def test_boton_heridas_presencial():

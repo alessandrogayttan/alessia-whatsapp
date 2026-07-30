@@ -157,6 +157,20 @@ _SALUDO_TOKENS = frozenset(
         "equipo",
         "a",
         "todos",
+        "como",
+        "estas",
+        "estoy",
+        "bien",
+        "mal",
+        "todo",
+        "anda",
+        "va",
+        "hay",
+        "te",
+        "tu",
+        "usted",
+        "amigo",
+        "amiga",
     }
 )
 
@@ -166,9 +180,58 @@ def _es_solo_saludo(texto: str) -> bool:
     t = _norm(texto)
     t = re.sub(r"[^\w\s]", " ", t)
     palabras = [p for p in t.split() if p]
-    if not palabras or len(palabras) > 6 or len(t) > 50:
+    if not palabras or len(palabras) > 8 or len(t) > 60:
         return False
     return all(p in _SALUDO_TOKENS for p in palabras)
+
+
+def _es_charla_casual(texto: str) -> bool:
+    """Saludos / cómo estás / gracias — no son consulta de catálogo."""
+    if _es_solo_saludo(texto):
+        return True
+    n = _norm(texto)
+    n = re.sub(r"[^\w\s]", " ", n)
+    n = re.sub(r"\s+", " ", n).strip()
+    if not n or len(n) > 80:
+        return False
+    patrones = (
+        r"^(hola|holi|hey|hi|saludos)\b",
+        r"\bcomo (estas|esta|te va|te encuentras|andas)\b",
+        r"\bque tal\b",
+        r"\bgracias\b",
+        r"\bmuchas gracias\b",
+        r"\bok\b",
+        r"\blisto\b",
+        r"\bperfecto\b",
+        r"\bsi\b$",
+        r"\bno\b$",
+        r"\bbuena(s)? (tardes|noches|dias)\b",
+    )
+    # Charla corta sin pedir taller/precio/cita
+    if any(re.search(p, n) for p in patrones):
+        if re.search(
+            r"\b(taller|heridas|precio|cuesta|agendar|cita|inscrib|horario|cupo)\b",
+            n,
+        ):
+            return False
+        return True
+    return False
+
+
+def _pide_taller_heridas(texto: str) -> bool:
+    """Solo True si el usuario pide explícitamente el taller de heridas."""
+    n = _norm(texto)
+    return bool(
+        re.search(
+            r"\b("
+            r"heridas?( del pasado)?|"
+            r"sanando|"
+            r"nino interior|niño interior|"
+            r"taller de heridas|taller heridas"
+            r")\b",
+            n,
+        )
+    )
 
 
 def es_respuesta_relleno(texto: str) -> bool:
@@ -312,19 +375,25 @@ def enviar_ficha_heridas_whatsapp(telefono: str, taller: dict | None = None) -> 
 
 
 def enviar_respuesta_catalogo_whatsapp(telefono: str, contenido: Any) -> str | None:
-    """Respuesta de catálogo por WhatsApp; heridas va con imagen + botones."""
+    """Respuesta de catálogo por WhatsApp; heridas solo si lo pidieron."""
     from whatsapp import enviar_mensaje_whatsapp
 
     mensaje = _solo_mensaje_paciente(extraer_texto_usuario(contenido))
-    if _es_solo_saludo(mensaje):
+    if _es_charla_casual(mensaje):
         return None
 
     texto = intentar_respuesta_catalogo(contenido)
     if not texto:
         return None
-    # Solo la ficha dedicada del taller (no cualquier mención del nombre)
-    if texto.lstrip().startswith("✨ *Sanando tus heridas del pasado*"):
+    # Ficha rica solo si el usuario pidió el taller de heridas
+    if (
+        texto.lstrip().startswith("✨ *Sanando tus heridas del pasado*")
+        and _pide_taller_heridas(mensaje)
+    ):
         return enviar_ficha_heridas_whatsapp(telefono)
+    # Si por error el texto es ficha heridas sin pedirlo, no enviar muro
+    if texto.lstrip().startswith("✨ *Sanando tus heridas del pasado*"):
+        return None
     enviar_mensaje_whatsapp(telefono, texto)
     return texto
 
@@ -638,6 +707,9 @@ def _respuesta_taller(mensaje: str) -> str | None:
             tid = "sara-club"
     if not tid:
         return None
+    # Heridas: nunca por coincidencia débil; solo si lo pidieron
+    if tid == "sanando-heridas" and not _pide_taller_heridas(mensaje):
+        return None
     for t in obtener_talleres_vigentes(forzar_web=False):
         if t.get("id_web") == tid:
             return _formatear_taller(t)
@@ -660,7 +732,7 @@ def intentar_respuesta_catalogo(contenido: Any) -> str | None:
     """Respuesta factual inmediata si la pregunta es de información clara."""
     crudo = extraer_texto_usuario(contenido)
     mensaje = _solo_mensaje_paciente(crudo)
-    if not mensaje or _es_solo_saludo(mensaje):
+    if not mensaje or _es_charla_casual(mensaje):
         return None
     if not _parece_pregunta_info(mensaje):
         return None

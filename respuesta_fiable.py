@@ -335,10 +335,12 @@ HERIDAS_IMAGE_URL = (
 
 def enviar_ficha_heridas_whatsapp(telefono: str, taller: dict | None = None) -> str:
     """
-    Envía ficha corta del taller heridas: 1 imagen + 1 mensaje con botones.
-    (Sin muro de texto ni 4 mensajes seguidos.)
+    Ficha con imagen+botones. DESACTIVADA por defecto: molestaba en saludos
+    y saturaba el chat. Solo si ENABLE_FICHA_HERIDAS_WA=1.
     """
-    from whatsapp import enviar_botones_respuesta, enviar_imagen_por_url
+    import os
+
+    from whatsapp import enviar_mensaje_whatsapp
 
     t = taller
     if not t:
@@ -347,6 +349,18 @@ def enviar_ficha_heridas_whatsapp(telefono: str, taller: dict | None = None) -> 
                 t = item
                 break
     texto = _formatear_taller_heridas(t or {})
+
+    if os.getenv("ENABLE_FICHA_HERIDAS_WA", "0").strip().lower() not in (
+        "1",
+        "true",
+        "yes",
+        "si",
+        "sí",
+    ):
+        enviar_mensaje_whatsapp(telefono, texto)
+        return texto
+
+    from whatsapp import enviar_botones_respuesta, enviar_imagen_por_url
 
     try:
         enviar_imagen_por_url(
@@ -358,7 +372,6 @@ def enviar_ficha_heridas_whatsapp(telefono: str, taller: dict | None = None) -> 
     except Exception:
         pass
 
-    # Ficha + botones en el mismo mensaje interactivo (máx. 1024 en body)
     cuerpo = texto
     if len(cuerpo) > 1024:
         cuerpo = cuerpo[:1021] + "..."
@@ -375,25 +388,20 @@ def enviar_ficha_heridas_whatsapp(telefono: str, taller: dict | None = None) -> 
 
 
 def enviar_respuesta_catalogo_whatsapp(telefono: str, contenido: Any) -> str | None:
-    """Respuesta de catálogo por WhatsApp; heridas solo si lo pidieron."""
+    """Catálogo por WhatsApp. Charla/saludos → None (sigue Gemini). Sin ficha rica."""
     from whatsapp import enviar_mensaje_whatsapp
 
     mensaje = _solo_mensaje_paciente(extraer_texto_usuario(contenido))
-    if _es_charla_casual(mensaje):
+    if not mensaje or _es_charla_casual(mensaje):
         return None
 
     texto = intentar_respuesta_catalogo(contenido)
     if not texto:
         return None
-    # Ficha rica solo si el usuario pidió el taller de heridas
-    if (
-        texto.lstrip().startswith("✨ *Sanando tus heridas del pasado*")
-        and _pide_taller_heridas(mensaje)
-    ):
-        return enviar_ficha_heridas_whatsapp(telefono)
-    # Si por error el texto es ficha heridas sin pedirlo, no enviar muro
+    # Nunca imagen/botones en el flujo automático (solo texto)
     if texto.lstrip().startswith("✨ *Sanando tus heridas del pasado*"):
-        return None
+        if not _pide_taller_heridas(mensaje):
+            return None
     enviar_mensaje_whatsapp(telefono, texto)
     return texto
 
@@ -755,6 +763,15 @@ def intentar_respuesta_catalogo(contenido: Any) -> str | None:
 
 
 def bloque_hechos_forzado(contenido: Any) -> str:
+    mensaje = _solo_mensaje_paciente(extraer_texto_usuario(contenido))
+    if _es_charla_casual(mensaje):
+        return (
+            "[Sistema: El paciente solo saludó o hace charla. "
+            "Responde en 1-2 frases cálidas. "
+            "PROHIBIDO mencionar talleres, heridas del pasado, Sanando, "
+            "precios de talleres, presencial/online o botones. "
+            "Pregunta en qué le puedes ayudar.]\n"
+        )
     hechos = intentar_respuesta_catalogo(contenido)
     if hechos:
         return (
@@ -762,13 +779,11 @@ def bloque_hechos_forzado(contenido: Any) -> str:
             "Reformula con calidez usando EXACTAMENTE estos hechos; no inventes:]\n"
             f"{hechos}\n"
         )
-    # Empujar resumen factual genérico en reintentos
-    precios = _respuesta_precios("precios de todos")
-    talleres = _respuesta_listado_talleres()
+    # NO soltar catálogo de talleres si no lo pidieron
     return (
-        "[Sistema: Tu mensaje anterior fue solo relleno. Responde YA con datos. "
-        "PROHIBIDO decir déjame revisar. Hechos disponibles:]\n"
-        f"{precios}\n\n{talleres}\n"
+        "[Sistema: Responde con calidez. Si no tienes el dato, pregunta qué necesita. "
+        "PROHIBIDO inventar y PROHIBIDO soltar el taller de heridas u otros talleres "
+        "si el paciente no los mencionó.]\n"
     )
 
 
@@ -778,7 +793,43 @@ def asegurar_respuesta_util(
     *,
     regenerar,
 ) -> str:
+    mensaje = _solo_mensaje_paciente(extraer_texto_usuario(contenido))
     texto = (texto_modelo or "").strip()
+    # En charla, no regenerar con hechos de catálogo/talleres
+    if _es_charla_casual(mensaje):
+        if texto and not es_respuesta_relleno(texto):
+            # Si el modelo soltó el taller en un saludo, forzar reescritura
+            bajo = texto.lower()
+            if "heridas" in bajo or "sanando" in bajo:
+                try:
+                    segundo = (
+                        regenerar(
+                            bloque_hechos_forzado(contenido)
+                            + extraer_texto_usuario(contenido)
+                        )
+                        or ""
+                    ).strip()
+                except Exception:
+                    segundo = ""
+                if segundo and "heridas" not in segundo.lower():
+                    return segundo
+                return (
+                    "¡Hola! Qué gusto saludarte 😊 ¿En qué te puedo ayudar hoy?"
+                )
+            return texto
+        try:
+            segundo = (
+                regenerar(
+                    bloque_hechos_forzado(contenido) + extraer_texto_usuario(contenido)
+                )
+                or ""
+            ).strip()
+        except Exception:
+            segundo = ""
+        if segundo and "heridas" not in segundo.lower() and "sanando" not in segundo.lower():
+            return segundo
+        return "¡Hola! Qué gusto saludarte 😊 ¿En qué te puedo ayudar hoy?"
+
     if texto and not es_respuesta_relleno(texto):
         return texto
 

@@ -1556,6 +1556,18 @@ def migrar_conversacion_clave(clave_origen: str, clave_destino: str) -> int:
         return cur.rowcount
 
 
+def borrar_conversacion(clave: str) -> int:
+    """Borra historial de una conversación (p. ej. contaminado con ficha heridas)."""
+    if not clave:
+        return 0
+    with _transaction() as conn:
+        cur = conn.execute(
+            "DELETE FROM conversacion_mensajes WHERE clave = ?",
+            (clave,),
+        )
+        return int(cur.rowcount or 0)
+
+
 def limpiar_rag_indice() -> None:
     with _transaction() as conn:
         conn.execute("DELETE FROM inpulso_rag_fts")

@@ -6,6 +6,7 @@ from concurrent.futures import TimeoutError as FuturesTimeout
 from google.genai import types
 
 import config
+import storage
 from gemini_runtime import get_genai_client, send_message_con_timeout
 from terapeutas import (
     identificar_terapeuta,
@@ -59,7 +60,7 @@ memoria_pacientes = {}
 memoria_terapeutas = {}
 cerrojos_pacientes = {}
 # Al cambiar el prompt, sube la versión para refrescar chats en RAM tras deploy.
-PROMPT_VERSION = "warm-2026-07-30a"
+PROMPT_VERSION = "warm-2026-07-30c"
 _chat_prompt_version: dict[str, str] = {}
 
 
@@ -89,6 +90,7 @@ REGLAS DE NOMBRES (EXTREMADAMENTE IMPORTANTE):
 5. Si se presenta casualmente ("me llamo…"), usa 'recordar_nombre_paciente'. PROHIBIDO inventar nombres.
 
 REGLAS DE COMUNICACIÓN Y TONO:
+0. REGLA DE ORO — TALLERES: Si el paciente solo saluda (“hola”, “buenas”, “cómo estás”) o charla sin pedir un taller, responde breve y humana. PROHIBIDO soltar *Sanando tus heridas del pasado* u otros talleres, precios de taller, imagen o botones. Solo habla de talleres si el paciente los menciona o pregunta explícitamente.
 1. Eres extremadamente humana, empática y cálida. Usa emojis con variedad y naturalidad (😊 ✨ 🙌 💙 🌿 💜 🌸 🫶 ☀️ 🌟 💫 🌈 🦋 🌷 💐 🩷 🤗 💆‍♀️ 🌬️ 🗓️ 📍) — al menos uno o dos por mensaje cuando encaje; varíalos, no repitas siempre los mismos; no seas fría ni robótica.
 2. FORMATO DE WHATSAPP (REGLA CRÍTICA — DISEÑO LIMPIO):
    - Negritas: un SOLO asterisco pegado al texto, ej. *Título*. PROHIBIDO **doble asterisco**.
@@ -481,13 +483,55 @@ def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
         listo = {"ok": False}
 
         try:
-            # Hechos de catálogo: no dependen de Gemini (evita "déjame revisar…")
-            # Heridas: imagen + ficha limpia + botones + CTA web
+            # Catálogo solo para preguntas claras de info (precios, ubicación…).
+            # Saludos/charla → Gemini. Sin ficha rica del taller.
             texto_fiable = None
             if not identificar_terapeuta(numero_paciente):
-                texto_fiable = enviar_respuesta_catalogo_whatsapp(
-                    numero_paciente, contenido_para_ia
+                from respuesta_fiable import (
+                    _es_charla_casual,
+                    _solo_mensaje_paciente,
+                    extraer_texto_usuario,
                 )
+
+                msg_user = _solo_mensaje_paciente(
+                    extraer_texto_usuario(contenido_para_ia)
+                )
+                if _es_charla_casual(msg_user):
+                    # Historial contaminado con ficha heridas → Gemini la repite
+                    try:
+                        from conversacion import clave_conversacion_whatsapp
+
+                        clave = clave_conversacion_whatsapp(numero_paciente)
+                        recientes = storage.obtener_mensajes_conversacion(clave, limite=8)
+                        contaminado = any(
+                            "heridas" in (m.get("contenido") or "").lower()
+                            or "sanando" in (m.get("contenido") or "").lower()
+                            for m in recientes
+                            if (m.get("rol") or "") == "model"
+                        )
+                        if contaminado:
+                            n = storage.borrar_conversacion(clave)
+                            reiniciar_chat_paciente(numero_paciente)
+                            logger.info(
+                                "Historial heridas limpiado (%s msgs) para %s",
+                                n,
+                                numero_paciente[-4:],
+                            )
+                    except Exception as e:
+                        logger.debug("Limpieza historial heridas: %s", e)
+                    if isinstance(contenido_para_ia, str):
+                        contenido_para_ia = (
+                            "[Sistema: PRIORIDAD — El paciente solo saludó o hace charla. "
+                            "Ignora cualquier taller anterior. "
+                            "Responde 1-2 frases cálidas. PROHIBIDO mencionar heridas, "
+                            "Sanando, talleres, precios de taller o modalidades. "
+                            "Pregunta en qué le ayudas.]\n"
+                            + contenido_para_ia
+                        )
+                else:
+                    texto_fiable = enviar_respuesta_catalogo_whatsapp(
+                        numero_paciente, contenido_para_ia
+                    )
             if texto_fiable:
                 listo["ok"] = True
                 try:

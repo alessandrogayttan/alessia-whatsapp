@@ -30,6 +30,8 @@ services:
         value: "0"
       - key: SYNC_HERIDAS_JOB
         value: "0"
+      - key: ENABLE_FICHA_HERIDAS_WA
+        value: "0"
       - key: TOKEN_WHATSAPP
         type: SECRET
         scope: RUN_TIME

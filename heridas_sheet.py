@@ -292,6 +292,7 @@ def sincronizar_heridas_completo() -> dict:
     """
     Rellena Heridas_Inscritos / Heridas_Interesados desde fuentes existentes
     y regenera Heridas_Cupo (barra 0–100 + gráficas).
+    Primero pinta el cupo (para que nunca quede en blanco si falla el resto).
     """
     if not _sid():
         raise RuntimeError("ID_HOJA_CALCULO vacío")
@@ -300,8 +301,14 @@ def sincronizar_heridas_completo() -> dict:
     _asegurar_tab(service, TAB_INTERESADOS, HEADERS_INTERESADOS)
     _asegurar_tab(service, TAB_CUPO)
 
+    # 1) Cupo visible de inmediato
+    try:
+        url = actualizar_dashboard_heridas()
+    except Exception as e:
+        logger.warning("Dashboard heridas inicial: %s", e)
+        url = url_hoja_heridas()
+
     inscritos = _recolectar_inscritos_desde_fuentes(service)
-    # Conserva filas ya capturadas por Alessia que no estén en Inscripciones
     try:
         existentes = _leer_inscritos(service)
         vistos = {_norm_tel(r[2]) for r in inscritos if len(r) > 2}
@@ -337,7 +344,10 @@ def sincronizar_heridas_completo() -> dict:
 
     _escribir_tabla(service, TAB_INSCRITOS, HEADERS_INSCRITOS, inscritos)
     _escribir_tabla(service, TAB_INTERESADOS, HEADERS_INTERESADOS, interesados)
-    url = actualizar_dashboard_heridas()
+    try:
+        url = actualizar_dashboard_heridas()
+    except Exception as e:
+        logger.warning("Dashboard heridas final: %s", e)
     out = {
         "inscritos": len(inscritos),
         "interesados": len(interesados),
@@ -431,8 +441,16 @@ def actualizar_dashboard_heridas() -> str:
     service = get_sheets_service()
     asegurar_hoja_heridas()
     cupo_id = _asegurar_tab(service, TAB_CUPO)
-    inscritos = _leer_inscritos(service)
-    interesados = _leer_interesados(service)
+    inscritos = [
+        r
+        for r in _leer_inscritos(service)
+        if len(r) > 1 and not str(r[1]).startswith("(sin registros")
+    ]
+    interesados = [
+        r
+        for r in _leer_interesados(service)
+        if len(r) > 1 and not str(r[1]).startswith("(sin registros")
+    ]
 
     n_total = len(inscritos)
     n_pres = sum(1 for r in inscritos if _es_presencial(r[4] if len(r) > 4 else ""))
@@ -569,7 +587,6 @@ def actualizar_dashboard_heridas() -> str:
         spreadsheetId=_sid(), body={"requests": reqs}
     ).execute()
 
-    _quitar_charts(service, cupo_id)
     charts = [
         {
             "addChart": {
@@ -741,9 +758,13 @@ def actualizar_dashboard_heridas() -> str:
             }
         },
     ]
-    service.spreadsheets().batchUpdate(
-        spreadsheetId=_sid(), body={"requests": charts}
-    ).execute()
+    try:
+        _quitar_charts(service, cupo_id)
+        service.spreadsheets().batchUpdate(
+            spreadsheetId=_sid(), body={"requests": charts}
+        ).execute()
+    except Exception as e:
+        logger.warning("Gráficas heridas (no bloqueante): %s", e)
 
     # Formato tabla de inscritos / interesados (cabeceras)
     for titulo, headers in (

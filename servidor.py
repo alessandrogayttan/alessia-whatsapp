@@ -128,12 +128,30 @@ def _iniciar_scheduler():
     import threading
 
     def _sync_hojas_al_arrancar():
-        time.sleep(25)
+        # Separado y diferido: el sync pesado de anoche+hoy tumba el health check de DO
+        # si corre todo junto a los ~25–40s del arranque.
+        time.sleep(45)
         try:
-            out = forzar_sync_hojas_conocimiento_analytics()
-            logger.info("Sync hojas al arrancar: %s", out)
+            from conocimiento import sincronizar_faq_a_sheets
+
+            sincronizar_faq_a_sheets()
         except Exception as e:
-            logger.warning("Sync hojas al arrancar falló: %s", e)
+            logger.warning("Sync FAQ al arrancar: %s", e)
+        time.sleep(15)
+        try:
+            from analytics import actualizar_analytics
+
+            actualizar_analytics()
+        except Exception as e:
+            logger.warning("Sync Analytics al arrancar: %s", e)
+        time.sleep(15)
+        try:
+            from heridas_sheet import sincronizar_heridas_completo
+
+            out = sincronizar_heridas_completo()
+            logger.info("Sync heridas al arrancar: %s", out)
+        except Exception as e:
+            logger.warning("Sync heridas al arrancar: %s", e)
 
     threading.Thread(target=_sync_hojas_al_arrancar, daemon=True).start()
     atexit.register(_detener_scheduler)
@@ -400,25 +418,37 @@ def create_app():
     if n_stuck:
         logger.warning("Reclamados %s mensajes atascados al arranque", n_stuck)
     _iniciar_scheduler()
-    procesados = procesar_cola(max_items=20)
-    if procesados:
-        logger.info("Cola recuperada al arranque: %s mensajes", procesados)
-    from google_client import email_cuenta_servicio, verificar_credenciales_google
-    from tools import verificar_acceso_calendarios
+    # Cola y Google: en background para que gunicorn escuche YA (si no, DO marca Degraded)
+    import threading
 
-    try:
-        verificar_credenciales_google()
-        cal_fallos = verificar_acceso_calendarios(rapido=True)
-        if cal_fallos:
-            logger.error(
-                "CALENDARIO NO ACCESIBLE al arranque: %s. Cuenta servicio: %s",
-                "; ".join(cal_fallos),
-                email_cuenta_servicio() or "desconocida",
-            )
-        else:
-            logger.info("Calendarios Google OK (%s)", ", ".join(config.CALENDARIOS_CRITICOS))
-    except Exception as e:
-        logger.error("Google Calendar no disponible al arranque: %s", e)
+    def _arranque_secundario():
+        try:
+            procesados = procesar_cola(max_items=10)
+            if procesados:
+                logger.info("Cola recuperada al arranque: %s mensajes", procesados)
+        except Exception as e:
+            logger.warning("Cola al arranque: %s", e)
+        try:
+            from google_client import email_cuenta_servicio, verificar_credenciales_google
+            from tools import verificar_acceso_calendarios
+
+            verificar_credenciales_google()
+            cal_fallos = verificar_acceso_calendarios(rapido=True)
+            if cal_fallos:
+                logger.error(
+                    "CALENDARIO NO ACCESIBLE al arranque: %s. Cuenta servicio: %s",
+                    "; ".join(cal_fallos),
+                    email_cuenta_servicio() or "desconocida",
+                )
+            else:
+                logger.info(
+                    "Calendarios Google OK (%s)",
+                    ", ".join(config.CALENDARIOS_CRITICOS),
+                )
+        except Exception as e:
+            logger.error("Google Calendar no disponible al arranque: %s", e)
+
+    threading.Thread(target=_arranque_secundario, daemon=True).start()
     logger.info(
         "Alessia lista — WhatsApp:%s Gemini:%s VerifyToken:%s AppSecret:%s GoogleJSON:%s",
         "OK" if config.TOKEN_WHATSAPP else "FALTA",

@@ -337,7 +337,6 @@ REFERIDO_DESCUENTO = "10% en tu siguiente sesión"
 SCOPES = [
     "https://www.googleapis.com/auth/calendar",
     "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive",
 ]
 
 DIRECTORIO_CALENDARIOS = {

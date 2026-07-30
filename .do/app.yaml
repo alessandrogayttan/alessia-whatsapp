@@ -13,8 +13,8 @@ services:
     instance_size_slug: basic-xs
     run_command: gunicorn --bind 0.0.0.0:8080 --workers 1 --timeout 120 --graceful-timeout 30 wsgi:app
     health_check:
-      http_path: /health/ready
-      initial_delay_seconds: 40
+      http_path: /health
+      initial_delay_seconds: 25
       period_seconds: 30
       timeout_seconds: 10
       success_threshold: 1

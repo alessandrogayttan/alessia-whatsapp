@@ -663,7 +663,7 @@ def sincronizar_analytics_background():
 
 def forzar_sync_hojas_conocimiento_analytics() -> dict:
     """Sync inmediato al arrancar o vía endpoint ops."""
-    out: dict = {"faq": None, "analytics": None, "error": None}
+    out: dict = {"faq": None, "analytics": None, "heridas": None, "error": None}
     try:
         from conocimiento import sincronizar_faq_a_sheets
 
@@ -679,6 +679,16 @@ def forzar_sync_hojas_conocimiento_analytics() -> dict:
         prev = out.get("error") or ""
         out["error"] = f"{prev} analytics: {e}".strip()
         logger.exception("Forzar sync Analytics: %s", e)
+    try:
+        from heridas_sheet import asegurar_hoja_heridas, url_hoja_heridas
+
+        sid = asegurar_hoja_heridas()
+        out["heridas"] = {"id": sid, "url": url_hoja_heridas()}
+        logger.info("Hoja heridas OK: %s", out["heridas"]["url"])
+    except Exception as e:
+        prev = out.get("error") or ""
+        out["error"] = f"{prev} heridas: {e}".strip()
+        logger.exception("Forzar sync hoja heridas: %s", e)
     return out
 
 

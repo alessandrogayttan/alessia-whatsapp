@@ -277,6 +277,11 @@ def init_db():
                     creado_at TEXT NOT NULL,
                     actualizado_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS app_config (
+                    clave TEXT PRIMARY KEY,
+                    valor TEXT NOT NULL,
+                    actualizado_at TEXT NOT NULL
+                );
                 CREATE INDEX IF NOT EXISTS idx_conocimiento_activo
                     ON conocimiento_clinica(activo, actualizado_at);
                 CREATE TABLE IF NOT EXISTS preguntas_frecuentes (
@@ -322,6 +327,15 @@ def init_db():
                     quien TEXT,
                     activo INTEGER NOT NULL DEFAULT 1,
                     creado_at TEXT NOT NULL,
+                    actualizado_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS app_config (
+                    clave TEXT PRIMARY KEY,
+                    valor TEXT NOT NULL,
                     actualizado_at TEXT NOT NULL
                 )
                 """
@@ -1808,6 +1822,33 @@ def equipo_clave_bloqueada(telefono: str, max_fallos: int, minutos_bloqueo: int)
             (hasta.isoformat(), _utcnow().isoformat(), telefono),
         )
     return True
+
+
+def guardar_app_config(clave: str, valor: str) -> None:
+    ahora = _utcnow().isoformat()
+    with _transaction() as conn:
+        conn.execute(
+            """
+            INSERT INTO app_config (clave, valor, actualizado_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(clave) DO UPDATE SET
+                valor = excluded.valor,
+                actualizado_at = excluded.actualizado_at
+            """,
+            ((clave or "").strip(), valor or "", ahora),
+        )
+
+
+def obtener_app_config(clave: str, default: str = "") -> str:
+    with _transaction() as conn:
+        row = conn.execute(
+            "SELECT valor FROM app_config WHERE clave = ?",
+            ((clave or "").strip(),),
+        ).fetchone()
+    if not row:
+        return default
+    return row["valor"] if isinstance(row, dict) or hasattr(row, "keys") else row[0]
+
 
 def upsert_conocimiento_clinica(
     tema: str,

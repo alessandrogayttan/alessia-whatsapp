@@ -1753,6 +1753,25 @@ def registrar_paciente_taller(
         if telefono and nombre:
             storage.guardar_nombre_paciente(telefono, nombre)
 
+        try:
+            from heridas_sheet import (
+                es_taller_heridas,
+                marcar_interesado_como_inscrito,
+                registrar_inscrito_heridas,
+            )
+
+            if es_taller_heridas(nombre_taller):
+                registrar_inscrito_heridas(
+                    nombre=nombre,
+                    telefono=telefono,
+                    correo=correo,
+                    estatus_pago="PENDIENTE",
+                    fuente="WhatsApp inscripción",
+                )
+                marcar_interesado_como_inscrito(telefono)
+        except Exception as e:
+            logger.warning("Sync hoja heridas (inscrito): %s", e)
+
         return (
             "INSTRUCCIÓN PARA LA IA: Confírmale al paciente de forma muy alegre, humana "
             "y con emojis que sus datos han sido registrados con éxito. Indícale los "
@@ -1875,6 +1894,14 @@ def actualizar_pago_paciente(telefono: str, estatus: str = "PAGADO"):
 
         if row_index is not None:
             colorear_celda_pago(service, sheet_id, row_index, estatus)
+            try:
+                taller = rows[row_index][4] if len(rows[row_index]) > 4 else ""
+                from heridas_sheet import actualizar_estatus_inscrito, es_taller_heridas
+
+                if es_taller_heridas(taller):
+                    actualizar_estatus_inscrito(telefono, estatus)
+            except Exception as e:
+                logger.warning("Sync pago hoja heridas: %s", e)
             return (
                 f"INSTRUCCIÓN PARA LA IA: Estatus de pago actualizado a {estatus}. "
                 f"Agradécele al paciente de forma muy cálida."

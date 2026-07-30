@@ -494,6 +494,20 @@ def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
                     )
                 except Exception as e:
                     logger.debug("Historial WA no guardado: %s", e)
+                try:
+                    bajo = texto_fiable.lower()
+                    if "heridas del pasado" in bajo or "sanando heridas" in bajo:
+                        from heridas_sheet import registrar_interesado_heridas
+                        from respuesta_fiable import extraer_texto_usuario
+
+                        registrar_interesado_heridas(
+                            telefono=numero_paciente,
+                            consulta=extraer_texto_usuario(contenido_para_ia)[:400],
+                            fuente="Consulta info WhatsApp",
+                            estado="Preguntando",
+                        )
+                except Exception as e:
+                    logger.debug("Hoja heridas interesado: %s", e)
                 enviado = True
             else:
 

@@ -33,6 +33,13 @@ META_DOMAIN_VERIFICATION_FILE = os.getenv(
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 API_KEY_MAPS = os.getenv("API_KEY_MAPS", "")
 ID_HOJA_CALCULO = os.getenv("ID_HOJA_CALCULO", "")
+# Spreadsheet exclusivo taller heridas (si vacío, Alessia lo crea y guarda el id)
+ID_HOJA_HERIDAS = os.getenv("ID_HOJA_HERIDAS", "").strip()
+HERIDAS_SHARE_EMAILS = os.getenv(
+    "HERIDAS_SHARE_EMAILS", "agenda.inpulso43@gmail.com"
+).strip()
+# Carpeta de Drive (opcional) para dejar el archivo al inicio / a la mano
+HERIDAS_DRIVE_FOLDER_ID = os.getenv("HERIDAS_DRIVE_FOLDER_ID", "").strip()
 
 SERVICE_ACCOUNT_FILE = os.getenv(
     "GOOGLE_SERVICE_ACCOUNT_FILE",
@@ -330,6 +337,7 @@ REFERIDO_DESCUENTO = "10% en tu siguiente sesión"
 SCOPES = [
     "https://www.googleapis.com/auth/calendar",
     "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
 ]
 
 DIRECTORIO_CALENDARIOS = {

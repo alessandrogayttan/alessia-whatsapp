@@ -17,6 +17,7 @@ _HTTP_SIN_REINTENTO = {400, 401, 403, 404}
 _creds = None
 _calendar = None
 _sheets = None
+_drive = None
 _creds_verificadas = False
 
 
@@ -38,10 +39,11 @@ class GoogleCalendarError(Exception):
 
 
 def reset_google_clients():
-    global _creds, _calendar, _sheets, _creds_verificadas
+    global _creds, _calendar, _sheets, _drive, _creds_verificadas
     _creds = None
     _calendar = None
     _sheets = None
+    _drive = None
     _creds_verificadas = False
 
 
@@ -106,6 +108,14 @@ def get_sheets_service():
     if _sheets is None:
         _sheets = build("sheets", "v4", credentials=get_credentials(), cache_discovery=False)
     return _sheets
+
+
+def get_drive_service():
+    global _drive
+    verificar_credenciales_google()
+    if _drive is None:
+        _drive = build("drive", "v3", credentials=get_credentials(), cache_discovery=False)
+    return _drive
 
 
 def ejecutar_con_reintento(

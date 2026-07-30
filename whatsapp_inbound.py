@@ -305,6 +305,18 @@ def preparar_contenido_mensaje(mensaje_info: dict):
                 "Dime si te interesa *presencial* u *online* y te oriento con precios "
                 "y cómo apartar tu lugar.",
             )
+            try:
+                from heridas_sheet import registrar_interesado_heridas
+
+                registrar_interesado_heridas(
+                    telefono=numero_remitente,
+                    nombre=nombre,
+                    consulta="HISTORIA — interés inscripción",
+                    fuente="Comando HISTORIA",
+                    estado="Interesado",
+                )
+            except Exception as e:
+                logger.warning("Hoja heridas HISTORIA: %s", e)
             logger.info("Interés HISTORIA taller heridas: %s", numero_remitente)
             return None
 

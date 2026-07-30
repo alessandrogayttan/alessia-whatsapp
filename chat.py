@@ -59,7 +59,7 @@ memoria_pacientes = {}
 memoria_terapeutas = {}
 cerrojos_pacientes = {}
 # Al cambiar el prompt, sube la versión para refrescar chats en RAM tras deploy.
-PROMPT_VERSION = "warm-2026-07-21a"
+PROMPT_VERSION = "warm-2026-07-30a"
 _chat_prompt_version: dict[str, str] = {}
 
 

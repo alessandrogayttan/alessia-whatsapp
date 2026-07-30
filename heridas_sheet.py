@@ -1,4 +1,8 @@
-"""Hoja exclusiva Drive: inscritos e interesados del taller Sanando heridas."""
+"""Taller heridas: pestañas en el Sheet principal de Alessia (visible en Drive).
+
+Usa ID_HOJA_CALCULO (el mismo archivo que ya tienen) para que siempre se vea.
+Pestañas: Heridas_Cupo | Heridas_Inscritos | Heridas_Interesados
+"""
 from __future__ import annotations
 
 import logging
@@ -9,14 +13,14 @@ import pytz
 
 import config
 import storage
-from google_client import get_drive_service, get_sheets_service
+from google_client import get_sheets_service
 
 logger = logging.getLogger(__name__)
 ZONA = pytz.timezone(config.ZONA_MEXICO)
 
-TITULO_ARCHIVO = "Alessia — Taller Sanando heridas (inscritos e interesados)"
-TAB_INSCRITOS = "Inscritos"
-TAB_INTERESADOS = "Interesados"
+TAB_CUPO = "Heridas_Cupo"
+TAB_INSCRITOS = "Heridas_Inscritos"
+TAB_INTERESADOS = "Heridas_Interesados"
 
 HEADERS_INSCRITOS = [
     "Fecha",
@@ -39,8 +43,16 @@ HEADERS_INTERESADOS = [
     "Notas",
 ]
 
-_KV_ID = "id_hoja_heridas"
-_KV_URL = "url_hoja_heridas"
+CUPO_PRESENCIAL = 100
+BARRA_CELDAS = 20  # cada celda = 5%
+
+AZUL = {"red": 0.18, "green": 0.31, "blue": 0.51}
+ROJO = {"red": 0.78, "green": 0.29, "blue": 0.29}
+VERDE = {"red": 0.22, "green": 0.55, "blue": 0.38}
+CREMA = {"red": 0.96, "green": 0.94, "blue": 0.90}
+BLANCO = {"red": 1.0, "green": 1.0, "blue": 1.0}
+GRIS = {"red": 0.88, "green": 0.88, "blue": 0.90}
+NARANJA = {"red": 0.95, "green": 0.60, "blue": 0.20}
 
 
 def es_taller_heridas(nombre_taller: str) -> bool:
@@ -62,206 +74,515 @@ def _ahora() -> str:
     return datetime.now(ZONA).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def _emails_compartir() -> list[str]:
-    raw = (config.HERIDAS_SHARE_EMAILS or "").strip()
-    emails = [e.strip() for e in raw.split(",") if e.strip() and "@" in e]
-    if not emails:
-        emails = ["agenda.inpulso43@gmail.com"]
-    # únicos preservando orden
-    vistos: set[str] = set()
-    out: list[str] = []
-    for e in emails:
-        k = e.lower()
-        if k not in vistos:
-            vistos.add(k)
-            out.append(e)
-    return out
-
-
-def _id_configurado() -> str:
-    return (config.ID_HOJA_HERIDAS or storage.obtener_app_config(_KV_ID) or "").strip()
+def _sid() -> str:
+    return (config.ID_HOJA_CALCULO or "").strip()
 
 
 def url_hoja_heridas() -> str:
-    sid = _id_configurado()
+    sid = _sid()
     if not sid:
-        return storage.obtener_app_config(_KV_URL) or ""
-    return f"https://docs.google.com/spreadsheets/d/{sid}/edit"
+        return ""
+    return f"https://docs.google.com/spreadsheets/d/{sid}/edit#gid=0"
 
 
-def _guardar_id(spreadsheet_id: str) -> None:
-    storage.guardar_app_config(_KV_ID, spreadsheet_id)
-    storage.guardar_app_config(
-        _KV_URL, f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit"
-    )
-
-
-def _formatear_cabeceras(service, spreadsheet_id: str) -> None:
-    meta = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
-    ids = {
+def _sheet_ids(service) -> dict[str, int]:
+    meta = service.spreadsheets().get(spreadsheetId=_sid()).execute()
+    return {
         s["properties"]["title"]: s["properties"]["sheetId"]
         for s in meta.get("sheets", [])
     }
-    reqs = []
-    for titulo, headers in (
-        (TAB_INSCRITOS, HEADERS_INSCRITOS),
-        (TAB_INTERESADOS, HEADERS_INTERESADOS),
-    ):
-        sid = ids.get(titulo)
-        if sid is None:
-            continue
-        reqs.append(
-            {
-                "repeatCell": {
-                    "range": {
-                        "sheetId": sid,
-                        "startRowIndex": 0,
-                        "endRowIndex": 1,
-                        "startColumnIndex": 0,
-                        "endColumnIndex": len(headers),
-                    },
-                    "cell": {
-                        "userEnteredFormat": {
-                            "backgroundColor": {
-                                "red": 0.18,
-                                "green": 0.31,
-                                "blue": 0.51,
-                            },
-                            "textFormat": {
-                                "bold": True,
-                                "foregroundColor": {
-                                    "red": 1,
-                                    "green": 1,
-                                    "blue": 1,
-                                },
-                            },
-                        }
-                    },
-                    "fields": "userEnteredFormat(backgroundColor,textFormat)",
-                }
-            }
-        )
-        reqs.append(
-            {
-                "updateSheetProperties": {
-                    "properties": {"sheetId": sid, "gridProperties": {"frozenRowCount": 1}},
-                    "fields": "gridProperties.frozenRowCount",
-                }
-            }
-        )
-    if reqs:
-        service.spreadsheets().batchUpdate(
-            spreadsheetId=spreadsheet_id, body={"requests": reqs}
+
+
+def _asegurar_tab(service, titulo: str, headers: list[str] | None = None) -> int:
+    ids = _sheet_ids(service)
+    if titulo in ids:
+        return ids[titulo]
+    body = {"requests": [{"addSheet": {"properties": {"title": titulo}}}]}
+    res = service.spreadsheets().batchUpdate(spreadsheetId=_sid(), body=body).execute()
+    sid = res["replies"][0]["addSheet"]["properties"]["sheetId"]
+    if headers:
+        cols = chr(ord("A") + len(headers) - 1)
+        service.spreadsheets().values().update(
+            spreadsheetId=_sid(),
+            range=f"{titulo}!A1:{cols}1",
+            valueInputOption="USER_ENTERED",
+            body={"values": [headers]},
         ).execute()
-
-
-def _compartir(spreadsheet_id: str) -> None:
-    drive = get_drive_service()
-    for email in _emails_compartir():
-        try:
-            drive.permissions().create(
-                fileId=spreadsheet_id,
-                body={"type": "user", "role": "writer", "emailAddress": email},
-                sendNotificationEmail=True,
-                emailMessage=(
-                    "Alessia creó este archivo exclusivo del taller "
-                    "Sanando tus heridas del pasado (inscritos + interesados). "
-                    "Ábrelo y usa 'Añadir acceso directo a Mi unidad' para tenerlo "
-                    "al inicio de tu Drive."
-                ),
-            ).execute()
-            logger.info("Hoja heridas compartida con %s", email)
-        except Exception as e:
-            logger.warning("No se pudo compartir hoja heridas con %s: %s", email, e)
-
-    # Intentar dejarlo en la raíz de una carpeta compartida si está configurada
-    parent = (config.HERIDAS_DRIVE_FOLDER_ID or "").strip()
-    if parent:
-        try:
-            meta = drive.files().get(fileId=spreadsheet_id, fields="parents").execute()
-            prev = meta.get("parents") or []
-            drive.files().update(
-                fileId=spreadsheet_id,
-                addParents=parent,
-                removeParents=",".join(prev) if prev else None,
-                fields="id, parents",
-            ).execute()
-        except Exception as e:
-            logger.warning("No se pudo mover hoja heridas a carpeta %s: %s", parent, e)
-
-
-def _crear_spreadsheet() -> str:
-    service = get_sheets_service()
-    body = {
-        "properties": {"title": TITULO_ARCHIVO},
-        "sheets": [
-            {"properties": {"title": TAB_INSCRITOS, "index": 0}},
-            {"properties": {"title": TAB_INTERESADOS, "index": 1}},
-        ],
-    }
-    creado = service.spreadsheets().create(body=body).execute()
-    spreadsheet_id = creado["spreadsheetId"]
-    service.spreadsheets().values().update(
-        spreadsheetId=spreadsheet_id,
-        range=f"{TAB_INSCRITOS}!A1",
-        valueInputOption="USER_ENTERED",
-        body={"values": [HEADERS_INSCRITOS]},
-    ).execute()
-    service.spreadsheets().values().update(
-        spreadsheetId=spreadsheet_id,
-        range=f"{TAB_INTERESADOS}!A1",
-        valueInputOption="USER_ENTERED",
-        body={"values": [HEADERS_INTERESADOS]},
-    ).execute()
-    _formatear_cabeceras(service, spreadsheet_id)
-    _compartir(spreadsheet_id)
-    _guardar_id(spreadsheet_id)
-    logger.info("Creada hoja heridas: %s", spreadsheet_id)
-    return spreadsheet_id
-
-
-def asegurar_hoja_heridas(*, forzar_crear: bool = False) -> str:
-    """Devuelve spreadsheetId; crea y comparte si no existe."""
-    if not forzar_crear:
-        existente = _id_configurado()
-        if existente:
-            return existente
-    sid = _crear_spreadsheet()
     return sid
 
 
-def _append_fila(tab: str, fila: list) -> bool:
-    try:
-        sid = asegurar_hoja_heridas()
-        service = get_sheets_service()
-        service.spreadsheets().values().append(
-            spreadsheetId=sid,
-            range=f"{tab}!A:Z",
-            valueInputOption="USER_ENTERED",
-            insertDataOption="INSERT_ROWS",
-            body={"values": [fila]},
-        ).execute()
-        return True
-    except Exception as e:
-        logger.error("Error escribiendo %s heridas: %s", tab, e)
-        return False
+def _paint(sheet_id, r0, r1, c0, c1, bg, *, bold=False, white_text=False):
+    fmt: dict = {"backgroundColor": bg}
+    tf: dict = {}
+    if bold:
+        tf["bold"] = True
+    if white_text:
+        tf["foregroundColor"] = BLANCO
+    if tf:
+        fmt["textFormat"] = tf
+    return {
+        "repeatCell": {
+            "range": {
+                "sheetId": sheet_id,
+                "startRowIndex": r0,
+                "endRowIndex": r1,
+                "startColumnIndex": c0,
+                "endColumnIndex": c1,
+            },
+            "cell": {"userEnteredFormat": fmt},
+            "fields": "userEnteredFormat(backgroundColor,textFormat)",
+        }
+    }
 
 
 def _norm_tel(telefono: str) -> str:
     return re.sub(r"\D", "", telefono or "")[-10:]
 
 
-def _ya_inscrito_reciente(telefono: str) -> bool:
-    """Evita filas duplicadas del mismo WhatsApp en Inscritos (últimas ~200)."""
+def _es_presencial(modalidad: str) -> bool:
+    m = (modalidad or "").lower()
+    if "online" in m or "en línea" in m or "en linea" in m or "zoom" in m:
+        if "presencial" in m:
+            return True  # híbrido: cuenta para cupo presencial si lo menciona
+        return False
+    # vacío / por confirmar / presencial → ocupa cupo presencial
+    return True
+
+
+def _leer_inscritos(service) -> list[list]:
+    result = (
+        service.spreadsheets()
+        .values()
+        .get(spreadsheetId=_sid(), range=f"{TAB_INSCRITOS}!A2:I500")
+        .execute()
+    )
+    return result.get("values", []) or []
+
+
+def _leer_interesados(service) -> list[list]:
+    result = (
+        service.spreadsheets()
+        .values()
+        .get(spreadsheetId=_sid(), range=f"{TAB_INTERESADOS}!A2:G500")
+        .execute()
+    )
+    return result.get("values", []) or []
+
+
+def _quitar_charts(service, sheet_id: int) -> None:
+    meta = service.spreadsheets().get(
+        spreadsheetId=_sid(), fields="sheets(properties,charts)"
+    ).execute()
+    reqs = []
+    for s in meta.get("sheets", []):
+        if s.get("properties", {}).get("sheetId") != sheet_id:
+            continue
+        for chart in s.get("charts") or []:
+            cid = chart.get("chartId")
+            if cid is not None:
+                reqs.append({"deleteEmbeddedObject": {"objectId": cid}})
+    if reqs:
+        service.spreadsheets().batchUpdate(
+            spreadsheetId=_sid(), body={"requests": reqs}
+        ).execute()
+
+
+def actualizar_dashboard_heridas() -> str:
+    """Reconstruye Heridas_Cupo: KPIs, barra 0–100, tablas resumen y gráficas."""
+    if not _sid():
+        return ""
+    service = get_sheets_service()
+    asegurar_hoja_heridas()
+    cupo_id = _asegurar_tab(service, TAB_CUPO)
+    inscritos = _leer_inscritos(service)
+    interesados = _leer_interesados(service)
+
+    n_total = len(inscritos)
+    n_pres = sum(1 for r in inscritos if _es_presencial(r[4] if len(r) > 4 else ""))
+    n_online = n_total - n_pres
+    n_pagado = sum(
+        1 for r in inscritos if len(r) > 5 and str(r[5]).upper() == "PAGADO"
+    )
+    n_pend = sum(
+        1 for r in inscritos if len(r) > 5 and str(r[5]).upper() == "PENDIENTE"
+    )
+    n_interes = len(interesados)
+    libres = max(0, CUPO_PRESENCIAL - n_pres)
+    pct = min(100.0, (n_pres / CUPO_PRESENCIAL) * 100.0) if CUPO_PRESENCIAL else 0.0
+    llenas = int(round(pct / (100 / BARRA_CELDAS)))
+    llenas = max(0, min(BARRA_CELDAS, llenas))
+
+    # Datos para gráficas (tabla auxiliar)
+    # A20+: cupo chart | D20+: pago chart | G20+: interesados
+    grid: list[list] = [[""] * 12 for _ in range(40)]
+
+    def put(r, c, v):
+        grid[r][c] = v
+
+    put(0, 0, "TALLER: Sanando tus heridas del pasado — Panel de cupo e inscritos")
+    put(1, 0, f"Actualizado: {_ahora()} (hora México)")
+    put(1, 4, "Meta presencial")
+    put(1, 5, CUPO_PRESENCIAL)
+
+    put(3, 0, "INDICADOR DE CARGA PRESENCIAL (0 = vacío · 100 = lleno)")
+    put(4, 0, "Inscritos presencial")
+    put(4, 1, n_pres)
+    put(5, 0, "Lugares libres")
+    put(5, 1, libres)
+    put(6, 0, "% llenado")
+    put(6, 1, round(pct, 1))
+    put(6, 2, "%")
+
+    put(8, 0, "Línea de carga 0 → 100")
+    put(9, 0, "0%")
+    # barra en fila 10, columnas A..T
+    for i in range(BARRA_CELDAS):
+        put(10, i, "█" if i < llenas else "·")
+    put(9, BARRA_CELDAS - 1, "100%")
+    put(11, 0, f"{n_pres} / {CUPO_PRESENCIAL} lugares presencial")
+
+    put(13, 0, "RESUMEN")
+    put(14, 0, "Métrica")
+    put(14, 1, "Cantidad")
+    resumen = [
+        ("Inscritos totales", n_total),
+        ("Presencial (cupo)", n_pres),
+        ("Online", n_online),
+        ("Pagados", n_pagado),
+        ("Pendientes de pago", n_pend),
+        ("Interesados / preguntando", n_interes),
+        ("Libres presencial", libres),
+    ]
+    for i, (k, v) in enumerate(resumen):
+        put(15 + i, 0, k)
+        put(15 + i, 1, v)
+
+    # Datos gráfica cupo (pie)
+    put(14, 3, "Cupo presencial")
+    put(14, 4, "Personas")
+    put(15, 3, "Ocupados")
+    put(15, 4, n_pres)
+    put(16, 3, "Libres")
+    put(16, 4, libres)
+
+    # Datos gráfica pagos
+    put(14, 6, "Estatus pago")
+    put(14, 7, "Cantidad")
+    put(15, 6, "PAGADO")
+    put(15, 7, n_pagado)
+    put(16, 6, "PENDIENTE")
+    put(16, 7, n_pend)
+    put(17, 6, "Otros")
+    put(17, 7, max(0, n_total - n_pagado - n_pend))
+
+    # Datos interesados
+    put(14, 9, "Embudo")
+    put(14, 10, "Cantidad")
+    put(15, 9, "Interesados")
+    put(15, 10, n_interes)
+    put(16, 9, "Inscritos")
+    put(16, 10, n_total)
+
+    put(24, 0, "Ver tablas detalladas → pestañas Heridas_Inscritos y Heridas_Interesados")
+    put(
+        25,
+        0,
+        "Este panel vive en el mismo Google Sheet de Alessia (Drive de la clínica).",
+    )
+
+    service.spreadsheets().values().clear(
+        spreadsheetId=_sid(), range=f"{TAB_CUPO}!A:L"
+    ).execute()
+    service.spreadsheets().values().update(
+        spreadsheetId=_sid(),
+        range=f"{TAB_CUPO}!A1",
+        valueInputOption="USER_ENTERED",
+        body={"values": grid},
+    ).execute()
+
+    # Formato + barra de color
+    reqs = [
+        _paint(cupo_id, 0, 1, 0, 8, AZUL, bold=True, white_text=True),
+        _paint(cupo_id, 3, 4, 0, 6, ROJO, bold=True, white_text=True),
+        _paint(cupo_id, 8, 9, 0, 6, AZUL, bold=True, white_text=True),
+        _paint(cupo_id, 13, 14, 0, 2, VERDE, bold=True, white_text=True),
+        _paint(cupo_id, 14, 15, 0, 2, CREMA, bold=True),
+        _paint(cupo_id, 14, 15, 3, 5, CREMA, bold=True),
+        _paint(cupo_id, 14, 15, 6, 8, CREMA, bold=True),
+        _paint(cupo_id, 14, 15, 9, 11, CREMA, bold=True),
+        {
+            "updateSheetProperties": {
+                "properties": {
+                    "sheetId": cupo_id,
+                    "gridProperties": {"frozenRowCount": 1},
+                },
+                "fields": "gridProperties.frozenRowCount",
+            }
+        },
+    ]
+    for i in range(BARRA_CELDAS):
+        bg = VERDE if i < llenas else GRIS
+        if pct >= 90 and i < llenas:
+            bg = ROJO
+        elif pct >= 70 and i < llenas:
+            bg = NARANJA
+        reqs.append(_paint(cupo_id, 10, 11, i, i + 1, bg, bold=True, white_text=i < llenas))
+
+    service.spreadsheets().batchUpdate(
+        spreadsheetId=_sid(), body={"requests": reqs}
+    ).execute()
+
+    _quitar_charts(service, cupo_id)
+    charts = [
+        {
+            "addChart": {
+                "chart": {
+                    "spec": {
+                        "title": "Cupo presencial (ocupados vs libres)",
+                        "pieChart": {
+                            "legendPosition": "RIGHT_LEGEND",
+                            "domain": {
+                                "sourceRange": {
+                                    "sources": [
+                                        {
+                                            "sheetId": cupo_id,
+                                            "startRowIndex": 14,
+                                            "endRowIndex": 17,
+                                            "startColumnIndex": 3,
+                                            "endColumnIndex": 4,
+                                        }
+                                    ]
+                                }
+                            },
+                            "series": {
+                                "sourceRange": {
+                                    "sources": [
+                                        {
+                                            "sheetId": cupo_id,
+                                            "startRowIndex": 14,
+                                            "endRowIndex": 17,
+                                            "startColumnIndex": 4,
+                                            "endColumnIndex": 5,
+                                        }
+                                    ]
+                                }
+                            },
+                        },
+                    },
+                    "position": {
+                        "overlayPosition": {
+                            "anchorCell": {
+                                "sheetId": cupo_id,
+                                "rowIndex": 3,
+                                "columnIndex": 7,
+                            },
+                            "widthPixels": 360,
+                            "heightPixels": 240,
+                        }
+                    },
+                }
+            }
+        },
+        {
+            "addChart": {
+                "chart": {
+                    "spec": {
+                        "title": "Pagos de inscritos",
+                        "basicChart": {
+                            "chartType": "COLUMN",
+                            "legendPosition": "BOTTOM_LEGEND",
+                            "headerCount": 1,
+                            "domains": [
+                                {
+                                    "domain": {
+                                        "sourceRange": {
+                                            "sources": [
+                                                {
+                                                    "sheetId": cupo_id,
+                                                    "startRowIndex": 14,
+                                                    "endRowIndex": 18,
+                                                    "startColumnIndex": 6,
+                                                    "endColumnIndex": 7,
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ],
+                            "series": [
+                                {
+                                    "series": {
+                                        "sourceRange": {
+                                            "sources": [
+                                                {
+                                                    "sheetId": cupo_id,
+                                                    "startRowIndex": 14,
+                                                    "endRowIndex": 18,
+                                                    "startColumnIndex": 7,
+                                                    "endColumnIndex": 8,
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    "targetAxis": "LEFT_AXIS",
+                                }
+                            ],
+                        },
+                    },
+                    "position": {
+                        "overlayPosition": {
+                            "anchorCell": {
+                                "sheetId": cupo_id,
+                                "rowIndex": 16,
+                                "columnIndex": 3,
+                            },
+                            "widthPixels": 360,
+                            "heightPixels": 240,
+                        }
+                    },
+                }
+            }
+        },
+        {
+            "addChart": {
+                "chart": {
+                    "spec": {
+                        "title": "Embudo: interesados → inscritos",
+                        "basicChart": {
+                            "chartType": "BAR",
+                            "legendPosition": "NO_LEGEND",
+                            "headerCount": 1,
+                            "domains": [
+                                {
+                                    "domain": {
+                                        "sourceRange": {
+                                            "sources": [
+                                                {
+                                                    "sheetId": cupo_id,
+                                                    "startRowIndex": 14,
+                                                    "endRowIndex": 17,
+                                                    "startColumnIndex": 9,
+                                                    "endColumnIndex": 10,
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ],
+                            "series": [
+                                {
+                                    "series": {
+                                        "sourceRange": {
+                                            "sources": [
+                                                {
+                                                    "sheetId": cupo_id,
+                                                    "startRowIndex": 14,
+                                                    "endRowIndex": 17,
+                                                    "startColumnIndex": 10,
+                                                    "endColumnIndex": 11,
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    "targetAxis": "LEFT_AXIS",
+                                }
+                            ],
+                        },
+                    },
+                    "position": {
+                        "overlayPosition": {
+                            "anchorCell": {
+                                "sheetId": cupo_id,
+                                "rowIndex": 16,
+                                "columnIndex": 7,
+                            },
+                            "widthPixels": 360,
+                            "heightPixels": 220,
+                        }
+                    },
+                }
+            }
+        },
+    ]
+    service.spreadsheets().batchUpdate(
+        spreadsheetId=_sid(), body={"requests": charts}
+    ).execute()
+
+    # Formato tabla de inscritos / interesados (cabeceras)
+    for titulo, headers in (
+        (TAB_INSCRITOS, HEADERS_INSCRITOS),
+        (TAB_INTERESADOS, HEADERS_INTERESADOS),
+    ):
+        tid = _asegurar_tab(service, titulo, headers)
+        service.spreadsheets().batchUpdate(
+            spreadsheetId=_sid(),
+            body={
+                "requests": [
+                    _paint(tid, 0, 1, 0, len(headers), AZUL, bold=True, white_text=True),
+                    {
+                        "updateSheetProperties": {
+                            "properties": {
+                                "sheetId": tid,
+                                "gridProperties": {"frozenRowCount": 1},
+                            },
+                            "fields": "gridProperties.frozenRowCount",
+                        }
+                    },
+                ]
+            },
+        ).execute()
+
+    url = f"https://docs.google.com/spreadsheets/d/{_sid()}/edit#gid={cupo_id}"
+    storage.guardar_app_config("url_hoja_heridas", url)
+    storage.guardar_app_config("id_hoja_heridas", _sid())
+    logger.info("Dashboard heridas OK: %s (presencial %s/%s)", url, n_pres, CUPO_PRESENCIAL)
+    return url
+
+
+def asegurar_hoja_heridas(*, forzar_crear: bool = False) -> str:
+    """Asegura pestañas en el Sheet principal y refresca el panel de cupo."""
+    if not _sid():
+        raise RuntimeError("ID_HOJA_CALCULO vacío")
+    service = get_sheets_service()
+    _asegurar_tab(service, TAB_INSCRITOS, HEADERS_INSCRITOS)
+    _asegurar_tab(service, TAB_INTERESADOS, HEADERS_INTERESADOS)
+    _asegurar_tab(service, TAB_CUPO)
+    # No recursar: dashboard se llama aparte; aquí solo tabs
+    if forzar_crear:
+        actualizar_dashboard_heridas()
+    return _sid()
+
+
+def _append_fila(tab: str, fila: list) -> bool:
     try:
-        sid = _id_configurado()
-        if not sid:
+        asegurar_hoja_heridas()
+        service = get_sheets_service()
+        service.spreadsheets().values().append(
+            spreadsheetId=_sid(),
+            range=f"{tab}!A:Z",
+            valueInputOption="USER_ENTERED",
+            insertDataOption="INSERT_ROWS",
+            body={"values": [fila]},
+        ).execute()
+        try:
+            actualizar_dashboard_heridas()
+        except Exception as e:
+            logger.warning("Dashboard heridas tras append: %s", e)
+        return True
+    except Exception as e:
+        logger.error("Error escribiendo %s heridas: %s", tab, e)
+        return False
+
+
+def _ya_inscrito_reciente(telefono: str) -> bool:
+    try:
+        if not _sid():
             return False
         service = get_sheets_service()
         result = (
             service.spreadsheets()
             .values()
-            .get(spreadsheetId=sid, range=f"{TAB_INSCRITOS}!C2:C200")
+            .get(spreadsheetId=_sid(), range=f"{TAB_INSCRITOS}!C2:C200")
             .execute()
         )
         target = _norm_tel(telefono)
@@ -274,21 +595,18 @@ def _ya_inscrito_reciente(telefono: str) -> bool:
 
 
 def _interesado_fila(telefono: str) -> int | None:
-    """Índice 1-based de fila en Interesados si el teléfono ya existe."""
     try:
-        sid = _id_configurado()
-        if not sid:
+        if not _sid():
             return None
         service = get_sheets_service()
         result = (
             service.spreadsheets()
             .values()
-            .get(spreadsheetId=sid, range=f"{TAB_INTERESADOS}!A2:F500")
+            .get(spreadsheetId=_sid(), range=f"{TAB_INTERESADOS}!A2:F500")
             .execute()
         )
         target = _norm_tel(telefono)
-        rows = result.get("values", [])
-        for i, row in enumerate(rows):
+        for i, row in enumerate(result.get("values", [])):
             if len(row) < 3:
                 continue
             if target and target in re.sub(r"\D", "", row[2]):
@@ -310,7 +628,6 @@ def registrar_inscrito_heridas(
     notas: str = "",
 ) -> bool:
     if _ya_inscrito_reciente(telefono):
-        # Actualizar estatus si ya existe
         return actualizar_estatus_inscrito(telefono, estatus_pago, monto=monto)
     return _append_fila(
         TAB_INSCRITOS,
@@ -332,12 +649,12 @@ def actualizar_estatus_inscrito(
     telefono: str, estatus: str, *, monto: str = ""
 ) -> bool:
     try:
-        sid = asegurar_hoja_heridas()
+        asegurar_hoja_heridas()
         service = get_sheets_service()
         result = (
             service.spreadsheets()
             .values()
-            .get(spreadsheetId=sid, range=f"{TAB_INSCRITOS}!A2:I500")
+            .get(spreadsheetId=_sid(), range=f"{TAB_INSCRITOS}!A2:I500")
             .execute()
         )
         target = _norm_tel(telefono)
@@ -348,13 +665,17 @@ def actualizar_estatus_inscrito(
             if target and target in re.sub(r"\D", "", row[2]):
                 fila = i + 2
                 service.spreadsheets().values().update(
-                    spreadsheetId=sid,
+                    spreadsheetId=_sid(),
                     range=f"{TAB_INSCRITOS}!F{fila}:G{fila}",
                     valueInputOption="USER_ENTERED",
-                    body={"values": [[estatus, monto or (row[6] if len(row) > 6 else "")]]},
+                    body={
+                        "values": [
+                            [estatus, monto or (row[6] if len(row) > 6 else "")]
+                        ]
+                    },
                 ).execute()
+                actualizar_dashboard_heridas()
                 return True
-        # No estaba: crear
         return registrar_inscrito_heridas(
             nombre=storage.primer_nombre(telefono) or "Paciente",
             telefono=telefono,
@@ -381,10 +702,10 @@ def registrar_interesado_heridas(
     fila_existente = _interesado_fila(telefono)
     if fila_existente:
         try:
-            sid = asegurar_hoja_heridas()
+            asegurar_hoja_heridas()
             service = get_sheets_service()
             service.spreadsheets().values().update(
-                spreadsheetId=sid,
+                spreadsheetId=_sid(),
                 range=f"{TAB_INTERESADOS}!A{fila_existente}:G{fila_existente}",
                 valueInputOption="USER_ENTERED",
                 body={
@@ -401,6 +722,7 @@ def registrar_interesado_heridas(
                     ]
                 },
             ).execute()
+            actualizar_dashboard_heridas()
             return True
         except Exception as e:
             logger.error("Error actualizando interesado heridas: %s", e)
@@ -424,15 +746,13 @@ def marcar_interesado_como_inscrito(telefono: str) -> None:
     if not fila:
         return
     try:
-        sid = _id_configurado()
-        if not sid:
-            return
         service = get_sheets_service()
         service.spreadsheets().values().update(
-            spreadsheetId=sid,
+            spreadsheetId=_sid(),
             range=f"{TAB_INTERESADOS}!F{fila}",
             valueInputOption="USER_ENTERED",
             body={"values": [["Inscrito"]]},
         ).execute()
+        actualizar_dashboard_heridas()
     except Exception as e:
         logger.debug("Marcar interesado inscrito: %s", e)

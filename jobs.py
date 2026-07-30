@@ -680,10 +680,10 @@ def forzar_sync_hojas_conocimiento_analytics() -> dict:
         out["error"] = f"{prev} analytics: {e}".strip()
         logger.exception("Forzar sync Analytics: %s", e)
     try:
-        from heridas_sheet import asegurar_hoja_heridas, url_hoja_heridas
+        from heridas_sheet import actualizar_dashboard_heridas, url_hoja_heridas
 
-        sid = asegurar_hoja_heridas()
-        out["heridas"] = {"id": sid, "url": url_hoja_heridas()}
+        url = actualizar_dashboard_heridas()
+        out["heridas"] = {"url": url or url_hoja_heridas()}
         logger.info("Hoja heridas OK: %s", out["heridas"]["url"])
     except Exception as e:
         prev = out.get("error") or ""

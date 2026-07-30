@@ -1,6 +1,6 @@
-"""Tests hoja exclusiva taller heridas."""
+"""Tests hoja taller heridas."""
 import storage
-from heridas_sheet import es_taller_heridas
+from heridas_sheet import _es_presencial, es_taller_heridas
 
 
 def test_es_taller_heridas():
@@ -9,6 +9,14 @@ def test_es_taller_heridas():
     assert es_taller_heridas("Taller del niño interior")
     assert not es_taller_heridas("Alianza 360")
     assert not es_taller_heridas("Mente en Capítulos")
+
+
+def test_es_presencial_cupo():
+    assert _es_presencial("Presencial Zapopan")
+    assert _es_presencial("Por confirmar")
+    assert _es_presencial("")
+    assert not _es_presencial("Online Zoom")
+    assert not _es_presencial("En línea 5 semanas")
 
 
 def test_app_config_kv(db_temp):

@@ -412,7 +412,7 @@ def actualizar_analytics(*, dias: int = 90) -> str:
         put(msg_header + 1, 0, "(sin mensajes guardados aún en el historial)")
 
     # Panel derecho breve: solo heridas destacadas
-    put(3, 6, "HERIDAS / HISTORIA (atajo)")
+    put(3, 6, "HERIDAS — ver pestaña Heridas_Cupo")
     put(4, 6, "Pregunta")
     put(4, 7, "Veces")
     put(4, 8, "WhatsApp")

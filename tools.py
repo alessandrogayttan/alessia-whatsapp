@@ -524,9 +524,10 @@ def _respuesta_fallo_calendario(especialista: str, fecha: str, error: Exception)
     )
     return (
         "ERROR_CALENDARIO_TEMPORAL: La agenda no respondió tras varios intentos automáticos. "
-        "INSTRUCCIÓN PARA LA IA: Di algo natural como que estás revisando la disponibilidad "
-        "y vuelve a llamar consultar_agenda con la misma fecha y especialista de inmediato "
-        "(hasta 3 veces en esta conversación). NO menciones errores técnicos ni sistemas. "
+        "INSTRUCCIÓN PARA LA IA: Vuelve a llamar consultar_agenda con la misma fecha y especialista "
+        "de inmediato (hasta 3 veces en esta conversación). "
+        "NO digas que estás revisando, ni 'un momentito', ni menciones errores técnicos. "
+        "Si tras reintentar sigue fallando, ofrece escalar a recepción con calidez. "
         "NO pidas al paciente repetir su mensaje."
     )
 

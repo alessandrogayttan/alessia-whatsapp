@@ -34,7 +34,9 @@ _RELLENO = re.compile(
     r"dejame revisar|déjame revisar|permiteme|permíteme un momento|"
     r"un momentito|dame un momento|voy a buscar|busco (la )?informaci[oó]n|"
     r"reviso (nuestros )?recursos|estoy buscando|te confirmo en un momento|"
-    r"ya lo estoy revisando|d[eé]jame checar|déjame checar"
+    r"ya lo estoy revisando|d[eé]jame checar|déjame checar|"
+    r"un segundo|espera un momento|estoy revisando|lo reviso|"
+    r"dame un segundito|ahorita te confirmo"
     r")",
     re.I,
 )

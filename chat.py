@@ -60,7 +60,7 @@ memoria_pacientes = {}
 memoria_terapeutas = {}
 cerrojos_pacientes = {}
 # Al cambiar el prompt, sube la versión para refrescar chats en RAM tras deploy.
-PROMPT_VERSION = "warm-2026-07-30d"
+PROMPT_VERSION = "warm-2026-07-30e"
 _chat_prompt_version: dict[str, str] = {}
 
 
@@ -79,8 +79,13 @@ IDENTIDAD (REGLA DE HIERRO):
 - Preséntate solo como "Alessia, de Inpulso 43" o "Alessia de Inpulso".
 - TIENES PROHIBIDO decir: asistente virtual, IA, inteligencia artificial, bot, automatizado, robot, modelo, Gemini.
 - NUNCA te vuelvas a presentar si ya saludaste en la conversación. Sigue el hilo natural.
-- PROHIBIDO mensajes tipo "dame un momentito" o "ya te leo" — responde directo al contenido.
+- PROHIBIDO mensajes tipo "dame un momentito", "ya te leo", "ya lo estoy revisando",
+  "déjame revisar", "un segundo" o cualquier frase de relleno mientras “buscas”.
+  Responde de una vez con lo que sí sepas; si llamas una herramienta, no avises antes.
 - NUNCA seas cortante, seca ni telegráfica. Platica con calidez genuina.
+- Habla como persona real por WhatsApp: frases cortas, naturales, sin sonar a folleto ni a script.
+- NO repitas en el siguiente mensaje lo que ya dijiste (precios, fechas, 50%, preventa, dirección).
+  Si el paciente ya tiene ese dato, continúa el hilo con lo que falta.
 
 REGLAS DE NOMBRES (EXTREMADAMENTE IMPORTANTE):
 1. NOMBRES DE TERAPEUTAS: Cuando menciones a los terapeutas, usa SIEMPRE su primer nombre y primer apellido (Ejemplo: Sara Rosales). NUNCA uses sus nombres completos legales para platicar.
@@ -91,16 +96,20 @@ REGLAS DE NOMBRES (EXTREMADAMENTE IMPORTANTE):
 
 REGLAS DE COMUNICACIÓN Y TONO:
 0. REGLA DE ORO — TALLERES: Si el paciente solo saluda (“hola”, “buenas”, “cómo estás”) o charla sin pedir un taller, responde breve y humana. PROHIBIDO soltar *Sanando tus heridas del pasado* u otros talleres, precios de taller, imagen o botones. Solo habla de talleres si el paciente los menciona o pregunta explícitamente.
-1. Eres extremadamente humana, empática y cálida. Usa emojis con variedad y naturalidad (😊 ✨ 🙌 💙 🌿 💜 🌸 🫶 ☀️ 🌟 💫 🌈 🦋 🌷 💐 🩷 🤗 💆‍♀️ 🌬️ 🗓️ 📍) — al menos uno o dos por mensaje cuando encaje; varíalos, no repitas siempre los mismos; no seas fría ni robótica.
+0b. INSCRIPCIÓN FLUIDA (CRÍTICO): Si ya explicaste cómo apartar / precios / fechas y el paciente da su *nombre* o elige modalidad:
+   - NO vuelvas a pegar el folleto completo (precios, preventa, fechas, temario).
+   - En 2-4 frases: confirma el nombre, pregunta solo lo que falte (presencial u online, o datos de pago).
+   - Una sola vez cada dato; cero “te recuerdo que…”.
+1. Eres extremadamente humana, empática y cálida. Emojis solo cuando se sientan naturales (no en cada línea ni en cada mensaje). Varía; no satures.
 2. FORMATO DE WHATSAPP (REGLA CRÍTICA — DISEÑO LIMPIO):
    - Negritas: un SOLO asterisco pegado al texto, ej. *Título*. PROHIBIDO **doble asterisco**.
-   - Listas: usa viñeta • o números (1. 2. 3.). PROHIBIDO bullets con asterisco (* item).
-   - Negritas con moderación: solo títulos de sección o 1-2 frases clave. NO pongas negrita en cada línea.
+   - Listas: usa viñeta • o números (1. 2. 3.) solo si hace falta; en chat fluido prefiere prosa breve.
+   - Negritas con moderación: solo 1-2 frases clave. NO pongas negrita en cada línea.
    - PROHIBIDO anidar formato (* *texto* o *• texto*). PROHIBIDO markdown de blog (##, ---, tablas con |).
    - Estilo elegante y minimalista: aire entre secciones, sin saturar de símbolos.
 3. FLUJO NATURAL: Si la conversación ya está fluyendo, NO saludes de nuevo ni uses muletillas. Entra directo al tema con calidez.
-   PROHIBIDO empezar mensajes con "Ay", "¡Ay", "¡Ay, [Nombre]!" — suena artificial y repetitivo.
-4. BREVEDAD CON CALIDEZ: Respuestas claras de 2-3 párrafos máximo, pero siempre amables y con personalidad — no listas secas ni tono de formulario. Si hay mucha info (temario, precios), resume con calidez.
+   PROHIBIDO empezar mensajes con "Ay", "¡Ay", "¡Ay, [Nombre]!", "¡Qué lindo nombre!" de forma teatral.
+4. BREVEDAD CON CALIDEZ: 1-3 frases suele bastar. Máximo un mensaje corto; no muros. Si hay mucha info, da lo esencial y ofrece ampliar.
 5. INFORMACIÓN Y ALCANCE:
    - Preguntas sobre Inpulso (talleres, equipo, precios, servicios, blog, contacto): usa SIEMPRE el bloque [Sistema: WEB VIVA] del mensaje actual.
    - Si falta detalle o puede haber cambiado algo, llama 'consultar_sitio_inpulso' o 'buscar_conocimiento_inpulso' ANTES de responder.
@@ -449,7 +458,9 @@ MENSAJE_RESCATE = (
     "¿Me repites tu mensaje? Estoy aquí contigo."
 )
 
-MENSAJE_ESPERA = "Un momentito, ya lo estoy revisando ✨"
+# Desactivado: ese aviso se sentía a IA ("ya lo estoy revisando").
+# Pon GEMINI_AVISO_ESPERA_SEGUNDOS>0 solo si quieres reactivarlo.
+MENSAJE_ESPERA = ""
 
 
 def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
@@ -483,18 +494,16 @@ def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
         listo = {"ok": False}
 
         try:
-            # RESTAURAR ASISTENTE: no cortocircuitar WhatsApp con catálogo/ficha taller.
-            # El catálogo automático del taller heridas estaba contaminando saludos.
-            # Gemini responde como antes; hechos de precios/web siguen en el prompt + tools.
+            # RESTAURAR ASISTENTE: sin catálogo automático en WhatsApp.
+            from respuesta_fiable import (
+                _es_charla_casual,
+                _solo_mensaje_paciente,
+                extraer_texto_usuario,
+            )
+
             texto_fiable = None
             msg_user = ""
             if not identificar_terapeuta(numero_paciente):
-                from respuesta_fiable import (
-                    _es_charla_casual,
-                    _solo_mensaje_paciente,
-                    extraer_texto_usuario,
-                )
-
                 msg_user = _solo_mensaje_paciente(
                     extraer_texto_usuario(contenido_para_ia)
                 )
@@ -536,101 +545,105 @@ def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
                         "Pregunta en qué le puedes ayudar.]\n"
                         + contenido_para_ia
                     )
-            if False:  # catálogo WA desactivado — no enviar ficha taller
-                pass
-            else:
 
-                def _aviso_espera():
-                    if listo["ok"]:
-                        return
-                    try:
-                        enviar_mensaje_whatsapp(numero_paciente, MENSAJE_ESPERA)
-                    except Exception:
-                        pass
+            def _aviso_espera():
+                if listo["ok"] or not MENSAJE_ESPERA:
+                    return
+                if float(getattr(config, "GEMINI_AVISO_ESPERA_SEGUNDOS", 0) or 0) <= 0:
+                    return
+                try:
+                    enviar_mensaje_whatsapp(numero_paciente, MENSAJE_ESPERA)
+                except Exception:
+                    pass
 
-                timer = threading.Timer(
-                    max(3.0, config.GEMINI_AVISO_ESPERA_SEGUNDOS), _aviso_espera
-                )
+            espera_s = float(getattr(config, "GEMINI_AVISO_ESPERA_SEGUNDOS", 0) or 0)
+            timer = None
+            if espera_s > 0 and MENSAJE_ESPERA:
+                timer = threading.Timer(espera_s, _aviso_espera)
                 timer.daemon = True
                 timer.start()
-                try:
-                    chat_alessia = obtener_chat_paciente(numero_paciente)
-                    nombre_terapeuta = identificar_terapeuta(numero_paciente)
-                    if nombre_terapeuta and isinstance(contenido_para_ia, str):
-                        contenido_para_ia = (
-                            f"[Sistema: MODO STAFF — Terapeuta autenticado: {nombre_terapeuta}]\n"
-                            + contenido_para_ia
+            try:
+                chat_alessia = obtener_chat_paciente(numero_paciente)
+                nombre_terapeuta = identificar_terapeuta(numero_paciente)
+                if nombre_terapeuta and isinstance(contenido_para_ia, str):
+                    contenido_para_ia = (
+                        f"[Sistema: MODO STAFF — Terapeuta autenticado: {nombre_terapeuta}]\n"
+                        + contenido_para_ia
+                    )
+
+                for intento in range(2):
+                    try:
+                        respuesta_ia = _gemini_send_message(
+                            chat_alessia, contenido_para_ia
                         )
+                        texto = (getattr(respuesta_ia, "text", None) or "").strip()
+                        if texto:
 
-                    for intento in range(2):
-                        try:
-                            respuesta_ia = _gemini_send_message(
-                                chat_alessia, contenido_para_ia
+                            def _regen(msg):
+                                r = _gemini_send_message(chat_alessia, msg)
+                                return (getattr(r, "text", None) or "").strip()
+
+                            texto = asegurar_respuesta_util(
+                                contenido_para_ia, texto, regenerar=_regen
                             )
-                            texto = (getattr(respuesta_ia, "text", None) or "").strip()
-                            if texto:
-
-                                def _regen(msg):
-                                    r = _gemini_send_message(chat_alessia, msg)
-                                    return (getattr(r, "text", None) or "").strip()
-
-                                texto = asegurar_respuesta_util(
-                                    contenido_para_ia, texto, regenerar=_regen
+                            if not texto:
+                                continue
+                            # Nunca reenviar la ficha del taller en saludos/charla
+                            bajo_t = texto.lower()
+                            if (
+                                "sanando tus heridas" in bajo_t
+                                or "elige abajo" in bajo_t
+                            ) and _es_charla_casual(msg_user or ""):
+                                texto = (
+                                    "¡Hola! Qué gusto saludarte 😊 "
+                                    "¿En qué te puedo ayudar hoy?"
                                 )
-                                if not texto:
-                                    continue
-                                # Nunca reenviar la ficha del taller en saludos/charla
-                                bajo_t = texto.lower()
-                                if (
-                                    "sanando tus heridas" in bajo_t
-                                    or "elige abajo" in bajo_t
-                                ) and _es_charla_casual(msg_user or ""):
-                                    texto = (
-                                        "¡Hola! Qué gusto saludarte 😊 "
-                                        "¿En qué te puedo ayudar hoy?"
-                                    )
-                                listo["ok"] = True
+                            listo["ok"] = True
+                            if timer:
                                 timer.cancel()
-                                enviar_mensaje_whatsapp(numero_paciente, texto)
-                                try:
-                                    from conversacion import registrar_turno_whatsapp
+                            enviar_mensaje_whatsapp(numero_paciente, texto)
+                            try:
+                                from conversacion import registrar_turno_whatsapp
 
-                                    registrar_turno_whatsapp(
-                                        numero_paciente, contenido_para_ia, texto
-                                    )
-                                except Exception as e:
-                                    logger.debug("Historial WA no guardado: %s", e)
-                                enviado = True
-                                break
-                            logger.warning(
-                                "Gemini respuesta vacía para %s (intento %s)",
-                                numero_paciente,
-                                intento + 1,
-                            )
-                        except FuturesTimeout:
-                            logger.error(
-                                "Timeout Gemini para %s (intento %s)",
-                                numero_paciente,
-                                intento + 1,
-                            )
-                            registrar_fallo_gemini(numero_paciente)
-                            if intento == 0:
-                                time.sleep(1)
-                                continue
-                        except Exception as e:
-                            logger.exception(
-                                "Error Gemini para %s (intento %s): %s",
-                                numero_paciente,
-                                intento + 1,
-                                e,
-                            )
-                            registrar_fallo_gemini(numero_paciente)
-                            if intento == 0:
-                                time.sleep(1)
-                                continue
-                finally:
-                    listo["ok"] = True
-                    timer.cancel()
+                                registrar_turno_whatsapp(
+                                    numero_paciente, contenido_para_ia, texto
+                                )
+                            except Exception as e:
+                                logger.debug("Historial WA no guardado: %s", e)
+                            enviado = True
+                            break
+                        logger.warning(
+                            "Gemini respuesta vacía para %s (intento %s)",
+                            numero_paciente,
+                            intento + 1,
+                        )
+                    except FuturesTimeout:
+                        logger.error(
+                            "Timeout Gemini para %s (intento %s)",
+                            numero_paciente,
+                            intento + 1,
+                        )
+                        registrar_fallo_gemini(numero_paciente)
+                        if intento == 0:
+                            time.sleep(1)
+                            continue
+                    except Exception as e:
+                        logger.exception(
+                            "Error Gemini para %s (intento %s): %s",
+                            numero_paciente,
+                            intento + 1,
+                            e,
+                        )
+                        registrar_fallo_gemini(numero_paciente)
+                        if intento == 0:
+                            time.sleep(1)
+                            continue
+            finally:
+                if timer:
+                    try:
+                        timer.cancel()
+                    except Exception:
+                        pass
         finally:
             tools_ctx._telefono_contexto = None
 

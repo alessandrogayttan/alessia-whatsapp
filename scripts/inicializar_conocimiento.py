@@ -20,7 +20,7 @@ def main():
     print(inicializar_hojas_conocimiento())
     print(
         "\nCómo usarlo:\n"
-        "1) Equipo en WhatsApp (MODO EQUIPO): «El taller X cuesta $Y…» → hoja Conocimiento\n"
+        "1) Equipo en WhatsApp (MODO PRO): «El taller X cuesta $Y…» → hoja Conocimiento\n"
         "2) FAQ_Pacientes se llena sola con lo más preguntado; tú escribes Respuesta_oficial\n"
         "3) En el siguiente sync, esas respuestas pasan a conocimiento para pacientes\n"
     )

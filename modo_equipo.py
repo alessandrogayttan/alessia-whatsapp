@@ -1,4 +1,4 @@
-"""Modo equipo Inpulso — Alessia como asistente IA completa tras contraseña."""
+"""Modo Pro (antes «modo equipo») — Alessia como asistente IA completa tras contraseña."""
 from __future__ import annotations
 
 import logging
@@ -21,7 +21,7 @@ from tools import obtener_contexto_fecha_actual
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION = "equipo-2026-07-30a"
+PROMPT_VERSION = "equipo-2026-07-30b"
 MARCADOR_IA = "__EQUIPO_IA__"
 
 _memoria_equipo: dict[str, object] = {}
@@ -35,6 +35,14 @@ MENSAJE_RESCATE = (
 
 _COMANDOS_ENTRADA = frozenset(
     {
+        # Nombre actual
+        "modo pro",
+        "#pro",
+        "acceso pro",
+        "entrar a modo pro",
+        "quiero modo pro",
+        "acceso al modo pro",
+        # Alias legacy (siguen funcionando)
         "modo equipo",
         "#equipo",
         "acceso equipo",
@@ -44,7 +52,18 @@ _COMANDOS_ENTRADA = frozenset(
         "acceso al equipo",
     }
 )
-_COMANDOS_SALIR = frozenset({"salir equipo", "salir modo equipo", "cerrar equipo"})
+_COMANDOS_SALIR = frozenset(
+    {
+        "salir pro",
+        "salir modo pro",
+        "cerrar pro",
+        "cerrar modo pro",
+        # Alias legacy
+        "salir equipo",
+        "salir modo equipo",
+        "cerrar equipo",
+    }
+)
 
 
 def _cliente():
@@ -63,6 +82,13 @@ def _es_solicitud_acceso_equipo(texto: str) -> bool:
     if norm in _COMANDOS_ENTRADA:
         return True
     indicadores = (
+        "modo pro",
+        "entrar a modo pro",
+        "quiero modo pro",
+        "acceso al modo pro",
+        "acceso pro",
+        "#pro",
+        # Alias legacy
         "modo equipo",
         "entrar al equipo",
         "quiero entrar al equipo",
@@ -77,10 +103,11 @@ def _instrucciones_equipo(nombre: str) -> str:
     return f"""
 Eres *Alessia*, asistente de inteligencia artificial del equipo interno de Inpulso 43.
 Estás hablando con *{nombre}* (uso interno — NO es un paciente).
+Estás en *Modo Pro* (asistente completo).
 
 IDENTIDAD (CRÍTICO — SIEMPRE):
 - Tu nombre es *Alessia* y solo Alessia. Preséntate siempre así.
-- Puedes reconocer que eres una IA si te preguntan; con pacientes nunca lo harías, pero aquí es equipo.
+- Puedes reconocer que eres una IA si te preguntan; con pacientes nunca lo harías, pero aquí es Modo Pro.
 - TIENES PROHIBIDO decir que eres Gemini, Google, ChatGPT, Claude u otra marca como tu identidad.
 - TIENES PROHIBIDO decir "soy un modelo de Google" o "soy Gemini". Eres *Alessia*.
 - Si preguntan quién te desarrolló o quién te creó: *Alessandro Gaytán*, ingeniero de software de Google DeepMind
@@ -94,7 +121,7 @@ CONOCIMIENTO TÉCNICO INTERNO (para el equipo — no lo anuncies sin que pregunt
   no digas la marca Gemini).
 - Backend: Python (Flask), API de mensajería WhatsApp, persistencia SQLite, herramientas de catálogo/citas solo
   en modo paciente (aquí no las usas).
-- Modo actual: equipo interno — IA completa sin restricciones de recepción.
+- Modo actual: *Modo Pro* — IA completa sin restricciones de recepción.
 - Versión de instrucciones: {PROMPT_VERSION}.
 
 NATURALEZA DE ESTE MODO:
@@ -133,14 +160,14 @@ ENSEÑAR A ALESSIA PARA PACIENTES (CRÍTICO):
 - Para ver lo guardado: *listar_conocimiento_pacientes*. Para quitar: *borrar_conocimiento_pacientes* con el ID.
 - HOJA HERIDAS: si piden "actualiza la hoja", "sincroniza inscritos", "llena Heridas_Cupo" o similar,
   llama *sincronizar_panel_heridas*. Confirma el resultado (cuántos inscritos/interesados y el link).
-  (Fuera de modo equipo, el personal registrado por WhatsApp puede pedir lo mismo y Alessia lo ejecuta sola.)
+  (Fuera de Modo Pro, el personal registrado por WhatsApp puede pedir lo mismo y Alessia lo ejecuta sola.)
 - Eso se sincroniza a Google Sheets (hoja Conocimiento) para Alessandro/desarrollo.
 
 LÍMITES SANOS:
 - No sustituyes criterio clínico ni legal; sugiere revisión humana cuando aplique.
 - Si piden algo enorme, entrégalo por partes claras.
 
-Eres la herramienta de productividad del equipo. Sé excelente.
+Eres la herramienta de productividad del equipo en *Modo Pro*. Sé excelente.
 """
 
 
@@ -170,11 +197,11 @@ def _crear_chat_equipo(telefono: str, nombre: str, modelo: str):
 
 
 def envolver_mensaje_equipo(telefono: str, contenido):
-    """Contexto mínimo para el equipo — sin reglas de paciente."""
+    """Contexto mínimo para Modo Pro — sin reglas de paciente."""
     nombre = _nombre_miembro(telefono)
     ctx = (
         obtener_contexto_fecha_actual()
-        + f"[Sistema: MODO EQUIPO INTERNO — {nombre}. Asistente IA completa.]\n"
+        + f"[Sistema: MODO PRO — {nombre}. Asistente IA completa.]\n"
     )
     if isinstance(contenido, str):
         return ctx + contenido
@@ -190,6 +217,7 @@ def sesion_equipo_activa(telefono: str) -> bool:
 
 
 def es_modo_equipo(telefono: str) -> bool:
+    """True si hay sesión Modo Pro activa (nombre interno legacy)."""
     return sesion_equipo_activa(telefono)
 
 
@@ -204,33 +232,33 @@ def _clave_correcta(texto: str) -> bool:
 
 def _mensaje_pedir_clave() -> str:
     return (
-        "🔐 *Modo equipo interno*\n\n"
+        "🔐 *Modo Pro*\n\n"
         "Envía la contraseña de acceso (solo personal de Inpulso).\n"
-        "Para cancelar, escribe *SALIR EQUIPO*."
+        "Para cancelar, escribe *SALIR PRO*."
     )
 
 
 def _mensaje_acceso_ok(nombre: str) -> str:
     horas = config.EQUIPO_SESION_HORAS
     return (
-        f"✅ Acceso equipo activado por *{horas} horas*, {nombre}.\n\n"
+        f"✅ *Modo Pro* activado por *{horas} horas*, {nombre}.\n\n"
         "Soy *Alessia* en modo completo — archivos, redacción, análisis.\n"
         "Si me mandas un *PDF* con info de pacientes (talleres, precios…), lo leo y lo *guardo* "
         "en la base para cuando pregunten.\n"
         "También puedes enseñarme por texto, ej:\n"
         "«El taller de heridas cuesta $2500 y empieza el 15 de agosto».\n"
-        "Para la hoja heridas (también sin entrar a modo equipo, desde tu WhatsApp "
+        "Para la hoja heridas (también sin entrar a Modo Pro, desde tu WhatsApp "
         "registrado): *sincroniza la hoja de heridas*.\n"
-        "Para salir escribe *SALIR EQUIPO*."
+        "Para salir escribe *SALIR PRO*."
     )
 
 
 def procesar_preflight_equipo(telefono: str, texto: str) -> str | None:
     """
-    Maneja comandos de acceso al modo equipo.
+    Maneja comandos de acceso a Modo Pro.
     - str: mensaje ya resuelto para enviar al usuario (no pasar a IA)
-    - MARCADOR_IA: sesión activa, continuar con IA de equipo
-    - None: no aplica modo equipo, flujo paciente normal
+    - MARCADOR_IA: sesión activa, continuar con IA de Modo Pro
+    - None: no aplica, flujo paciente normal
     """
     if not config.ENABLE_MODO_EQUIPO:
         return None
@@ -242,16 +270,16 @@ def procesar_preflight_equipo(telefono: str, texto: str) -> str | None:
         if sesion_equipo_activa(telefono) or storage.esperando_clave_equipo(telefono):
             cerrar_sesion_equipo(telefono)
             return (
-                "Listo, salí del modo equipo. Vuelvo a recepción 😊\n"
-                "Para entrar de nuevo escribe *MODO EQUIPO*."
+                "Listo, salí de *Modo Pro*. Vuelvo a recepción 😊\n"
+                "Para entrar de nuevo escribe *MODO PRO*."
             )
         return None
 
     if sesion_equipo_activa(telefono):
         if norm in _COMANDOS_ENTRADA or _es_solicitud_acceso_equipo(limpio):
             return (
-                "Ya estás en modo equipo ✅ ¿En qué te ayudo?\n"
-                "Para salir escribe *SALIR EQUIPO*."
+                "Ya estás en *Modo Pro* ✅ ¿En qué te ayudo?\n"
+                "Para salir escribe *SALIR PRO*."
             )
         return MARCADOR_IA
 
@@ -262,13 +290,13 @@ def procesar_preflight_equipo(telefono: str, texto: str) -> str | None:
             config.EQUIPO_CLAVE_BLOQUEO_MINUTOS,
         ):
             return (
-                "Demasiados intentos fallidos 🔒 El acceso equipo está bloqueado unos minutos. "
-                "Intenta más tarde o escribe *SALIR EQUIPO*."
+                "Demasiados intentos fallidos 🔒 El acceso a *Modo Pro* está bloqueado unos minutos. "
+                "Intenta más tarde o escribe *SALIR PRO*."
             )
         if not config.secreto_modo_equipo():
             storage.cancelar_esperando_clave_equipo(telefono)
             return (
-                "El modo equipo no está configurado en el servidor todavía. "
+                "*Modo Pro* no está configurado en el servidor todavía. "
                 "Avísale a Alessandro."
             )
         if _clave_correcta(limpio):
@@ -281,13 +309,13 @@ def procesar_preflight_equipo(telefono: str, texto: str) -> str | None:
         storage.cancelar_esperando_clave_equipo(telefono)
         return (
             "Contraseña incorrecta 🔒 Sigo en modo recepción.\n"
-            "Si eres del equipo, escribe *MODO EQUIPO* e inténtalo de nuevo."
+            "Si eres del equipo, escribe *MODO PRO* e inténtalo de nuevo."
         )
 
     if _es_solicitud_acceso_equipo(limpio):
         if not config.secreto_modo_equipo():
             return (
-                "El modo equipo aún no tiene contraseña configurada en el servidor. "
+                "*Modo Pro* aún no tiene contraseña configurada en el servidor. "
                 "Avísale a Alessandro."
             )
         storage.marcar_esperando_clave_equipo(telefono)
@@ -361,7 +389,7 @@ def procesar_mensaje_equipo(telefono: str, contenido):
                     break
 
         if ultimo_error:
-            logger.error("Modo equipo falló para %s: %s", telefono, ultimo_error)
+            logger.error("Modo Pro falló para %s: %s", telefono, ultimo_error)
 
     return MENSAJE_RESCATE
 

@@ -1,4 +1,4 @@
-"""Tests modo equipo interno — acceso por contraseña."""
+"""Tests Modo Pro (antes modo equipo) — acceso por contraseña."""
 import importlib
 
 import config
@@ -29,6 +29,7 @@ def test_instrucciones_equipo_identidad():
     assert "Google DeepMind" in texto
     assert "PROHIBIDO decir que eres Gemini" in texto
     assert "Tu nombre es *Alessia*" in texto
+    assert "Modo Pro" in texto
     assert "PDF" in texto
     assert "guardar_conocimiento_pacientes" in texto
 
@@ -44,10 +45,11 @@ def test_preflight_entrada_frase_natural(monkeypatch, db_temp):
 
     respuesta = procesar_preflight_equipo(
         "5233123456789",
-        "Quiero entrar al equipo, soy Alessandro",
+        "Quiero modo pro, soy Alessandro",
     )
     assert respuesta is not None
     assert "contraseña" in respuesta.lower()
+    assert "modo pro" in respuesta.lower()
 
 
 def test_clave_sin_default_inseguro(monkeypatch):
@@ -73,10 +75,26 @@ def test_preflight_pide_clave(monkeypatch, db_temp):
     )
     from modo_equipo import procesar_preflight_equipo
 
+    respuesta = procesar_preflight_equipo("5233123456789", "MODO PRO")
+    assert respuesta is not None
+    assert "contraseña" in respuesta.lower()
+    assert "modo pro" in respuesta.lower()
+    assert storage.esperando_clave_equipo("5233123456789")
+
+
+def test_preflight_alias_legacy_modo_equipo(monkeypatch, db_temp):
+    """«MODO EQUIPO» sigue funcionando como alias."""
+    _reload_config(
+        monkeypatch,
+        db_temp,
+        ENABLE_MODO_EQUIPO="1",
+        EQUIPO_CLAVE_ACCESO="inpulso2026",
+    )
+    from modo_equipo import procesar_preflight_equipo
+
     respuesta = procesar_preflight_equipo("5233123456789", "MODO EQUIPO")
     assert respuesta is not None
     assert "contraseña" in respuesta.lower()
-    assert storage.esperando_clave_equipo("5233123456789")
 
 
 def test_preflight_clave_correcta_activa_sesion(monkeypatch, db_temp):
@@ -90,10 +108,11 @@ def test_preflight_clave_correcta_activa_sesion(monkeypatch, db_temp):
     )
     from modo_equipo import MARCADOR_IA, procesar_preflight_equipo, sesion_equipo_activa
 
-    procesar_preflight_equipo("5233123456789", "MODO EQUIPO")
+    procesar_preflight_equipo("5233123456789", "MODO PRO")
     respuesta = procesar_preflight_equipo("5233123456789", "inpulso2026")
     assert respuesta is not None
     assert "activado" in respuesta.lower()
+    assert "modo pro" in respuesta.lower()
     assert sesion_equipo_activa("5233123456789")
     assert procesar_preflight_equipo("5233123456789", "Hola") == MARCADOR_IA
 
@@ -111,7 +130,7 @@ def test_preflight_clave_con_hash(monkeypatch, db_temp):
     )
     from modo_equipo import procesar_preflight_equipo, sesion_equipo_activa
 
-    procesar_preflight_equipo("5233123456789", "MODO EQUIPO")
+    procesar_preflight_equipo("5233123456789", "MODO PRO")
     respuesta = procesar_preflight_equipo("5233123456789", "supersecreta")
     assert respuesta is not None
     assert "activado" in respuesta.lower()
@@ -127,14 +146,14 @@ def test_preflight_clave_incorrecta(monkeypatch, db_temp):
     )
     from modo_equipo import procesar_preflight_equipo, sesion_equipo_activa
 
-    procesar_preflight_equipo("5233123456789", "MODO EQUIPO")
+    procesar_preflight_equipo("5233123456789", "MODO PRO")
     respuesta = procesar_preflight_equipo("5233123456789", "mala")
     assert respuesta is not None
     assert "incorrecta" in respuesta.lower()
     assert not sesion_equipo_activa("5233123456789")
 
 
-def test_salir_equipo_cierra_sesion(monkeypatch, db_temp):
+def test_salir_pro_cierra_sesion(monkeypatch, db_temp):
     _reload_config(
         monkeypatch,
         db_temp,
@@ -145,9 +164,10 @@ def test_salir_equipo_cierra_sesion(monkeypatch, db_temp):
 
     storage.activar_sesion_equipo("5233123456789", "Equipo", 12)
     assert sesion_equipo_activa("5233123456789")
-    respuesta = procesar_preflight_equipo("5233123456789", "SALIR EQUIPO")
+    respuesta = procesar_preflight_equipo("5233123456789", "SALIR PRO")
     assert respuesta is not None
     assert "salí" in respuesta.lower()
+    assert "modo pro" in respuesta.lower()
     assert not sesion_equipo_activa("5233123456789")
 
 
@@ -192,7 +212,7 @@ def test_preparar_contenido_sin_sesion_usa_flujo_paciente(monkeypatch, db_temp):
     mensaje = {
         "from": "5233123456789",
         "type": "text",
-        "text": {"body": "MODO EQUIPO"},
+        "text": {"body": "MODO PRO"},
     }
     resultado = servidor._preparar_contenido_mensaje(mensaje)
     assert resultado is None

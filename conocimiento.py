@@ -56,7 +56,7 @@ def parece_consulta_informativa(texto: str) -> bool:
     t = (texto or "").strip().lower()
     if len(t) < 5 or len(t) > 400:
         return False
-    if any(x in t for x in ("modo equipo", "salir equipo", "eliminar datos")):
+    if any(x in t for x in ("modo pro", "modo equipo", "salir pro", "salir equipo", "eliminar datos")):
         return False
     if "¿" in texto or "?" in texto:
         return True

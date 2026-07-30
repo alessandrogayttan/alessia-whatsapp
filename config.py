@@ -194,7 +194,7 @@ def identificar_terapeuta(telefono: str) -> str | None:
     return None
 
 
-# Modo equipo interno — IA completa para staff (lista blanca por WhatsApp)
+# Modo Pro (interno) — IA completa para staff tras contraseña
 ENABLE_MODO_EQUIPO = os.getenv("ENABLE_MODO_EQUIPO", "1").strip().lower() in (
     "1",
     "true",
@@ -217,7 +217,7 @@ EQUIPO_CLAVE_BLOQUEO_MINUTOS = int(os.getenv("EQUIPO_CLAVE_BLOQUEO_MINUTOS", "15
 
 
 def secreto_modo_equipo() -> str:
-    """Hash o texto plano configurado para modo equipo."""
+    """Hash o texto plano configurado para Modo Pro."""
     return EQUIPO_CLAVE_HASH or EQUIPO_CLAVE_ACCESO
 
 

@@ -18,7 +18,7 @@ from seguridad import hash_clave  # noqa: E402
 
 
 def main() -> None:
-    clave = sys.argv[1] if len(sys.argv) > 1 else getpass.getpass("Contraseña modo equipo: ")
+    clave = sys.argv[1] if len(sys.argv) > 1 else getpass.getpass("Contraseña Modo Pro: ")
     if not clave.strip():
         raise SystemExit("Contraseña vacía")
     print(hash_clave(clave.strip()))

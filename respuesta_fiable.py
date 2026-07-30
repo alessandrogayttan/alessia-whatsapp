@@ -157,6 +157,7 @@ _SALUDO_TOKENS = frozenset(
         "equipo",
         "a",
         "todos",
+        "hoy",
         "como",
         "estas",
         "estoy",
@@ -292,8 +293,7 @@ def _formatear_taller_heridas(t: dict) -> str:
 
 
 def _formatear_taller(t: dict) -> str:
-    if t.get("id_web") == "sanando-heridas":
-        return _formatear_taller_heridas(t)
+    # Sin ficha “marketing” especial: mismo formato limpio que el resto
     nombre = t.get("nombre_corto_web") or t.get("nombre") or "Taller"
     lineas = [f"¡Claro! Te comparto la info de *{nombre}* ✨", ""]
     if t.get("nombre") and t.get("nombre") != nombre:
@@ -834,6 +834,11 @@ def asegurar_respuesta_util(
         return texto
 
     fijo = intentar_respuesta_catalogo(contenido)
+    if fijo and (
+        "sanando tus heridas" in fijo.lower() or "elige abajo" in fijo.lower()
+    ):
+        # Nunca inyectar ficha taller como “rescate”
+        fijo = None
     if fijo:
         return fijo
 

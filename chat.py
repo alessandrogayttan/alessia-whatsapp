@@ -60,7 +60,7 @@ memoria_pacientes = {}
 memoria_terapeutas = {}
 cerrojos_pacientes = {}
 # Al cambiar el prompt, sube la versión para refrescar chats en RAM tras deploy.
-PROMPT_VERSION = "warm-2026-07-30c"
+PROMPT_VERSION = "warm-2026-07-30d"
 _chat_prompt_version: dict[str, str] = {}
 
 
@@ -483,9 +483,11 @@ def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
         listo = {"ok": False}
 
         try:
-            # Catálogo solo para preguntas claras de info (precios, ubicación…).
-            # Saludos/charla → Gemini. Sin ficha rica del taller.
+            # RESTAURAR ASISTENTE: no cortocircuitar WhatsApp con catálogo/ficha taller.
+            # El catálogo automático del taller heridas estaba contaminando saludos.
+            # Gemini responde como antes; hechos de precios/web siguen en el prompt + tools.
             texto_fiable = None
+            msg_user = ""
             if not identificar_terapeuta(numero_paciente):
                 from respuesta_fiable import (
                     _es_charla_casual,
@@ -496,67 +498,46 @@ def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
                 msg_user = _solo_mensaje_paciente(
                     extraer_texto_usuario(contenido_para_ia)
                 )
-                if _es_charla_casual(msg_user):
-                    # Historial contaminado con ficha heridas → Gemini la repite
-                    try:
-                        from conversacion import clave_conversacion_whatsapp
+                # Siempre limpiar historial si hubo ficha heridas (evita que Gemini la copie)
+                try:
+                    from conversacion import clave_conversacion_whatsapp
 
-                        clave = clave_conversacion_whatsapp(numero_paciente)
-                        recientes = storage.obtener_mensajes_conversacion(clave, limite=8)
-                        contaminado = any(
-                            "heridas" in (m.get("contenido") or "").lower()
-                            or "sanando" in (m.get("contenido") or "").lower()
-                            for m in recientes
-                            if (m.get("rol") or "") == "model"
-                        )
-                        if contaminado:
-                            n = storage.borrar_conversacion(clave)
-                            reiniciar_chat_paciente(numero_paciente)
-                            logger.info(
-                                "Historial heridas limpiado (%s msgs) para %s",
-                                n,
-                                numero_paciente[-4:],
+                    clave = clave_conversacion_whatsapp(numero_paciente)
+                    recientes = storage.obtener_mensajes_conversacion(clave, limite=12)
+                    contaminado = any(
+                        (
+                            "sanando tus heridas" in (m.get("contenido") or "").lower()
+                            or "elige abajo" in (m.get("contenido") or "").lower()
+                            or (
+                                "heridas del pasado" in (m.get("contenido") or "").lower()
+                                and "preventa" in (m.get("contenido") or "").lower()
                             )
-                    except Exception as e:
-                        logger.debug("Limpieza historial heridas: %s", e)
-                    if isinstance(contenido_para_ia, str):
-                        contenido_para_ia = (
-                            "[Sistema: PRIORIDAD — El paciente solo saludó o hace charla. "
-                            "Ignora cualquier taller anterior. "
-                            "Responde 1-2 frases cálidas. PROHIBIDO mencionar heridas, "
-                            "Sanando, talleres, precios de taller o modalidades. "
-                            "Pregunta en qué le ayudas.]\n"
-                            + contenido_para_ia
                         )
-                else:
-                    texto_fiable = enviar_respuesta_catalogo_whatsapp(
-                        numero_paciente, contenido_para_ia
+                        for m in recientes
+                        if (m.get("rol") or "") == "model"
                     )
-            if texto_fiable:
-                listo["ok"] = True
-                try:
-                    from conversacion import registrar_turno_whatsapp
-
-                    registrar_turno_whatsapp(
-                        numero_paciente, contenido_para_ia, texto_fiable
-                    )
-                except Exception as e:
-                    logger.debug("Historial WA no guardado: %s", e)
-                try:
-                    bajo = texto_fiable.lower()
-                    if "heridas del pasado" in bajo or "sanando" in bajo:
-                        from heridas_sheet import registrar_interesado_heridas
-                        from respuesta_fiable import extraer_texto_usuario
-
-                        registrar_interesado_heridas(
-                            telefono=numero_paciente,
-                            consulta=extraer_texto_usuario(contenido_para_ia)[:400],
-                            fuente="Consulta info WhatsApp",
-                            estado="Preguntando",
+                    if contaminado:
+                        n = storage.borrar_conversacion(clave)
+                        reiniciar_chat_paciente(numero_paciente)
+                        logger.info(
+                            "Historial taller limpiado (%s msgs) %s",
+                            n,
+                            numero_paciente[-4:],
                         )
                 except Exception as e:
-                    logger.debug("Hoja heridas interesado: %s", e)
-                enviado = True
+                    logger.debug("Limpieza historial: %s", e)
+
+                if _es_charla_casual(msg_user) and isinstance(contenido_para_ia, str):
+                    contenido_para_ia = (
+                        "[Sistema: PRIORIDAD ABSOLUTA — Saludo/charla. "
+                        "Responde 1-2 frases cálidas como Alessia. "
+                        "PROHIBIDO talleres, heridas, Sanando, precios de taller, "
+                        "presencial/online, links de talleres.php. "
+                        "Pregunta en qué le puedes ayudar.]\n"
+                        + contenido_para_ia
+                    )
+            if False:  # catálogo WA desactivado — no enviar ficha taller
+                pass
             else:
 
                 def _aviso_espera():
@@ -598,6 +579,16 @@ def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
                                 )
                                 if not texto:
                                     continue
+                                # Nunca reenviar la ficha del taller en saludos/charla
+                                bajo_t = texto.lower()
+                                if (
+                                    "sanando tus heridas" in bajo_t
+                                    or "elige abajo" in bajo_t
+                                ) and _es_charla_casual(msg_user or ""):
+                                    texto = (
+                                        "¡Hola! Qué gusto saludarte 😊 "
+                                        "¿En qué te puedo ayudar hoy?"
+                                    )
                                 listo["ok"] = True
                                 timer.cancel()
                                 enviar_mensaje_whatsapp(numero_paciente, texto)

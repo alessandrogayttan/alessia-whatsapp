@@ -17,13 +17,10 @@ def test_club_lectura_sara():
 def test_heridas():
     out = intentar_respuesta_catalogo("¿qué es el taller de heridas del pasado?")
     assert out and "Sanando" in out
-    assert "Presencial" in out or "presencial" in out.lower()
-    assert "$1,000" in out or "$1000" in out
-    assert "50%" in out
-    assert "6 sep" in out
-    # Ficha corta: sin muro de secciones
-    assert "• Precio:" not in out
-    assert "Temario / enfoque" not in out
+    assert "$1,000" in out or "$1000" in out or "1,000" in out
+    assert "50%" in out or "sep" in out.lower()
+    # Formato normal de taller (no ficha marketing con "Elige abajo")
+    assert "Elige abajo" not in out
 
 
 def test_saludo_no_dispara_catalogo():

@@ -17,23 +17,35 @@ def test_club_lectura_sara():
 def test_heridas():
     out = intentar_respuesta_catalogo("¿qué es el taller de heridas del pasado?")
     assert out and "Sanando" in out
-    assert "Presencial" in out
+    assert "Presencial" in out or "presencial" in out.lower()
     assert "$1,000" in out or "$1000" in out
-    # Info completa: descripción, inscripción, temario
-    assert "psicoterapéutico" in out.lower() or "historia" in out.lower()
     assert "50%" in out
-    assert "Temario" in out or "enfoque" in out.lower()
-    assert "Identificación" in out or "heridas del pasado" in out.lower()
-    # Ya no debe ser un muro de viñetas "• Precio:"
+    assert "6 sep" in out
+    # Ficha corta: sin muro de secciones
     assert "• Precio:" not in out
-    assert "Fechas y horarios" in out or "📅" in out
+    assert "Temario / enfoque" not in out
+
+
+def test_saludo_no_dispara_catalogo():
+    from respuesta_fiable import _es_solo_saludo
+
+    assert _es_solo_saludo("Hola buenas tardes")
+    assert _es_solo_saludo("hola")
+    assert not _es_solo_saludo("hola, info del taller de heridas")
+    assert intentar_respuesta_catalogo("Hola buenas tardes") is None
+    assert intentar_respuesta_catalogo(
+        "[Sistema: Mensaje recibido el X] Hola buenas tardes"
+    ) is None
 
 
 def test_boton_heridas_presencial():
     from respuesta_fiable import respuesta_boton_heridas
 
     out = respuesta_boton_heridas("heridas_presencial")
-    assert out and "presencial" in out.lower() and "6 sep" in out
+    assert out and "presencial" in out.lower()
+    assert "nombre completo" in out.lower()
+    # No debe repetir toda la ficha de precios/fechas
+    assert "$1,000" not in out and "6 sep" not in out
 
 
 def test_listado_talleres():

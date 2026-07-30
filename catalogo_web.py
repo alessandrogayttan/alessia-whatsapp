@@ -371,23 +371,23 @@ def obtener_talleres_vigentes(*, forzar_web: bool = False) -> list[dict]:
 
 def id_web_desde_texto(texto: str) -> str:
     consulta = _normalizar_busqueda(texto)
-    if not consulta:
+    if not consulta or len(consulta) < 5:
         return ""
-    for tid, taller in {t["id_web"]: t for t in obtener_talleres_vigentes()}.items():
-        campos = [
-            taller.get("nombre", ""),
-            taller.get("nombre_corto_web", ""),
-            taller.get("libro_mes", ""),
-            taller.get("autor_libro", ""),
-            taller.get("temario", ""),
-        ]
-        blob = _normalizar_busqueda(" ".join(campos))
-        if consulta in blob or blob in consulta:
-            return tid
+    # Aliases explícitos (el usuario mencionó el taller)
     for tid, alias_list in ALIASES_TALLER.items():
         for alias in alias_list:
             a = _normalizar_busqueda(alias)
-            if a and (a in consulta or consulta in a):
+            if a and len(a) >= 5 and a in consulta:
+                return tid
+    # Nombre completo del taller dentro del mensaje (no al revés: evita saludos)
+    for tid, taller in {t["id_web"]: t for t in obtener_talleres_vigentes()}.items():
+        for campo in (
+            taller.get("nombre", ""),
+            taller.get("nombre_corto_web", ""),
+            taller.get("libro_mes", ""),
+        ):
+            n = _normalizar_busqueda(campo)
+            if n and len(n) >= 8 and n in consulta:
                 return tid
     return ""
 

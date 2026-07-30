@@ -116,12 +116,59 @@ def extraer_texto_usuario(contenido: Any) -> str:
 
 
 def _solo_mensaje_paciente(texto: str) -> str:
+    """Quita instrucciones de sistema; deja solo lo que escribió el usuario."""
+    t = texto or ""
+    # Bloques [Sistema: ...] / [Modo staff: ...] aunque vayan en la misma línea
+    t = re.sub(r"\[Sistema:[^\]]*\]", " ", t)
+    t = re.sub(r"\[Modo staff:[^\]]*\]", " ", t)
     lineas = []
-    for linea in (texto or "").splitlines():
-        if linea.strip().startswith("[Sistema:"):
+    for linea in t.splitlines():
+        s = linea.strip()
+        if not s or s.startswith("[Sistema:") or s.startswith("[Modo staff:"):
             continue
         lineas.append(linea)
-    return "\n".join(lineas).strip() or (texto or "").strip()
+    limpio = "\n".join(lineas).strip()
+    limpio = re.sub(r"[ \t]{2,}", " ", limpio)
+    return limpio
+
+
+_SALUDO_TOKENS = frozenset(
+    {
+        "hola",
+        "holi",
+        "hello",
+        "hi",
+        "hey",
+        "saludos",
+        "buen",
+        "buena",
+        "buenas",
+        "buenos",
+        "dia",
+        "dias",
+        "tarde",
+        "tardes",
+        "noche",
+        "noches",
+        "que",
+        "tal",
+        "alessia",
+        "inpulso",
+        "equipo",
+        "a",
+        "todos",
+    }
+)
+
+
+def _es_solo_saludo(texto: str) -> bool:
+    """True si el mensaje es solo un saludo (sin pedir info)."""
+    t = _norm(texto)
+    t = re.sub(r"[^\w\s]", " ", t)
+    palabras = [p for p in t.split() if p]
+    if not palabras or len(palabras) > 6 or len(t) > 50:
+        return False
+    return all(p in _SALUDO_TOKENS for p in palabras)
 
 
 def es_respuesta_relleno(texto: str) -> bool:
@@ -164,66 +211,20 @@ def _parece_pregunta_info(texto: str) -> bool:
 
 
 def _formatear_taller_heridas(t: dict) -> str:
-    """Ficha WhatsApp limpia del taller Sanando heridas (completa y escaneable)."""
-    desc = (
-        (t.get("descripcion_web") or "").strip()
-        or (
-            "Taller psicoterapéutico vivencial para comprender cómo tu historia "
-            "sigue hablando en tus relaciones, miedos y decisiones — y dejar de "
-            "vivir únicamente desde eso."
-        )
-    )
-    temario = (
-        (t.get("temario") or "").strip()
-        or (
-            "Identificación de heridas del pasado; cómo se expresan hoy; "
-            "patrones en vínculos; historia personal y límites; resignificación; "
-            "herramientas vivenciales."
-        )
-    )
-    # Temario en viñetas cortas (misma info, más legible)
-    temario_limpio = temario.replace("Facilitan Juan y Sara Rosales.", "").strip(" ;.")
-    partes_temario = [p.strip() for p in re.split(r"[;·]", temario_limpio) if p.strip()]
-    if not partes_temario:
-        partes_temario = [temario_limpio]
-    lineas_temario = "\n".join(f"• {p[0].upper()}{p[1:]}" if p else "" for p in partes_temario)
-
+    """Ficha corta del taller heridas (cabe en 1 mensaje + botones)."""
+    url = (t.get("url_web") or PAGINAS_SITIO.get("talleres", "") or "").strip()
     return (
         "✨ *Sanando tus heridas del pasado*\n"
-        "Facilitan *Juan y Sara Rosales*\n\n"
-        f"{desc}\n\n"
-        "━━━━━━━━━━━━━━\n"
-        "📅 *Fechas y horarios*\n\n"
-        "*Presencial*\n"
-        "• Domingo *6 sep 2026*\n"
-        "• 9:00 a 18:00 h\n"
-        "• Zapopan (Agua Azul 3008, La Palmira)\n"
-        "• Cupo máx. 100 · mayores de 18\n"
-        "• Inscripciones abiertas\n\n"
-        "*Online (Zoom)*\n"
-        "• Desde el *8 sep 2026*\n"
-        "• 5 semanas · mar y jue\n"
-        "• 19:00–20:30 (CDMX)\n"
-        "• En vivo · inscripciones abiertas\n\n"
-        "━━━━━━━━━━━━━━\n"
-        "💰 *Precios*\n\n"
-        "*Presencial*\n"
-        "• Preventa *$1,000* · Regular *$1,200*\n"
-        "• Dúo *$950* · Grupos 4+ *$900*\n\n"
-        "*Online*\n"
-        "• Preventa *$900* · Regular *$1,000*\n"
-        "• Dúo *$800* · Grupos 4+ *$750*\n\n"
-        "🏷️ Preventa hasta el *6 ago 2026* o primeros 20 lugares por modalidad.\n\n"
-        "━━━━━━━━━━━━━━\n"
-        "📝 *Inscripción*\n"
-        "• Escríbenos por WhatsApp para apartar tu lugar\n"
-        "• Se aparta con el *50%*\n"
-        "• Liquidar antes del *4 sep 2026*\n"
-        "• Abierto hasta el 4 sep o agotar cupo presencial\n\n"
-        "━━━━━━━━━━━━━━\n"
-        "🌱 *Temario / enfoque*\n"
-        f"{lineas_temario}\n\n"
-        "¿Te late más *presencial* u *online*? Te oriento 💙"
+        "Con *Juan y Sara Rosales*\n\n"
+        "Taller vivencial para entender cómo tu historia sigue hablando en "
+        "tus relaciones, miedos y decisiones — y dejar de vivir solo desde eso.\n\n"
+        "📅 *Presencial* · dom *6 sep 2026* · 9:00–18:00 · Zapopan\n"
+        "💻 *Online* · desde *8 sep* · 5 sem · mar/jue 19:00–20:30\n\n"
+        "💰 Preventa: presencial *$1,000* · online *$900*\n"
+        "(Regular $1,200 / $1,000 · dúo y grupos con descuento)\n"
+        "Apartas con *50%* · liquidar antes del *4 sep*\n\n"
+        + (f"Más detalle: {url}\n\n" if url else "")
+        + "¿Presencial u online? Elige abajo 💙"
     )
 
 
@@ -271,15 +272,10 @@ HERIDAS_IMAGE_URL = (
 
 def enviar_ficha_heridas_whatsapp(telefono: str, taller: dict | None = None) -> str:
     """
-    Envía ficha premium del taller heridas: imagen + texto claro + botones + CTA web.
-    Devuelve el texto de la ficha (para historial).
+    Envía ficha corta del taller heridas: 1 imagen + 1 mensaje con botones.
+    (Sin muro de texto ni 4 mensajes seguidos.)
     """
-    from whatsapp import (
-        enviar_botones_respuesta,
-        enviar_imagen_por_url,
-        enviar_mensaje_con_boton_url,
-        enviar_mensaje_whatsapp,
-    )
+    from whatsapp import enviar_botones_respuesta, enviar_imagen_por_url
 
     t = taller
     if not t:
@@ -288,43 +284,30 @@ def enviar_ficha_heridas_whatsapp(telefono: str, taller: dict | None = None) -> 
                 t = item
                 break
     texto = _formatear_taller_heridas(t or {})
-    url_web = (t or {}).get("url_web") or PAGINAS_SITIO.get("talleres", "")
 
-    # 1) Imagen del taller
     try:
         enviar_imagen_por_url(
             telefono,
             HERIDAS_IMAGE_URL,
             caption="Sanando tus heridas del pasado · Inpulso 43",
         )
-        time.sleep(0.35)
+        time.sleep(0.3)
     except Exception:
         pass
 
-    # 2) Ficha estructurada
-    enviar_mensaje_whatsapp(telefono, texto)
-    time.sleep(0.35)
-
-    # 3) Botones de modalidad
+    # Ficha + botones en el mismo mensaje interactivo (máx. 1024 en body)
+    cuerpo = texto
+    if len(cuerpo) > 1024:
+        cuerpo = cuerpo[:1021] + "..."
     enviar_botones_respuesta(
         telefono,
-        "Elige cómo quieres tomarlo:",
+        cuerpo,
         [
             ("heridas_presencial", "Presencial"),
             ("heridas_online", "Online"),
             ("heridas_apartar", "Apartar lugar"),
         ],
     )
-    time.sleep(0.25)
-
-    # 4) CTA a la página
-    if url_web:
-        enviar_mensaje_con_boton_url(
-            telefono,
-            "También puedes ver fotos, FAQ y todos los detalles en la web ✨",
-            "Ver en la web",
-            url_web if url_web.startswith("http") else f"https://{url_web}",
-        )
     return texto
 
 
@@ -332,47 +315,43 @@ def enviar_respuesta_catalogo_whatsapp(telefono: str, contenido: Any) -> str | N
     """Respuesta de catálogo por WhatsApp; heridas va con imagen + botones."""
     from whatsapp import enviar_mensaje_whatsapp
 
+    mensaje = _solo_mensaje_paciente(extraer_texto_usuario(contenido))
+    if _es_solo_saludo(mensaje):
+        return None
+
     texto = intentar_respuesta_catalogo(contenido)
     if not texto:
         return None
-    if "Sanando tus heridas del pasado" in texto:
+    # Solo la ficha dedicada del taller (no cualquier mención del nombre)
+    if texto.lstrip().startswith("✨ *Sanando tus heridas del pasado*"):
         return enviar_ficha_heridas_whatsapp(telefono)
     enviar_mensaje_whatsapp(telefono, texto)
     return texto
 
 
 def respuesta_boton_heridas(button_id: str) -> str | None:
-    """Texto al pulsar Presencial / Online / Apartar en la ficha heridas."""
+    """Respuesta corta al pulsar botón (sin repetir toda la ficha)."""
     bid = (button_id or "").strip().lower()
     if bid == "heridas_presencial":
         return (
-            "Perfecto — *modalidad presencial* 🌿\n\n"
-            "📅 Domingo *6 sep 2026* · 9:00–18:00\n"
-            "📍 Agua Azul 3008, La Palmira, Zapopan\n"
-            "👥 Cupo máx. 100 · mayores de 18\n\n"
-            "💰 Preventa *$1,000* · Regular *$1,200*\n"
-            "· Dúo *$950* · Grupos 4+ *$900*\n\n"
-            "Para apartar: 50% ahora y liquidar antes del *4 sep*.\n"
-            "¿Te anoto? Solo dime tu *nombre completo* ✨"
+            "Perfecto, *presencial* 🌿\n\n"
+            "Para apartar tu lugar dime tu *nombre completo* "
+            "y te indico el anticipo del *50%* (liquidar antes del *4 sep*). "
+            "¿Te anoto?"
         )
     if bid == "heridas_online":
         return (
-            "Genial — *modalidad online* (Zoom) 💻\n\n"
-            "📅 Desde el *8 sep 2026* · 5 semanas\n"
-            "🕒 Martes y jueves · 19:00–20:30 (CDMX)\n\n"
-            "💰 Preventa *$900* · Regular *$1,000*\n"
-            "· Dúo *$800* · Grupos 4+ *$750*\n\n"
-            "Apartas con 50% y liquidas antes del *4 sep*.\n"
-            "¿Te reservo? Pásame tu *nombre completo* ✨"
+            "Genial, *online* 💻\n\n"
+            "Para reservar dime tu *nombre completo* "
+            "y te indico el anticipo del *50%* (liquidar antes del *4 sep*). "
+            "¿Te anoto?"
         )
     if bid == "heridas_apartar":
         return (
-            "¡Qué bueno que quieras apartar tu lugar! 🙌\n\n"
-            "Dime:\n"
+            "¡Claro! 🙌 Dime solo:\n"
             "1) *Presencial* u *online*\n"
             "2) Tu *nombre completo*\n\n"
-            "Con eso te oriento para el anticipo del 50% "
-            "(liquidar antes del *4 sep*)."
+            "Con eso te oriento para el anticipo."
         )
     return None
 
@@ -681,7 +660,9 @@ def intentar_respuesta_catalogo(contenido: Any) -> str | None:
     """Respuesta factual inmediata si la pregunta es de información clara."""
     crudo = extraer_texto_usuario(contenido)
     mensaje = _solo_mensaje_paciente(crudo)
-    if not mensaje or not _parece_pregunta_info(mensaje):
+    if not mensaje or _es_solo_saludo(mensaje):
+        return None
+    if not _parece_pregunta_info(mensaje):
         return None
 
     # Orden: lo más específico primero

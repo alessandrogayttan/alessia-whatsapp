@@ -221,7 +221,7 @@ def preparar_contenido_mensaje(mensaje_info: dict):
             else:
                 extra = (
                     "Paciente nuevo sin nombre guardado. "
-                    "NO pidas nombre para charlar; solo al agendar o inscribir a taller."
+                    "NO pidas nombre para charlar; solo al agendar o inscribirse."
                 )
             return (
                 texto_contexto

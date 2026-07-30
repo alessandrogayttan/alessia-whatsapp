@@ -475,17 +475,21 @@ def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
     enviado = False
     with cerrojos_pacientes[numero_paciente]:
         import tools as tools_ctx
-        from respuesta_fiable import asegurar_respuesta_util, intentar_respuesta_catalogo
+        from respuesta_fiable import asegurar_respuesta_util, enviar_respuesta_catalogo_whatsapp
 
         tools_ctx._telefono_contexto = numero_paciente
         listo = {"ok": False}
 
         try:
             # Hechos de catálogo: no dependen de Gemini (evita "déjame revisar…")
-            texto_fiable = intentar_respuesta_catalogo(contenido_para_ia)
-            if texto_fiable and not identificar_terapeuta(numero_paciente):
+            # Heridas: imagen + ficha limpia + botones + CTA web
+            texto_fiable = None
+            if not identificar_terapeuta(numero_paciente):
+                texto_fiable = enviar_respuesta_catalogo_whatsapp(
+                    numero_paciente, contenido_para_ia
+                )
+            if texto_fiable:
                 listo["ok"] = True
-                enviar_mensaje_whatsapp(numero_paciente, texto_fiable)
                 try:
                     from conversacion import registrar_turno_whatsapp
 
@@ -496,7 +500,7 @@ def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
                     logger.debug("Historial WA no guardado: %s", e)
                 try:
                     bajo = texto_fiable.lower()
-                    if "heridas del pasado" in bajo or "sanando heridas" in bajo:
+                    if "heridas del pasado" in bajo or "sanando" in bajo:
                         from heridas_sheet import registrar_interesado_heridas
                         from respuesta_fiable import extraer_texto_usuario
 

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 import unicodedata
 from pathlib import Path
 from typing import Any
@@ -162,7 +163,73 @@ def _parece_pregunta_info(texto: str) -> bool:
     return bool(_INFO.search(texto))
 
 
+def _formatear_taller_heridas(t: dict) -> str:
+    """Ficha WhatsApp limpia del taller Sanando heridas (completa y escaneable)."""
+    desc = (
+        (t.get("descripcion_web") or "").strip()
+        or (
+            "Taller psicoterapéutico vivencial para comprender cómo tu historia "
+            "sigue hablando en tus relaciones, miedos y decisiones — y dejar de "
+            "vivir únicamente desde eso."
+        )
+    )
+    temario = (
+        (t.get("temario") or "").strip()
+        or (
+            "Identificación de heridas del pasado; cómo se expresan hoy; "
+            "patrones en vínculos; historia personal y límites; resignificación; "
+            "herramientas vivenciales."
+        )
+    )
+    # Temario en viñetas cortas (misma info, más legible)
+    temario_limpio = temario.replace("Facilitan Juan y Sara Rosales.", "").strip(" ;.")
+    partes_temario = [p.strip() for p in re.split(r"[;·]", temario_limpio) if p.strip()]
+    if not partes_temario:
+        partes_temario = [temario_limpio]
+    lineas_temario = "\n".join(f"• {p[0].upper()}{p[1:]}" if p else "" for p in partes_temario)
+
+    return (
+        "✨ *Sanando tus heridas del pasado*\n"
+        "Facilitan *Juan y Sara Rosales*\n\n"
+        f"{desc}\n\n"
+        "━━━━━━━━━━━━━━\n"
+        "📅 *Fechas y horarios*\n\n"
+        "*Presencial*\n"
+        "• Domingo *6 sep 2026*\n"
+        "• 9:00 a 18:00 h\n"
+        "• Zapopan (Agua Azul 3008, La Palmira)\n"
+        "• Cupo máx. 100 · mayores de 18\n"
+        "• Inscripciones abiertas\n\n"
+        "*Online (Zoom)*\n"
+        "• Desde el *8 sep 2026*\n"
+        "• 5 semanas · mar y jue\n"
+        "• 19:00–20:30 (CDMX)\n"
+        "• En vivo · inscripciones abiertas\n\n"
+        "━━━━━━━━━━━━━━\n"
+        "💰 *Precios*\n\n"
+        "*Presencial*\n"
+        "• Preventa *$1,000* · Regular *$1,200*\n"
+        "• Dúo *$950* · Grupos 4+ *$900*\n\n"
+        "*Online*\n"
+        "• Preventa *$900* · Regular *$1,000*\n"
+        "• Dúo *$800* · Grupos 4+ *$750*\n\n"
+        "🏷️ Preventa hasta el *6 ago 2026* o primeros 20 lugares por modalidad.\n\n"
+        "━━━━━━━━━━━━━━\n"
+        "📝 *Inscripción*\n"
+        "• Escríbenos por WhatsApp para apartar tu lugar\n"
+        "• Se aparta con el *50%*\n"
+        "• Liquidar antes del *4 sep 2026*\n"
+        "• Abierto hasta el 4 sep o agotar cupo presencial\n\n"
+        "━━━━━━━━━━━━━━\n"
+        "🌱 *Temario / enfoque*\n"
+        f"{lineas_temario}\n\n"
+        "¿Te late más *presencial* u *online*? Te oriento 💙"
+    )
+
+
 def _formatear_taller(t: dict) -> str:
+    if t.get("id_web") == "sanando-heridas":
+        return _formatear_taller_heridas(t)
     nombre = t.get("nombre_corto_web") or t.get("nombre") or "Taller"
     lineas = [f"¡Claro! Te comparto la info de *{nombre}* ✨", ""]
     if t.get("nombre") and t.get("nombre") != nombre:
@@ -195,6 +262,119 @@ def _formatear_taller(t: dict) -> str:
         lineas.append(f"• Más detalle: {url}")
     lineas += ["", "Si quieres, después te oriento según lo que buscas 💙"]
     return "\n".join(lineas)
+
+
+HERIDAS_IMAGE_URL = (
+    f"{config.CLINICA_WEB_URL.rstrip('/')}/taller-heridas/hero.jpg"
+)
+
+
+def enviar_ficha_heridas_whatsapp(telefono: str, taller: dict | None = None) -> str:
+    """
+    Envía ficha premium del taller heridas: imagen + texto claro + botones + CTA web.
+    Devuelve el texto de la ficha (para historial).
+    """
+    from whatsapp import (
+        enviar_botones_respuesta,
+        enviar_imagen_por_url,
+        enviar_mensaje_con_boton_url,
+        enviar_mensaje_whatsapp,
+    )
+
+    t = taller
+    if not t:
+        for item in obtener_talleres_vigentes():
+            if item.get("id_web") == "sanando-heridas":
+                t = item
+                break
+    texto = _formatear_taller_heridas(t or {})
+    url_web = (t or {}).get("url_web") or PAGINAS_SITIO.get("talleres", "")
+
+    # 1) Imagen del taller
+    try:
+        enviar_imagen_por_url(
+            telefono,
+            HERIDAS_IMAGE_URL,
+            caption="Sanando tus heridas del pasado · Inpulso 43",
+        )
+        time.sleep(0.35)
+    except Exception:
+        pass
+
+    # 2) Ficha estructurada
+    enviar_mensaje_whatsapp(telefono, texto)
+    time.sleep(0.35)
+
+    # 3) Botones de modalidad
+    enviar_botones_respuesta(
+        telefono,
+        "Elige cómo quieres tomarlo:",
+        [
+            ("heridas_presencial", "Presencial"),
+            ("heridas_online", "Online"),
+            ("heridas_apartar", "Apartar lugar"),
+        ],
+    )
+    time.sleep(0.25)
+
+    # 4) CTA a la página
+    if url_web:
+        enviar_mensaje_con_boton_url(
+            telefono,
+            "También puedes ver fotos, FAQ y todos los detalles en la web ✨",
+            "Ver en la web",
+            url_web if url_web.startswith("http") else f"https://{url_web}",
+        )
+    return texto
+
+
+def enviar_respuesta_catalogo_whatsapp(telefono: str, contenido: Any) -> str | None:
+    """Respuesta de catálogo por WhatsApp; heridas va con imagen + botones."""
+    from whatsapp import enviar_mensaje_whatsapp
+
+    texto = intentar_respuesta_catalogo(contenido)
+    if not texto:
+        return None
+    if "Sanando tus heridas del pasado" in texto:
+        return enviar_ficha_heridas_whatsapp(telefono)
+    enviar_mensaje_whatsapp(telefono, texto)
+    return texto
+
+
+def respuesta_boton_heridas(button_id: str) -> str | None:
+    """Texto al pulsar Presencial / Online / Apartar en la ficha heridas."""
+    bid = (button_id or "").strip().lower()
+    if bid == "heridas_presencial":
+        return (
+            "Perfecto — *modalidad presencial* 🌿\n\n"
+            "📅 Domingo *6 sep 2026* · 9:00–18:00\n"
+            "📍 Agua Azul 3008, La Palmira, Zapopan\n"
+            "👥 Cupo máx. 100 · mayores de 18\n\n"
+            "💰 Preventa *$1,000* · Regular *$1,200*\n"
+            "· Dúo *$950* · Grupos 4+ *$900*\n\n"
+            "Para apartar: 50% ahora y liquidar antes del *4 sep*.\n"
+            "¿Te anoto? Solo dime tu *nombre completo* ✨"
+        )
+    if bid == "heridas_online":
+        return (
+            "Genial — *modalidad online* (Zoom) 💻\n\n"
+            "📅 Desde el *8 sep 2026* · 5 semanas\n"
+            "🕒 Martes y jueves · 19:00–20:30 (CDMX)\n\n"
+            "💰 Preventa *$900* · Regular *$1,000*\n"
+            "· Dúo *$800* · Grupos 4+ *$750*\n\n"
+            "Apartas con 50% y liquidas antes del *4 sep*.\n"
+            "¿Te reservo? Pásame tu *nombre completo* ✨"
+        )
+    if bid == "heridas_apartar":
+        return (
+            "¡Qué bueno que quieras apartar tu lugar! 🙌\n\n"
+            "Dime:\n"
+            "1) *Presencial* u *online*\n"
+            "2) Tu *nombre completo*\n\n"
+            "Con eso te oriento para el anticipo del 50% "
+            "(liquidar antes del *4 sep*)."
+        )
+    return None
 
 
 def _respuesta_listado_talleres() -> str:

@@ -348,6 +348,59 @@ def _subir_media_whatsapp(
     return None
 
 
+def enviar_imagen_por_url(
+    telefono_destino: str,
+    image_url: str,
+    caption: str = "",
+) -> bool:
+    """Envía imagen pública por URL HTTPS (sin subir archivo)."""
+    if not image_url:
+        return False
+    image: dict = {"link": image_url}
+    if caption:
+        image["caption"] = caption[:1024]
+    return _enviar_payload(
+        telefono_destino,
+        {"type": "image", "image": image},
+    )
+
+
+def enviar_botones_respuesta(
+    telefono_destino: str,
+    texto_cuerpo: str,
+    botones: list[tuple[str, str]],
+) -> bool:
+    """
+    Botones de respuesta rápida (máx. 3).
+    botones = [(id, titulo), ...]  título ≤ 20 caracteres.
+    """
+    if not botones:
+        return False
+    cuerpo = (texto_cuerpo or "").strip()
+    if len(cuerpo) > 1024:
+        cuerpo = cuerpo[:1021] + "..."
+    buttons = []
+    for bid, titulo in botones[:3]:
+        t = (titulo or "").strip()[:20] or "Opción"
+        buttons.append(
+            {
+                "type": "reply",
+                "reply": {"id": (bid or t)[:256], "title": t},
+            }
+        )
+    return _enviar_payload(
+        telefono_destino,
+        {
+            "type": "interactive",
+            "interactive": {
+                "type": "button",
+                "body": {"text": cuerpo},
+                "action": {"buttons": buttons},
+            },
+        },
+    )
+
+
 def enviar_imagen_whatsapp(
     telefono_destino: str,
     imagen_bytes: bytes,

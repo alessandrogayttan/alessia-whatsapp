@@ -63,6 +63,42 @@ def _extraer_texto_respuesta_boton(mensaje_info: dict) -> str | None:
     return None
 
 
+def _extraer_id_boton_interactive(mensaje_info: dict) -> str | None:
+    if mensaje_info.get("type") != "interactive":
+        return None
+    inter = mensaje_info.get("interactive", {}) or {}
+    if inter.get("type") != "button_reply":
+        return None
+    return (inter.get("button_reply", {}) or {}).get("id", "").strip() or None
+
+
+def _manejar_boton_heridas(telefono: str, button_id: str) -> bool:
+    from respuesta_fiable import respuesta_boton_heridas
+
+    texto = respuesta_boton_heridas(button_id)
+    if not texto:
+        return False
+    enviar_mensaje_whatsapp(telefono, texto)
+    try:
+        from heridas_sheet import registrar_interesado_heridas
+
+        estado = {
+            "heridas_presencial": "Quiere presencial",
+            "heridas_online": "Quiere online",
+            "heridas_apartar": "Quiere apartar",
+        }.get(button_id, "Botón ficha")
+        registrar_interesado_heridas(
+            telefono=telefono,
+            consulta=f"Botón {button_id}",
+            fuente="Botón ficha heridas WA",
+            estado=estado,
+        )
+    except Exception as e:
+        logger.debug("Hoja heridas botón: %s", e)
+    logger.info("Botón heridas '%s' atendido para %s", button_id, telefono)
+    return True
+
+
 def _manejar_boton_recordatorio(telefono: str, texto: str) -> bool:
     if config.identificar_terapeuta(telefono):
         return False
@@ -108,6 +144,21 @@ def preparar_contenido_mensaje(mensaje_info: dict):
     texto_boton = _extraer_texto_respuesta_boton(mensaje_info)
     if texto_boton and _manejar_boton_recordatorio(numero_remitente, texto_boton):
         return None
+
+    button_id = _extraer_id_boton_interactive(mensaje_info)
+    if button_id and button_id.startswith("heridas_") and _manejar_boton_heridas(
+        numero_remitente, button_id
+    ):
+        return None
+
+    # Botón interactivo genérico → tratarlo como texto del paciente
+    if tipo_mensaje == "interactive" and texto_boton:
+        mensaje_info = {
+            **mensaje_info,
+            "type": "text",
+            "text": {"body": texto_boton},
+        }
+        tipo_mensaje = "text"
 
     zona_mexico = pytz.timezone(config.ZONA_MEXICO)
     hora_exacta = datetime.datetime.now(zona_mexico).strftime("%Y-%m-%d %H:%M")

@@ -17,6 +17,23 @@ def test_club_lectura_sara():
 def test_heridas():
     out = intentar_respuesta_catalogo("¿qué es el taller de heridas del pasado?")
     assert out and "Sanando" in out
+    assert "Presencial" in out
+    assert "$1,000" in out or "$1000" in out
+    # Info completa: descripción, inscripción, temario
+    assert "psicoterapéutico" in out.lower() or "historia" in out.lower()
+    assert "50%" in out
+    assert "Temario" in out or "enfoque" in out.lower()
+    assert "Identificación" in out or "heridas del pasado" in out.lower()
+    # Ya no debe ser un muro de viñetas "• Precio:"
+    assert "• Precio:" not in out
+    assert "Fechas y horarios" in out or "📅" in out
+
+
+def test_boton_heridas_presencial():
+    from respuesta_fiable import respuesta_boton_heridas
+
+    out = respuesta_boton_heridas("heridas_presencial")
+    assert out and "presencial" in out.lower() and "6 sep" in out
 
 
 def test_listado_talleres():

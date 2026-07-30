@@ -19,6 +19,14 @@ def test_es_presencial_cupo():
     assert not _es_presencial("En línea 5 semanas")
 
 
+def test_headers_cupo_constantes():
+    from heridas_sheet import CUPO_PRESENCIAL, HEADERS_INSCRITOS, HEADERS_INTERESADOS
+
+    assert CUPO_PRESENCIAL == 100
+    assert "WhatsApp" in HEADERS_INSCRITOS
+    assert "Consulta" in HEADERS_INTERESADOS
+
+
 def test_app_config_kv(db_temp):
     storage.guardar_app_config("id_hoja_heridas", "abc123")
     assert storage.obtener_app_config("id_hoja_heridas") == "abc123"

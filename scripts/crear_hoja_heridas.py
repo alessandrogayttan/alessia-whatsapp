@@ -1,4 +1,4 @@
-"""Crea/actualiza pestañas del taller heridas en el Sheet principal de Alessia.
+"""Rellena pestañas del taller heridas + panel de cupo 0–100.
 
 Uso:
   python scripts/crear_hoja_heridas.py
@@ -15,15 +15,12 @@ if str(ROOT) not in sys.path:
 
 def main() -> int:
     import storage
-    from heridas_sheet import actualizar_dashboard_heridas, url_hoja_heridas
+    from heridas_sheet import sincronizar_heridas_completo
 
     storage.init_db()
-    url = actualizar_dashboard_heridas()
-    print("OK — pestañas en el Sheet de Alessia:")
-    print("  Heridas_Cupo  (barra 0–100 + gráficas)")
-    print("  Heridas_Inscritos")
-    print("  Heridas_Interesados")
-    print("URL:", url or url_hoja_heridas())
+    out = sincronizar_heridas_completo()
+    print("OK sync heridas:", out)
+    print("Abre la pestaña Heridas_Cupo en el Sheet de Alessia.")
     return 0
 
 

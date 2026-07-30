@@ -95,20 +95,257 @@ def _sheet_ids(service) -> dict[str, int]:
 
 def _asegurar_tab(service, titulo: str, headers: list[str] | None = None) -> int:
     ids = _sheet_ids(service)
-    if titulo in ids:
-        return ids[titulo]
-    body = {"requests": [{"addSheet": {"properties": {"title": titulo}}}]}
-    res = service.spreadsheets().batchUpdate(spreadsheetId=_sid(), body=body).execute()
-    sid = res["replies"][0]["addSheet"]["properties"]["sheetId"]
+    if titulo not in ids:
+        body = {"requests": [{"addSheet": {"properties": {"title": titulo}}}]}
+        res = service.spreadsheets().batchUpdate(spreadsheetId=_sid(), body=body).execute()
+        sid = res["replies"][0]["addSheet"]["properties"]["sheetId"]
+    else:
+        sid = ids[titulo]
     if headers:
-        cols = chr(ord("A") + len(headers) - 1)
-        service.spreadsheets().values().update(
-            spreadsheetId=_sid(),
-            range=f"{titulo}!A1:{cols}1",
-            valueInputOption="USER_ENTERED",
-            body={"values": [headers]},
-        ).execute()
+        # Siempre asegura encabezados (tabs vacías quedaban en blanco)
+        actual = (
+            service.spreadsheets()
+            .values()
+            .get(spreadsheetId=_sid(), range=f"{titulo}!A1:I1")
+            .execute()
+            .get("values", [])
+        )
+        if not actual or not actual[0] or not str(actual[0][0]).strip():
+            cols = chr(ord("A") + len(headers) - 1)
+            service.spreadsheets().values().update(
+                spreadsheetId=_sid(),
+                range=f"{titulo}!A1:{cols}1",
+                valueInputOption="USER_ENTERED",
+                body={"values": [headers]},
+            ).execute()
     return sid
+
+
+def _escribir_tabla(service, tab: str, headers: list[str], filas: list[list]) -> None:
+    service.spreadsheets().values().clear(
+        spreadsheetId=_sid(), range=f"{tab}!A:Z"
+    ).execute()
+    valores = [headers] + (filas or [])
+    if not filas:
+        placeholder = [""] * len(headers)
+        placeholder[0] = _ahora()
+        placeholder[1] = "(sin registros aún — se llenan solos)"
+        if len(placeholder) > 4:
+            placeholder[4] = "Alessia escribe aquí cuando alguien pregunta o se inscribe"
+        valores.append(placeholder)
+    service.spreadsheets().values().update(
+        spreadsheetId=_sid(),
+        range=f"{tab}!A1",
+        valueInputOption="USER_ENTERED",
+        body={"values": valores},
+    ).execute()
+    tid = _sheet_ids(service).get(tab)
+    if tid is not None:
+        service.spreadsheets().batchUpdate(
+            spreadsheetId=_sid(),
+            body={
+                "requests": [
+                    _paint(tid, 0, 1, 0, len(headers), AZUL, bold=True, white_text=True),
+                    {
+                        "updateSheetProperties": {
+                            "properties": {
+                                "sheetId": tid,
+                                "gridProperties": {"frozenRowCount": 1},
+                            },
+                            "fields": "gridProperties.frozenRowCount",
+                        }
+                    },
+                ]
+            },
+        ).execute()
+
+
+def _recolectar_inscritos_desde_fuentes(service) -> list[list]:
+    """Copia inscripciones del taller heridas desde la pestaña Inscripciones."""
+    filas: list[list] = []
+    vistos: set[str] = set()
+    try:
+        result = (
+            service.spreadsheets()
+            .values()
+            .get(spreadsheetId=_sid(), range="Inscripciones!A:F")
+            .execute()
+        )
+        for row in result.get("values", [])[1:]:
+            if len(row) < 5:
+                continue
+            taller = row[4] if len(row) > 4 else ""
+            if not es_taller_heridas(taller):
+                continue
+            tel = row[2] if len(row) > 2 else ""
+            key = _norm_tel(tel)
+            if key and key in vistos:
+                continue
+            if key:
+                vistos.add(key)
+            modalidad = "Por confirmar"
+            notas = f"Taller: {taller}"
+            filas.append(
+                [
+                    row[0] if row else _ahora(),
+                    row[1] if len(row) > 1 else "Sin nombre",
+                    tel,
+                    row[3] if len(row) > 3 else "No proporcionado",
+                    modalidad,
+                    (row[5] if len(row) > 5 else "PENDIENTE") or "PENDIENTE",
+                    "",
+                    "Inscripciones (sync)",
+                    notas,
+                ]
+            )
+    except Exception as e:
+        logger.warning("Backfill inscritos heridas: %s", e)
+    return filas
+
+
+def _recolectar_interesados_desde_fuentes(service) -> list[list]:
+    """Lista_Espera + FAQ relacionadas al taller heridas."""
+    filas: list[list] = []
+    vistos: set[str] = set()
+
+    def _add(fecha, nombre, tel, consulta, fuente, estado, notas=""):
+        key = _norm_tel(tel) or f"{nombre}:{consulta[:40]}"
+        if key in vistos:
+            return
+        vistos.add(key)
+        filas.append(
+            [
+                fecha or _ahora(),
+                nombre or "Sin nombre",
+                tel or "",
+                (consulta or "Consulta taller heridas")[:500],
+                fuente,
+                estado,
+                notas,
+            ]
+        )
+
+    try:
+        result = (
+            service.spreadsheets()
+            .values()
+            .get(spreadsheetId=_sid(), range="Lista_Espera!A:F")
+            .execute()
+        )
+        for row in result.get("values", [])[1:]:
+            if len(row) < 4:
+                continue
+            blob = " ".join(str(c) for c in row).lower()
+            if not any(
+                x in blob
+                for x in (
+                    "herida",
+                    "sanando",
+                    "historia",
+                    "niño",
+                    "nino",
+                )
+            ):
+                continue
+            _add(
+                row[0] if row else _ahora(),
+                row[1] if len(row) > 1 else "",
+                row[2] if len(row) > 2 else "",
+                row[4] if len(row) > 4 else (row[3] if len(row) > 3 else "Interés taller"),
+                "Lista_Espera",
+                row[5] if len(row) > 5 else "Interesado",
+                row[3] if len(row) > 3 else "",
+            )
+    except Exception as e:
+        logger.warning("Backfill interesados Lista_Espera: %s", e)
+
+    try:
+        result = (
+            service.spreadsheets()
+            .values()
+            .get(spreadsheetId=_sid(), range="FAQ_Pacientes!A:G")
+            .execute()
+        )
+        for row in result.get("values", [])[1:]:
+            if not row:
+                continue
+            preg = str(row[0] or "")
+            if not es_taller_heridas(preg) and "herida" not in preg.lower():
+                continue
+            tel = row[6] if len(row) > 6 else ""
+            _add(
+                row[2] if len(row) > 2 else _ahora(),
+                "Consulta FAQ",
+                tel,
+                preg,
+                "FAQ_Pacientes",
+                "Preguntando",
+                f"Veces: {row[1] if len(row) > 1 else 1}",
+            )
+    except Exception as e:
+        logger.debug("Backfill FAQ heridas: %s", e)
+
+    return filas
+
+
+def sincronizar_heridas_completo() -> dict:
+    """
+    Rellena Heridas_Inscritos / Heridas_Interesados desde fuentes existentes
+    y regenera Heridas_Cupo (barra 0–100 + gráficas).
+    """
+    if not _sid():
+        raise RuntimeError("ID_HOJA_CALCULO vacío")
+    service = get_sheets_service()
+    _asegurar_tab(service, TAB_INSCRITOS, HEADERS_INSCRITOS)
+    _asegurar_tab(service, TAB_INTERESADOS, HEADERS_INTERESADOS)
+    _asegurar_tab(service, TAB_CUPO)
+
+    inscritos = _recolectar_inscritos_desde_fuentes(service)
+    # Conserva filas ya capturadas por Alessia que no estén en Inscripciones
+    try:
+        existentes = _leer_inscritos(service)
+        vistos = {_norm_tel(r[2]) for r in inscritos if len(r) > 2}
+        for r in existentes:
+            if len(r) < 3:
+                continue
+            if (r[1] or "").startswith("(sin registros"):
+                continue
+            key = _norm_tel(r[2])
+            if key and key not in vistos:
+                inscritos.append(r)
+                vistos.add(key)
+    except Exception:
+        pass
+
+    interesados = _recolectar_interesados_desde_fuentes(service)
+    try:
+        existentes_i = _leer_interesados(service)
+        vistos_i = {_norm_tel(r[2]) for r in interesados if len(r) > 2}
+        for r in existentes_i:
+            if len(r) < 3:
+                continue
+            if (r[1] or "").startswith("(sin registros"):
+                continue
+            key = _norm_tel(r[2]) if len(r) > 2 else ""
+            if key and key not in vistos_i:
+                interesados.append(r)
+                vistos_i.add(key)
+            elif not key and r not in interesados:
+                interesados.append(r)
+    except Exception:
+        pass
+
+    _escribir_tabla(service, TAB_INSCRITOS, HEADERS_INSCRITOS, inscritos)
+    _escribir_tabla(service, TAB_INTERESADOS, HEADERS_INTERESADOS, interesados)
+    url = actualizar_dashboard_heridas()
+    out = {
+        "inscritos": len(inscritos),
+        "interesados": len(interesados),
+        "url": url,
+        "cupo_presencial_meta": CUPO_PRESENCIAL,
+    }
+    logger.info("Sync heridas completo: %s", out)
+    return out
 
 
 def _paint(sheet_id, r0, r1, c0, c1, bg, *, bold=False, white_text=False):

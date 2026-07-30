@@ -615,7 +615,7 @@ def calendario_keepalive_background():
 
 
 def sincronizar_faq_conocimiento_background():
-    """Sincroniza ranking FAQ y conocimiento a Google Sheets (~cada hora)."""
+    """Sincroniza ranking FAQ, conocimiento y Analytics a Google Sheets (~cada hora)."""
     ahora = datetime.datetime.now(ZONA)
     if ahora.minute > 14:
         return
@@ -630,6 +630,14 @@ def sincronizar_faq_conocimiento_background():
     except Exception as e:
         storage.liberar_recordatorio(clave, "global")
         logger.error("Error sync FAQ conocimiento: %s", e)
+        return
+    try:
+        from analytics import actualizar_analytics
+
+        url = actualizar_analytics()
+        logger.info("Analytics sync OK: %s", url)
+    except Exception as e:
+        logger.error("Error sync Analytics: %s", e)
 
 
 def procesar_cola_background():

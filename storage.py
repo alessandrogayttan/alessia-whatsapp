@@ -1950,3 +1950,81 @@ def top_preguntas_frecuentes(limite: int = 80) -> list[dict]:
         ).fetchall()
         return [dict(r) for r in rows]
 
+
+def metricas_mensajes_por_dia(dias: int = 30) -> list[dict]:
+    """Mensajes de pacientes (rol user) por día + menciones de heridas/historia."""
+    dias = max(1, min(int(dias), 90))
+    with _transaction() as conn:
+        rows = conn.execute(
+            """
+            SELECT substr(creado_at, 1, 10) AS dia,
+                   COUNT(*) AS mensajes,
+                   SUM(
+                     CASE WHEN lower(contenido) LIKE '%herida%'
+                            OR lower(contenido) LIKE '%historia%'
+                            OR lower(contenido) LIKE '%sanando%'
+                            OR lower(contenido) LIKE '%niño interior%'
+                            OR lower(contenido) LIKE '%nino interior%'
+                          THEN 1 ELSE 0 END
+                   ) AS menciones_heridas
+            FROM conversacion_mensajes
+            WHERE rol = 'user'
+              AND creado_at >= date('now', ?)
+            GROUP BY substr(creado_at, 1, 10)
+            ORDER BY dia ASC
+            """,
+            (f"-{dias} days",),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def metricas_faq_heridas() -> list[dict]:
+    with _transaction() as conn:
+        rows = conn.execute(
+            """
+            SELECT pregunta, veces, ultima_vez
+            FROM preguntas_frecuentes
+            WHERE lower(pregunta) LIKE '%herida%'
+               OR lower(pregunta) LIKE '%historia%'
+               OR lower(pregunta) LIKE '%sanando%'
+               OR lower(pregunta) LIKE '%niño%'
+               OR lower(pregunta) LIKE '%nino%'
+               OR lower(pregunta) LIKE '%taller del%'
+            ORDER BY veces DESC, ultima_vez DESC
+            LIMIT 40
+            """
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def metricas_interes_heridas() -> dict:
+    with _transaction() as conn:
+        total = conn.execute(
+            """
+            SELECT COUNT(*) AS n FROM interes_talleres
+            WHERE activo = 1 AND (
+                lower(taller_origen) LIKE '%herida%'
+                OR lower(taller_origen) LIKE '%historia%'
+                OR lower(taller_origen) LIKE '%sanando%'
+                OR lower(terapeuta) LIKE '%sara%'
+                OR lower(terapeuta) LIKE '%juan%'
+            )
+            """
+        ).fetchone()
+        recientes = conn.execute(
+            """
+            SELECT COUNT(*) AS n FROM interes_talleres
+            WHERE activo = 1
+              AND creado_at >= date('now', '-7 days')
+              AND (
+                lower(coalesce(taller_origen,'')) LIKE '%herida%'
+                OR lower(coalesce(taller_origen,'')) LIKE '%historia%'
+                OR lower(coalesce(taller_origen,'')) LIKE '%sanando%'
+              )
+            """
+        ).fetchone()
+    return {
+        "interes_activo_relacionado": int(total["n"]) if total else 0,
+        "interes_7d_heridas": int(recientes["n"]) if recientes else 0,
+    }
+

@@ -641,9 +641,12 @@ def sincronizar_faq_conocimiento_background():
 
 
 def sincronizar_analytics_background():
-    """Crea/actualiza pestaña Analytics cada 30 min (sin esperar :00-:14)."""
+    """Crea/actualiza pestaña Analytics. Menos frecuente para no tumbar el worker."""
     ahora = datetime.datetime.now(ZONA)
-    clave = f"analytics_{ahora.strftime('%Y-%m-%d-%H')}_{ahora.minute // 30}"
+    # Solo en minutos 0–5 de cada hora par (evita picos con otros jobs)
+    if ahora.minute > 5 or ahora.hour % 2 != 0:
+        return
+    clave = f"analytics_{ahora.strftime('%Y-%m-%d-%H')}"
     if not storage.reclamar_recordatorio(clave, "global"):
         return
     try:

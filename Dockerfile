@@ -19,6 +19,6 @@ ENV PORT=8080
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-    CMD curl -fsS "http://127.0.0.1:${PORT}/health/ready" || exit 1
+    CMD curl -fsS "http://127.0.0.1:${PORT}/health" || exit 1
 
 CMD gunicorn --bind "0.0.0.0:${PORT}" --workers 1 --timeout 120 --graceful-timeout 30 wsgi:app

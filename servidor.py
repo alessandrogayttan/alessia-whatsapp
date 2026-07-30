@@ -128,8 +128,23 @@ def _iniciar_scheduler():
     import threading
 
     def _sync_hojas_al_arrancar():
-        # Heridas primero (lo que el equipo necesita ver), luego el resto.
-        time.sleep(20)
+        import os
+
+        # DESACTIVADO por defecto: el sync de Sheets al arrancar tumba el único worker
+        # en DigitalOcean (503 / Degraded) y WhatsApp deja de responder.
+        if os.getenv("SYNC_HOJAS_AL_ARRANCAR", "0").strip().lower() not in (
+            "1",
+            "true",
+            "yes",
+            "si",
+            "sí",
+        ):
+            logger.info(
+                "Sync hojas al arrancar omitido (SYNC_HOJAS_AL_ARRANCAR=0). "
+                "Usa modo equipo → sincronizar hoja heridas."
+            )
+            return
+        time.sleep(60)
         try:
             from heridas_sheet import sincronizar_heridas_completo
 
@@ -137,20 +152,6 @@ def _iniciar_scheduler():
             logger.info("Sync heridas al arrancar: %s", out)
         except Exception as e:
             logger.warning("Sync heridas al arrancar: %s", e)
-        time.sleep(20)
-        try:
-            from conocimiento import sincronizar_faq_a_sheets
-
-            sincronizar_faq_a_sheets()
-        except Exception as e:
-            logger.warning("Sync FAQ al arrancar: %s", e)
-        time.sleep(20)
-        try:
-            from analytics import actualizar_analytics
-
-            actualizar_analytics()
-        except Exception as e:
-            logger.warning("Sync Analytics al arrancar: %s", e)
 
     threading.Thread(target=_sync_hojas_al_arrancar, daemon=True).start()
     atexit.register(_detener_scheduler)
@@ -414,34 +415,37 @@ def webhook():
     _procesar_estados_whatsapp(datos)
 
     for mensaje_info in _extraer_mensajes_whatsapp(datos):
-        mensaje_id = mensaje_info.get("id")
-        if not mensaje_id:
-            continue
-        if not storage.reservar_mensaje_para_procesar(mensaje_id):
-            logger.info("Mensaje duplicado ignorado: %s", mensaje_id)
-            continue
+        try:
+            mensaje_id = mensaje_info.get("id")
+            if not mensaje_id:
+                continue
+            if not storage.reservar_mensaje_para_procesar(mensaje_id):
+                logger.info("Mensaje duplicado ignorado: %s", mensaje_id)
+                continue
 
-        numero_remitente = mensaje_info["from"]
+            numero_remitente = mensaje_info["from"]
 
-        if mensaje_info.get("type") == "text":
-            try:
-                from conocimiento import registrar_consulta_paciente
+            if mensaje_info.get("type") == "text":
+                try:
+                    from conocimiento import registrar_consulta_paciente
 
-                body = (mensaje_info.get("text") or {}).get("body") or ""
-                registrar_consulta_paciente(body, numero_remitente)
-            except Exception:
-                pass
+                    body = (mensaje_info.get("text") or {}).get("body") or ""
+                    registrar_consulta_paciente(body, numero_remitente)
+                except Exception:
+                    pass
 
-        contenido_para_ia = _preparar_contenido_mensaje(mensaje_info)
-        if contenido_para_ia is None:
-            continue
+            contenido_para_ia = _preparar_contenido_mensaje(mensaje_info)
+            if contenido_para_ia is None:
+                continue
 
-        marcar_leido_y_escribiendo(mensaje_id)
-        enviar_ack_inmediato(numero_remitente)
-        contenido_con_citas = envolver_mensaje_con_contexto_paciente(
-            numero_remitente, contenido_para_ia
-        )
-        encolar_contenido_ia(numero_remitente, contenido_con_citas)
+            marcar_leido_y_escribiendo(mensaje_id)
+            enviar_ack_inmediato(numero_remitente)
+            contenido_con_citas = envolver_mensaje_con_contexto_paciente(
+                numero_remitente, contenido_para_ia
+            )
+            encolar_contenido_ia(numero_remitente, contenido_con_citas)
+        except Exception:
+            logger.exception("Error procesando mensaje webhook (se continúa)")
 
     return "OK", 200
 

@@ -294,12 +294,11 @@ def enviar_plantilla_whatsapp(
         "language": {"code": idioma or config.WHATSAPP_TEMPLATE_LANG},
     }
     if parametros:
-        template["components"] = [
-            {
-                "type": "body",
-                "parameters": [{"type": "text", "text": str(p)} for p in parametros],
-            }
-        ]
+        limpios = []
+        for p in parametros:
+            texto = re.sub(r"[\r\n\t]+", " ", str(p or "")).strip() or "hola"
+            limpios.append({"type": "text", "text": texto[:500]})
+        template["components"] = [{"type": "body", "parameters": limpios}]
 
     return _enviar_payload(telefono_destino, {"type": "template", "template": template})
 

@@ -98,7 +98,8 @@ def _iniciar_scheduler():
         logger.info("Scheduler desactivado (ENABLE_SCHEDULER=0)")
         return
     scheduler = BackgroundScheduler(timezone=config.ZONA_MEXICO)
-    _add_job(scheduler, alertas_citas_background, "interval", minutes=15)
+    # Cada 5 min: las ventanas de recordatorio ya no se pierden tan fácil
+    _add_job(scheduler, alertas_citas_background, "interval", minutes=5)
     _add_job(scheduler, seguimiento_post_cita_background, "interval", minutes=30)
     _add_job(scheduler, verificar_lista_espera_background, "interval", minutes=15)
     _add_job(scheduler, detectar_nuevos_talleres_background, "interval", minutes=10)

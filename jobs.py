@@ -84,12 +84,52 @@ def limpiar_inscripciones_pendientes_background():
         logger.error("Error limpieza inscripciones: %s", e)
 
 
+def _sanear_param_plantilla(valor: str) -> str:
+    """Meta rechaza vacíos y saltos de línea en variables de plantilla."""
+    t = re.sub(r"[\r\n\t]+", " ", str(valor or "")).strip()
+    return (t or "hola")[:500]
+
+
+def _extraer_telefono_evento(descripcion: str) -> str | None:
+    """Lee el WhatsApp guardado en la descripción del evento de Calendar."""
+    if not descripcion:
+        return None
+    m = re.search(r"Tel[eé]fono:\s*(\+?[\d\s\-()]+)", descripcion, re.I)
+    if not m:
+        return None
+    digits = re.sub(r"\D", "", m.group(1))
+    if len(digits) == 10:
+        digits = "52" + digits
+    if digits.startswith("521") and len(digits) == 13:
+        digits = "52" + digits[3:]
+    if len(digits) < 12:
+        return None
+    return digits
+
+
+def tipo_recordatorio_por_diferencia(diferencia: datetime.timedelta) -> str | None:
+    """
+    Ventanas amplias (el job corre cada pocos minutos).
+    Antes eran ~15 min y se perdían fácilmente.
+    """
+    mins = diferencia.total_seconds() / 60.0
+    if 20 * 60 <= mins <= 26 * 60:  # ~20–26 h antes
+        return "24h"
+    if 90 <= mins <= 150:  # ~1.5–2.5 h antes
+        return "2h"
+    if 25 <= mins <= 40:  # ~30 min antes
+        return "pre30m"
+    if 3 <= mins <= 8:  # ~5 min antes (link online)
+        return "online5m"
+    return None
+
+
 def _enviar_recordatorio_24h(telefono: str, hora_cita: datetime.datetime, event_id: str):
     from experiencia import mensaje_recordatorio_24h
 
     def _do():
         hora_txt = hora_cita.strftime("%H:%M")
-        nombre = (
+        nombre = _sanear_param_plantilla(
             storage.primer_nombre(telefono)
             or storage.obtener_nombre_paciente(telefono)
             or "hola"
@@ -103,6 +143,14 @@ def _enviar_recordatorio_24h(telefono: str, hora_cita: datetime.datetime, event_
         )
         if ok:
             storage.marcar_prep_pendiente(telefono, event_id)
+            logger.info("Recordatorio 24h enviado a %s (evento %s)", telefono, event_id)
+        else:
+            logger.error(
+                "Recordatorio 24h FALLÓ a %s (evento %s, plantilla=%s)",
+                telefono,
+                event_id,
+                config.WHATSAPP_TEMPLATE_24H or "(vacía)",
+            )
         return ok
 
     _con_claim_recordatorio(event_id, "24h", _do)
@@ -146,17 +194,32 @@ def _enviar_recordatorio_2h(telefono: str, hora_cita: datetime.datetime, event_i
                             f"🗺️ {config.CLINICA_MAPS_URL}\n\n"
                             f"¡Te esperamos! 😊"
                         )
-                    return enviar_recordatorio(
+                    params = [
+                        _sanear_param_plantilla(
+                            storage.primer_nombre(telefono)
+                            or storage.obtener_nombre_paciente(telefono)
+                            or "hola"
+                        ),
+                        hora_cita.strftime("%H:%M"),
+                    ]
+                    ok = enviar_recordatorio(
                         telefono,
                         msg,
                         config.WHATSAPP_TEMPLATE_2H,
-                        [
-                            storage.primer_nombre(telefono)
-                            or storage.obtener_nombre_paciente(telefono)
-                            or "hola",
-                            hora_cita.strftime("%H:%M"),
-                        ],
+                        params,
                     )
+                    if ok:
+                        logger.info(
+                            "Recordatorio 2h enviado a %s (evento %s)", telefono, event_id
+                        )
+                    else:
+                        logger.error(
+                            "Recordatorio 2h FALLÓ a %s (evento %s, plantilla=%s)",
+                            telefono,
+                            event_id,
+                            config.WHATSAPP_TEMPLATE_2H or "(vacía)",
+                        )
+                    return ok
             except requests.RequestException as e:
                 logger.warning("Error Maps en recordatorio: %s", e)
 
@@ -170,17 +233,29 @@ def _enviar_recordatorio_2h(telefono: str, hora_cita: datetime.datetime, event_i
             f"Contempla el estacionamiento (sujeto a un cajón disponible). ¡Te esperamos! ✨"
             f"{clima_txt}"
         )
-        return enviar_recordatorio(
+        ok = enviar_recordatorio(
             telefono,
             msg,
             config.WHATSAPP_TEMPLATE_2H,
             [
-                storage.primer_nombre(telefono)
-                or storage.obtener_nombre_paciente(telefono)
-                or "hola",
+                _sanear_param_plantilla(
+                    storage.primer_nombre(telefono)
+                    or storage.obtener_nombre_paciente(telefono)
+                    or "hola"
+                ),
                 hora_cita.strftime("%H:%M"),
             ],
         )
+        if ok:
+            logger.info("Recordatorio 2h enviado a %s (evento %s)", telefono, event_id)
+        else:
+            logger.error(
+                "Recordatorio 2h FALLÓ a %s (evento %s, plantilla=%s)",
+                telefono,
+                event_id,
+                config.WHATSAPP_TEMPLATE_2H or "(vacía)",
+            )
+        return ok
 
     _con_claim_recordatorio(event_id, "2h", _do)
 
@@ -190,8 +265,9 @@ def alertas_citas_background():
     ahora_naive = ahora_aware.replace(tzinfo=None)
     try:
         service = get_calendar_service()
+        # Hasta 27 h para cubrir la ventana ampliada de recordatorio 24 h
         time_min = ahora_aware.isoformat()
-        time_max = (ahora_aware + datetime.timedelta(hours=25)).isoformat()
+        time_max = (ahora_aware + datetime.timedelta(hours=27)).isoformat()
 
         for cal_id in config.DIRECTORIO_CALENDARIOS.values():
             events_result = service.events().list(
@@ -214,21 +290,28 @@ def alertas_citas_background():
                     .replace(tzinfo=None)
                 )
                 diferencia = hora_cita - ahora_naive
-
-                desc = event.get("description", "")
-                phone_match = re.search(r"Teléfono:\s*(\+?\d+)", desc)
-                if not phone_match:
+                tipo = tipo_recordatorio_por_diferencia(diferencia)
+                if not tipo:
                     continue
-                telefono = phone_match.group(1)
 
-                if datetime.timedelta(minutes=1425) <= diferencia <= datetime.timedelta(minutes=1440):
+                telefono = _extraer_telefono_evento(event.get("description", ""))
+                if not telefono:
+                    logger.warning(
+                        "Cita sin Teléfono en descripción (no se envía recordatorio %s): %s %s",
+                        tipo,
+                        event.get("summary", "?"),
+                        start_str,
+                    )
+                    continue
+
+                if tipo == "24h":
                     _enviar_recordatorio_24h(telefono, hora_cita, event_id)
-                elif datetime.timedelta(minutes=110) <= diferencia <= datetime.timedelta(minutes=125):
+                elif tipo == "2h":
                     _enviar_recordatorio_2h(telefono, hora_cita, event_id)
-                elif datetime.timedelta(minutes=25) <= diferencia <= datetime.timedelta(minutes=35):
+                elif tipo == "pre30m":
                     _enviar_resumen_terapeuta(event, telefono, hora_cita, cal_id, event_id)
                     _enviar_eta_salida(telefono, hora_cita, event_id)
-                elif datetime.timedelta(minutes=4) <= diferencia <= datetime.timedelta(minutes=6):
+                elif tipo == "online5m":
                     _enviar_link_online(event, telefono, hora_cita, cal_id, event_id)
     except Exception as e:
         logger.error("Error alertas background: %s", e)

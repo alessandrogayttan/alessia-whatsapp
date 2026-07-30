@@ -1973,8 +1973,7 @@ def metricas_mensajes_por_dia(dias: int = 90) -> list[dict]:
                    ) AS menciones_heridas
             FROM conversacion_mensajes
             WHERE lower(rol) IN ('user', 'usuario', 'human', 'paciente')
-              AND datetime(replace(substr(creado_at,1,19),'T',' '))
-                  >= datetime('now', ?)
+              AND substr(creado_at, 1, 10) >= date('now', ?)
             GROUP BY substr(creado_at, 1, 10)
             ORDER BY dia ASC
             """,
@@ -1990,7 +1989,6 @@ def metricas_mensajes_por_dia(dias: int = 90) -> list[dict]:
             if r["dia"]
         }
 
-        # Si no hay 'user', cuenta todos los roles (historial antiguo / formatos mixtos)
         if not por_dia:
             rows2 = conn.execute(
                 """
@@ -2003,8 +2001,7 @@ def metricas_mensajes_por_dia(dias: int = 90) -> list[dict]:
                               THEN 1 ELSE 0 END
                        ) AS menciones_heridas
                 FROM conversacion_mensajes
-                WHERE datetime(replace(substr(creado_at,1,19),'T',' '))
-                      >= datetime('now', ?)
+                WHERE substr(creado_at, 1, 10) >= date('now', ?)
                 GROUP BY substr(creado_at, 1, 10)
                 ORDER BY dia ASC
                 """,

@@ -376,6 +376,8 @@ def preparar_contenido_mensaje(mensaje_info: dict):
                 from modo_equipo import _nombre_miembro
 
                 miembro_equipo = _nombre_miembro(numero_remitente)
+                meta_doc = mensaje_info.get(tipo_clave, {}) or {}
+                filename = (meta_doc.get("filename") or "").strip()
                 if tipo_mensaje in ("audio", "voice"):
                     texto_descriptivo = (
                         "NOTA DE VOZ del equipo Inpulso. Transcribe y responde con lo que necesiten."
@@ -387,6 +389,36 @@ def preparar_contenido_mensaje(mensaje_info: dict):
                     )
                 if caption:
                     texto_descriptivo += f" Instrucciones del equipo: {caption}"
+                if tipo_mensaje == "document":
+                    from conocimiento import es_mime_pdf, guardar_conocimiento_desde_pdf
+
+                    if es_mime_pdf(mime_type, filename):
+                        guardado = guardar_conocimiento_desde_pdf(
+                            file_bytes,
+                            filename=filename,
+                            caption=caption,
+                            quien=f"equipo:{miembro_equipo}",
+                            sync_sheets=True,
+                        )
+                        if guardado.get("ok"):
+                            texto_descriptivo += (
+                                f"\n\n[Sistema: PDF guardado automáticamente en la base "
+                                f"para pacientes — conocimiento #{guardado.get('id')} "
+                                f"*{(guardado.get('tema') or '')}* "
+                                f"({guardado.get('chars', 0)} caracteres). "
+                                "Confirma al equipo con un resumen breve de lo guardado. "
+                                "NO digas que 'vas a guardarlo': YA está guardado. "
+                                "Los pacientes lo usarán vía buscar_conocimiento_clinica.]\n\n"
+                                "--- TEXTO EXTRAÍDO DEL PDF ---\n"
+                                f"{(guardado.get('texto') or '')[:12000]}"
+                            )
+                        else:
+                            texto_descriptivo += (
+                                "\n\n[Sistema: Intenté guardar el PDF en conocimiento pero "
+                                f"falló: {guardado.get('mensaje', 'ilegible')}. "
+                                "Analiza el archivo; si puedes leerlo, llama "
+                                "*guardar_conocimiento_pacientes* con el contenido completo.]"
+                            )
                 return [
                     types.Part(inline_data=types.Blob(data=file_bytes, mime_type=mime_type)),
                     types.Part(text=texto_descriptivo),

@@ -1,6 +1,7 @@
 """Conocimiento clínico para pacientes + FAQ de consultas frecuentes."""
 from __future__ import annotations
 
+import io
 import logging
 import re
 from datetime import datetime
@@ -12,6 +13,9 @@ import storage
 
 logger = logging.getLogger(__name__)
 ZONA = pytz.timezone(config.ZONA_MEXICO)
+
+_MAX_CONTENIDO_PDF = 80_000
+_MAX_PAGINAS_PDF = 40
 
 HOJA_CONOCIMIENTO = "Conocimiento"
 HOJA_FAQ = "FAQ_Pacientes"
@@ -193,11 +197,13 @@ def _sincronizar_conocimiento_a_sheets() -> None:
     filas = storage.listar_conocimiento_clinica(activos_solo=False, limite=500)
     values = [_HEADERS_CONOCIMIENTO]
     for f in filas:
+        # Límite de celda de Sheets ~50k; la BD conserva el texto completo.
+        contenido = (f["contenido"] or "")[:45000]
         values.append(
             [
                 f["id"],
                 f["tema"],
-                f["contenido"],
+                contenido,
                 f.get("palabras_clave") or "",
                 f.get("quien") or "",
                 f.get("actualizado_at") or "",
@@ -323,6 +329,151 @@ def inicializar_hojas_conocimiento() -> str:
     )
 
 
+def es_mime_pdf(mime_type: str | None, filename: str = "") -> bool:
+    mime = (mime_type or "").lower().strip()
+    nombre = (filename or "").lower()
+    return mime in ("application/pdf", "application/x-pdf") or nombre.endswith(".pdf")
+
+
+def _normalizar_texto_pdf(texto: str) -> str:
+    """Corrige PDFs que insertan espacio entre cada letra (p. ej. 'H e r i d a s')."""
+
+    def _fix_linea(linea: str) -> str:
+        toks = linea.split()
+        if len(toks) < 6:
+            return re.sub(r"[ \t]+", " ", linea).strip()
+        ratio = sum(1 for t in toks if len(t) == 1) / len(toks)
+        if ratio < 0.5:
+            return re.sub(r"[ \t]+", " ", linea).strip()
+        palabras: list[str] = []
+        buf: list[str] = []
+        for t in toks:
+            if len(t) == 1:
+                buf.append(t)
+            else:
+                if buf:
+                    palabras.append("".join(buf))
+                    buf = []
+                palabras.append(t)
+        if buf:
+            palabras.append("".join(buf))
+        return " ".join(palabras)
+
+    lineas = [_fix_linea(ln) for ln in (texto or "").splitlines()]
+    out = "\n".join(lineas)
+    out = re.sub(r"[ \t]+", " ", out)
+    out = re.sub(r"\n{3,}", "\n\n", out).strip()
+    return out
+
+
+def texto_desde_pdf_bytes(data: bytes, *, max_paginas: int = _MAX_PAGINAS_PDF) -> str:
+    """Extrae texto de un PDF en memoria. Vacío si no es legible."""
+    if not data:
+        return ""
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        logger.warning("pypdf no disponible para extraer PDF")
+        return ""
+    try:
+        reader = PdfReader(io.BytesIO(data))
+        paginas = []
+        for page in reader.pages[:max_paginas]:
+            paginas.append(page.extract_text() or "")
+        texto = _normalizar_texto_pdf("\n".join(paginas))
+        return texto[:_MAX_CONTENIDO_PDF]
+    except Exception as e:
+        logger.warning("No se pudo leer PDF: %s", e)
+        return ""
+
+
+def _tema_desde_pdf(texto: str, filename: str = "", caption: str = "") -> str:
+    """Infiere un tema corto para upsert por tema."""
+    cap = (caption or "").strip()
+    if cap and len(cap) <= 80 and not cap.lower().startswith("http"):
+        return cap[:120]
+    nombre = (filename or "").strip()
+    if nombre:
+        base = re.sub(r"\.pdf$", "", nombre, flags=re.I)
+        base = re.sub(r"\s*\(\d+\)\s*$", "", base).strip()
+        base = re.sub(r"[_\-]+", " ", base).strip()
+        if base and len(base) >= 4:
+            return base[:120]
+    for linea in (texto or "").splitlines():
+        limpia = re.sub(r"\s+", " ", linea).strip()
+        if len(limpia) < 8 or len(limpia) > 90:
+            continue
+        if limpia.lower() in ("taller psicoterapéutico", "taller psicoterapeutico"):
+            continue
+        if re.search(r"[a-záéíóúñ]{4,}", limpia, re.I):
+            return limpia[:120]
+    return "documento equipo"
+
+
+def _palabras_clave_desde_texto(texto: str, tema: str) -> str:
+    tokens = re.findall(r"[a-záéíóúñü0-9]{4,}", f"{tema} {texto[:2000]}".lower())
+    vistos: list[str] = []
+    for t in tokens:
+        if t in vistos:
+            continue
+        if t in {"para", "como", "este", "esta", "desde", "hasta", "sobre", "taller"}:
+            continue
+        vistos.append(t)
+        if len(vistos) >= 18:
+            break
+    return " ".join(vistos)
+
+
+def guardar_conocimiento_desde_pdf(
+    pdf_bytes: bytes,
+    *,
+    filename: str = "",
+    caption: str = "",
+    quien: str = "equipo",
+    tema: str = "",
+    sync_sheets: bool = True,
+) -> dict:
+    """
+    Extrae texto de un PDF del equipo y lo guarda en conocimiento_clinica.
+    Devuelve dict con ok, mensaje, id, tema, chars, texto.
+    """
+    texto = texto_desde_pdf_bytes(pdf_bytes)
+    if len(texto) < 40:
+        return {
+            "ok": False,
+            "mensaje": (
+                "No pude leer texto útil del PDF (puede ser escaneo/imagen). "
+                "Pide al equipo un PDF con texto seleccionable o que peguen la info."
+            ),
+            "id": None,
+            "tema": "",
+            "chars": 0,
+            "texto": "",
+        }
+    tema_n = (tema or "").strip() or _tema_desde_pdf(texto, filename, caption)
+    claves = _palabras_clave_desde_texto(texto, tema_n)
+    quien_n = (quien or "equipo").strip()[:80]
+    msg = guardar_conocimiento(
+        tema_n,
+        texto,
+        palabras_clave=claves,
+        quien=quien_n,
+        sync_sheets=sync_sheets,
+    )
+    kid = None
+    m = re.search(r"#(\d+)", msg)
+    if m:
+        kid = int(m.group(1))
+    return {
+        "ok": "ÉXITO" in msg,
+        "mensaje": msg,
+        "id": kid,
+        "tema": tema_n,
+        "chars": len(texto),
+        "texto": texto,
+    }
+
+
 # --- Wrappers para Gemini tools (nombres claros) ---
 
 
@@ -335,14 +486,8 @@ def guardar_conocimiento_pacientes(
     Modo equipo: guarda información oficial para que Alessia se la diga a pacientes
     (precios, fechas de talleres, horarios, políticas, etc.).
     """
-    quien = "equipo"
-    try:
-        # Si hay contexto de teléfono de equipo en storage sesión — opcional
-        pass
-    except Exception:
-        pass
     return guardar_conocimiento(
-        tema, contenido, palabras_clave=palabras_clave, quien=quien, sync_sheets=True
+        tema, contenido, palabras_clave=palabras_clave, quien="equipo", sync_sheets=True
     )
 
 

@@ -29,6 +29,8 @@ def test_instrucciones_equipo_identidad():
     assert "Google DeepMind" in texto
     assert "PROHIBIDO decir que eres Gemini" in texto
     assert "Tu nombre es *Alessia*" in texto
+    assert "PDF" in texto
+    assert "guardar_conocimiento_pacientes" in texto
 
 
 def test_preflight_entrada_frase_natural(monkeypatch, db_temp):

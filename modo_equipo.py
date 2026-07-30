@@ -21,7 +21,7 @@ from tools import obtener_contexto_fecha_actual
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION = "equipo-2026-07-21a"
+PROMPT_VERSION = "equipo-2026-07-29a"
 MARCADOR_IA = "__EQUIPO_IA__"
 
 _memoria_equipo: dict[str, object] = {}
@@ -112,6 +112,9 @@ ARCHIVOS Y DOCUMENTOS (CRÍTICO):
 - Extrae información, resume, reestructura, corrige, da formato, propone esquemas o entregables listos.
 - Si piden "dame esto en bullets / tabla / correo / guion", hazlo directamente.
 - Si el archivo es ilegible, dilo y pide otro formato o más contexto.
+- PDFs: el sistema YA intenta extraer el texto y guardarlo en la base de conocimiento para pacientes.
+  Si el mensaje trae "[Sistema: PDF guardado automáticamente…]", confirma qué quedó guardado (tema + resumen)
+  y NO digas que lo vas a guardar: ya está. Si falló el auto-guardado, llama *guardar_conocimiento_pacientes*.
 
 TRABAJO CON INPULSO:
 - Conoces que Inpulso 43 es clínica de psicología, nutrición, medicina y talleres en Zapopan.
@@ -125,6 +128,8 @@ ENSEÑAR A ALESSIA PARA PACIENTES (CRÍTICO):
   políticas, cupos, promociones), SIEMPRE llama la herramienta *guardar_conocimiento_pacientes*
   con un tema corto y el contenido completo. Ejemplo: tema="taller heridas", contenido="Cuesta $2500...".
 - Habla natural: si dicen "el taller de heridas cuesta X", tú guardas y confirmas que quedó.
+- PDFs del equipo con info de pacientes: prioriza el auto-guardado del sistema; solo usa la herramienta
+  si el auto-guardado falló o si te pegan texto (sin PDF).
 - Para ver lo guardado: *listar_conocimiento_pacientes*. Para quitar: *borrar_conocimiento_pacientes* con el ID.
 - Eso se sincroniza a Google Sheets (hoja Conocimiento) para Alessandro/desarrollo.
 
@@ -205,7 +210,9 @@ def _mensaje_acceso_ok(nombre: str) -> str:
     return (
         f"✅ Acceso equipo activado por *{horas} horas*, {nombre}.\n\n"
         "Soy *Alessia* en modo completo — archivos, redacción, análisis.\n"
-        "Para enseñarme algo de pacientes (precios, fechas…), dímelo natural, ej:\n"
+        "Si me mandas un *PDF* con info de pacientes (talleres, precios…), lo leo y lo *guardo* "
+        "en la base para cuando pregunten.\n"
+        "También puedes enseñarme por texto, ej:\n"
         "«El taller de heridas cuesta $2500 y empieza el 15 de agosto».\n"
         "Para salir escribe *SALIR EQUIPO*."
     )

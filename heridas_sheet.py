@@ -122,9 +122,7 @@ def _asegurar_tab(service, titulo: str, headers: list[str] | None = None) -> int
 
 
 def _escribir_tabla(service, tab: str, headers: list[str], filas: list[list]) -> None:
-    service.spreadsheets().values().clear(
-        spreadsheetId=_sid(), range=f"{tab}!A:Z"
-    ).execute()
+    """Escribe encabezados+filas. Nunca deja la hoja en blanco si falla a medias."""
     valores = [headers] + (filas or [])
     if not filas:
         placeholder = [""] * len(headers)
@@ -133,31 +131,46 @@ def _escribir_tabla(service, tab: str, headers: list[str], filas: list[list]) ->
         if len(placeholder) > 4:
             placeholder[4] = "Alessia escribe aquí cuando alguien pregunta o se inscribe"
         valores.append(placeholder)
+    # 1) Escribir primero (si falla, queda lo anterior)
     service.spreadsheets().values().update(
         spreadsheetId=_sid(),
         range=f"{tab}!A1",
         valueInputOption="USER_ENTERED",
         body={"values": valores},
     ).execute()
+    # 2) Limpiar filas sobrantes debajo
+    start = len(valores) + 1
+    try:
+        service.spreadsheets().values().clear(
+            spreadsheetId=_sid(),
+            range=f"{tab}!A{start}:Z2000",
+        ).execute()
+    except Exception as e:
+        logger.debug("Clear sobrantes %s: %s", tab, e)
     tid = _sheet_ids(service).get(tab)
     if tid is not None:
-        service.spreadsheets().batchUpdate(
-            spreadsheetId=_sid(),
-            body={
-                "requests": [
-                    _paint(tid, 0, 1, 0, len(headers), AZUL, bold=True, white_text=True),
-                    {
-                        "updateSheetProperties": {
-                            "properties": {
-                                "sheetId": tid,
-                                "gridProperties": {"frozenRowCount": 1},
-                            },
-                            "fields": "gridProperties.frozenRowCount",
-                        }
-                    },
-                ]
-            },
-        ).execute()
+        try:
+            service.spreadsheets().batchUpdate(
+                spreadsheetId=_sid(),
+                body={
+                    "requests": [
+                        _paint(
+                            tid, 0, 1, 0, len(headers), AZUL, bold=True, white_text=True
+                        ),
+                        {
+                            "updateSheetProperties": {
+                                "properties": {
+                                    "sheetId": tid,
+                                    "gridProperties": {"frozenRowCount": 1},
+                                },
+                                "fields": "gridProperties.frozenRowCount",
+                            }
+                        },
+                    ]
+                },
+            ).execute()
+        except Exception as e:
+            logger.debug("Formato tabla %s: %s", tab, e)
 
 
 def _recolectar_inscritos_desde_fuentes(service) -> list[list]:
@@ -355,6 +368,12 @@ def sincronizar_heridas_completo() -> dict:
         "cupo_presencial_meta": CUPO_PRESENCIAL,
     }
     logger.info("Sync heridas completo: %s", out)
+    try:
+        storage.guardar_app_config("heridas_sync_ok", _ahora())
+        storage.guardar_app_config("heridas_sync_error", "")
+        storage.guardar_app_config("heridas_sync_detalle", str(out)[:800])
+    except Exception:
+        pass
     return out
 
 
@@ -545,15 +564,18 @@ def actualizar_dashboard_heridas() -> str:
         "Este panel vive en el mismo Google Sheet de Alessia (Drive de la clínica).",
     )
 
-    service.spreadsheets().values().clear(
-        spreadsheetId=_sid(), range=f"{TAB_CUPO}!A:L"
-    ).execute()
     service.spreadsheets().values().update(
         spreadsheetId=_sid(),
         range=f"{TAB_CUPO}!A1",
         valueInputOption="USER_ENTERED",
         body={"values": grid},
     ).execute()
+    try:
+        service.spreadsheets().values().clear(
+            spreadsheetId=_sid(), range=f"{TAB_CUPO}!A{len(grid)+1}:L200"
+        ).execute()
+    except Exception:
+        pass
 
     # Formato + barra de color
     reqs = [
@@ -1014,3 +1036,31 @@ def marcar_interesado_como_inscrito(telefono: str) -> None:
         actualizar_dashboard_heridas()
     except Exception as e:
         logger.debug("Marcar interesado inscrito: %s", e)
+
+
+def sincronizar_panel_heridas() -> str:
+    """
+    Modo equipo: fuerza actualizar Heridas_Cupo + Inscritos + Interesados en Google Sheets.
+    Usar cuando pidan sincronizar/llenar/actualizar la hoja del taller de heridas.
+    """
+    try:
+        out = sincronizar_heridas_completo()
+        storage.guardar_app_config("heridas_sync_ok", _ahora())
+        storage.guardar_app_config("heridas_sync_error", "")
+        storage.guardar_app_config("heridas_sync_detalle", str(out)[:800])
+        return (
+            "ÉXITO: Panel del taller heridas actualizado en Google Sheets.\n"
+            f"• Inscritos: {out.get('inscritos', 0)}\n"
+            f"• Interesados: {out.get('interesados', 0)}\n"
+            f"• Meta cupo presencial: {out.get('cupo_presencial_meta', CUPO_PRESENCIAL)}\n"
+            f"• Link: {out.get('url') or url_hoja_heridas()}\n"
+            "Abre las pestañas *Heridas_Cupo*, *Heridas_Inscritos* y *Heridas_Interesados*."
+        )
+    except Exception as e:
+        msg = f"{type(e).__name__}: {e}"
+        storage.guardar_app_config("heridas_sync_error", msg[:800])
+        logger.exception("sincronizar_panel_heridas")
+        return (
+            f"ERROR: No pude actualizar la hoja heridas ({msg}). "
+            "Revisa que la cuenta de servicio tenga acceso de editor al Sheet de Alessia."
+        )

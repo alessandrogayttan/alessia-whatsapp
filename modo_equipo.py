@@ -21,7 +21,7 @@ from tools import obtener_contexto_fecha_actual
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION = "equipo-2026-07-29a"
+PROMPT_VERSION = "equipo-2026-07-30a"
 MARCADOR_IA = "__EQUIPO_IA__"
 
 _memoria_equipo: dict[str, object] = {}
@@ -131,6 +131,8 @@ ENSEÑAR A ALESSIA PARA PACIENTES (CRÍTICO):
 - PDFs del equipo con info de pacientes: prioriza el auto-guardado del sistema; solo usa la herramienta
   si el auto-guardado falló o si te pegan texto (sin PDF).
 - Para ver lo guardado: *listar_conocimiento_pacientes*. Para quitar: *borrar_conocimiento_pacientes* con el ID.
+- HOJA HERIDAS: si piden "actualiza la hoja", "sincroniza inscritos", "llena Heridas_Cupo" o similar,
+  llama *sincronizar_panel_heridas*. Confirma el resultado (cuántos inscritos/interesados y el link).
 - Eso se sincroniza a Google Sheets (hoja Conocimiento) para Alessandro/desarrollo.
 
 LÍMITES SANOS:
@@ -147,6 +149,7 @@ def _crear_chat_equipo(telefono: str, nombre: str, modelo: str):
         guardar_conocimiento_pacientes,
         listar_conocimiento_pacientes,
     )
+    from heridas_sheet import sincronizar_panel_heridas
 
     conv = clave_conversacion_equipo(telefono)
     return _cliente().chats.create(
@@ -159,6 +162,7 @@ def _crear_chat_equipo(telefono: str, nombre: str, modelo: str):
                 guardar_conocimiento_pacientes,
                 listar_conocimiento_pacientes,
                 borrar_conocimiento_pacientes,
+                sincronizar_panel_heridas,
             ],
         ),
     )

@@ -128,23 +128,8 @@ def _iniciar_scheduler():
     import threading
 
     def _sync_hojas_al_arrancar():
-        # Separado y diferido: el sync pesado de anoche+hoy tumba el health check de DO
-        # si corre todo junto a los ~25–40s del arranque.
-        time.sleep(45)
-        try:
-            from conocimiento import sincronizar_faq_a_sheets
-
-            sincronizar_faq_a_sheets()
-        except Exception as e:
-            logger.warning("Sync FAQ al arrancar: %s", e)
-        time.sleep(15)
-        try:
-            from analytics import actualizar_analytics
-
-            actualizar_analytics()
-        except Exception as e:
-            logger.warning("Sync Analytics al arrancar: %s", e)
-        time.sleep(15)
+        # Heridas primero (lo que el equipo necesita ver), luego el resto.
+        time.sleep(20)
         try:
             from heridas_sheet import sincronizar_heridas_completo
 
@@ -152,6 +137,20 @@ def _iniciar_scheduler():
             logger.info("Sync heridas al arrancar: %s", out)
         except Exception as e:
             logger.warning("Sync heridas al arrancar: %s", e)
+        time.sleep(20)
+        try:
+            from conocimiento import sincronizar_faq_a_sheets
+
+            sincronizar_faq_a_sheets()
+        except Exception as e:
+            logger.warning("Sync FAQ al arrancar: %s", e)
+        time.sleep(20)
+        try:
+            from analytics import actualizar_analytics
+
+            actualizar_analytics()
+        except Exception as e:
+            logger.warning("Sync Analytics al arrancar: %s", e)
 
     threading.Thread(target=_sync_hojas_al_arrancar, daemon=True).start()
     atexit.register(_detener_scheduler)
@@ -236,6 +235,12 @@ def health_ready():
     from tools import estado_calendarios_cache
 
     advertencias.extend(estado_calendarios_cache())
+    try:
+        err_h = storage.obtener_app_config("heridas_sync_error", "")
+        if err_h:
+            advertencias.append(f"Heridas sheet: {err_h[:180]}")
+    except Exception:
+        pass
 
     db_ok = True
     try:
@@ -287,6 +292,40 @@ def health_metrics():
     except Exception as e:
         logger.debug("Métricas extendidas no disponibles: %s", e)
     return base, 200
+
+
+@app.route("/ops/sync-heridas", methods=["POST", "GET"])
+def ops_sync_heridas():
+    """Fuerza panel Heridas_Cupo / Inscritos / Interesados. Devuelve error explícito."""
+    import hmac
+    import traceback
+
+    from flask import jsonify
+
+    if config.IS_PRODUCTION:
+        if not config.HEALTH_CONFIG_SECRET:
+            return jsonify({"error": "Not configured"}), 404
+        token = request.args.get("secret") or request.headers.get("X-Health-Secret", "")
+        if not hmac.compare_digest(token, config.HEALTH_CONFIG_SECRET):
+            return jsonify({"error": "Forbidden"}), 403
+    try:
+        from heridas_sheet import sincronizar_heridas_completo
+
+        out = sincronizar_heridas_completo()
+        return jsonify({"ok": True, **out}), 200
+    except Exception as e:
+        logger.exception("ops sync heridas")
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error": str(e),
+                    "type": type(e).__name__,
+                    "trace": traceback.format_exc()[-1500:],
+                }
+            ),
+            500,
+        )
 
 
 @app.route("/ops/sync-analytics", methods=["POST", "GET"])

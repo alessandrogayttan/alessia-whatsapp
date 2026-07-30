@@ -640,6 +640,48 @@ def sincronizar_faq_conocimiento_background():
         logger.error("Error sync Analytics: %s", e)
 
 
+def sincronizar_analytics_background():
+    """Crea/actualiza pestaña Analytics cada 30 min (sin esperar :00-:14)."""
+    ahora = datetime.datetime.now(ZONA)
+    clave = f"analytics_{ahora.strftime('%Y-%m-%d-%H')}_{ahora.minute // 30}"
+    if not storage.reclamar_recordatorio(clave, "global"):
+        return
+    try:
+        from analytics import actualizar_analytics
+        from conocimiento import sincronizar_faq_a_sheets
+
+        try:
+            sincronizar_faq_a_sheets()
+        except Exception as e:
+            logger.warning("FAQ en sync analytics: %s", e)
+        url = actualizar_analytics()
+        logger.info("Analytics background OK: %s", url)
+    except Exception as e:
+        storage.liberar_recordatorio(clave, "global")
+        logger.error("Error sync Analytics background: %s", e)
+
+
+def forzar_sync_hojas_conocimiento_analytics() -> dict:
+    """Sync inmediato al arrancar o vía endpoint ops."""
+    out: dict = {"faq": None, "analytics": None, "error": None}
+    try:
+        from conocimiento import sincronizar_faq_a_sheets
+
+        out["faq"] = sincronizar_faq_a_sheets()
+    except Exception as e:
+        out["error"] = f"faq: {e}"
+        logger.exception("Forzar sync FAQ: %s", e)
+    try:
+        from analytics import actualizar_analytics
+
+        out["analytics"] = actualizar_analytics()
+    except Exception as e:
+        prev = out.get("error") or ""
+        out["error"] = f"{prev} analytics: {e}".strip()
+        logger.exception("Forzar sync Analytics: %s", e)
+    return out
+
+
 def procesar_cola_background():
     from message_queue import limpiar_antiguos, procesar_cola, reintentar_fallidos
 

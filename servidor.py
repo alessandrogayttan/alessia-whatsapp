@@ -29,23 +29,25 @@ _preparar_contenido_mensaje = preparar_contenido_mensaje
 from jobs import (
     alertas_citas_background,
     backup_db_background,
+    calendario_keepalive_background,
     dashboard_background,
+    detectar_nuevos_talleres_background,
+    experiencia_diaria_background,
+    forzar_sync_hojas_conocimiento_analytics,
     frase_del_dia_background,
     limpiar_inscripciones_pendientes_background,
     procesar_cola_background,
-    reporte_semanal_background,
-    renotificar_escalaciones_background,
     reindexar_rag_inpulso_background,
+    renotificar_escalaciones_background,
+    reporte_semanal_background,
     seguimiento_post_cita_background,
+    sincronizar_analytics_background,
     sincronizar_catalogo_web_background,
     sincronizar_catalogo_whatsapp_background,
     sincronizar_faq_conocimiento_background,
     sincronizar_web_background,
     trivia_semanal_background,
-    detectar_nuevos_talleres_background,
     verificar_lista_espera_background,
-    experiencia_diaria_background,
-    calendario_keepalive_background,
 )
 
 logging.basicConfig(
@@ -111,6 +113,7 @@ def _iniciar_scheduler():
     _add_job(scheduler, experiencia_diaria_background, "interval", minutes=15)
     _add_job(scheduler, procesar_cola_background, "interval", seconds=5)
     _add_job(scheduler, sincronizar_faq_conocimiento_background, "interval", minutes=60)
+    _add_job(scheduler, sincronizar_analytics_background, "interval", minutes=30)
     _add_job(scheduler, calendario_keepalive_background, "interval", minutes=5)
     _add_job(scheduler, renotificar_escalaciones_background, "interval", minutes=5)
     _add_job(scheduler, backup_db_background, "interval", hours=24)
@@ -122,7 +125,17 @@ def _iniciar_scheduler():
     _scheduler = scheduler
     _scheduler_iniciado = True
     import atexit
+    import threading
 
+    def _sync_hojas_al_arrancar():
+        time.sleep(25)
+        try:
+            out = forzar_sync_hojas_conocimiento_analytics()
+            logger.info("Sync hojas al arrancar: %s", out)
+        except Exception as e:
+            logger.warning("Sync hojas al arrancar falló: %s", e)
+
+    threading.Thread(target=_sync_hojas_al_arrancar, daemon=True).start()
     atexit.register(_detener_scheduler)
     logger.info("Scheduler iniciado (max_instances=1, coalesce=True)")
 
@@ -256,6 +269,24 @@ def health_metrics():
     except Exception as e:
         logger.debug("Métricas extendidas no disponibles: %s", e)
     return base, 200
+
+
+@app.route("/ops/sync-analytics", methods=["POST", "GET"])
+def ops_sync_analytics():
+    """Fuerza crear/actualizar pestañas FAQ_Pacientes + Analytics en el Sheet."""
+    import hmac
+
+    from flask import jsonify
+
+    if config.IS_PRODUCTION:
+        if not config.HEALTH_CONFIG_SECRET:
+            return jsonify({"error": "Not configured"}), 404
+        token = request.args.get("secret") or request.headers.get("X-Health-Secret", "")
+        if not hmac.compare_digest(token, config.HEALTH_CONFIG_SECRET):
+            return jsonify({"error": "Forbidden"}), 403
+    out = forzar_sync_hojas_conocimiento_analytics()
+    code = 200 if out.get("analytics") and not out.get("error") else 500
+    return jsonify(out), code
 
 
 @app.route("/health/config", methods=["GET"])

@@ -1951,9 +1951,11 @@ def top_preguntas_frecuentes(limite: int = 80) -> list[dict]:
         return [dict(r) for r in rows]
 
 
-def metricas_mensajes_por_dia(dias: int = 30) -> list[dict]:
-    """Mensajes de pacientes (rol user) por día + menciones de heridas/historia."""
-    dias = max(1, min(int(dias), 90))
+def metricas_mensajes_por_dia(dias: int = 90) -> list[dict]:
+    """Mensajes por día + menciones de heridas/historia (rellena días sin datos)."""
+    from datetime import date, timedelta
+
+    dias = max(1, min(int(dias), 180))
     with _transaction() as conn:
         rows = conn.execute(
             """
@@ -1965,17 +1967,111 @@ def metricas_mensajes_por_dia(dias: int = 30) -> list[dict]:
                             OR lower(contenido) LIKE '%sanando%'
                             OR lower(contenido) LIKE '%niño interior%'
                             OR lower(contenido) LIKE '%nino interior%'
+                            OR lower(contenido) LIKE '%taller del niño%'
+                            OR lower(contenido) LIKE '%taller del nino%'
                           THEN 1 ELSE 0 END
                    ) AS menciones_heridas
             FROM conversacion_mensajes
-            WHERE rol = 'user'
-              AND creado_at >= date('now', ?)
+            WHERE lower(rol) IN ('user', 'usuario', 'human', 'paciente')
+              AND datetime(replace(substr(creado_at,1,19),'T',' '))
+                  >= datetime('now', ?)
             GROUP BY substr(creado_at, 1, 10)
             ORDER BY dia ASC
             """,
             (f"-{dias} days",),
         ).fetchall()
-        return [dict(r) for r in rows]
+        por_dia = {
+            r["dia"]: {
+                "dia": r["dia"],
+                "mensajes": int(r["mensajes"] or 0),
+                "menciones_heridas": int(r["menciones_heridas"] or 0),
+            }
+            for r in rows
+            if r["dia"]
+        }
+
+        # Si no hay 'user', cuenta todos los roles (historial antiguo / formatos mixtos)
+        if not por_dia:
+            rows2 = conn.execute(
+                """
+                SELECT substr(creado_at, 1, 10) AS dia,
+                       COUNT(*) AS mensajes,
+                       SUM(
+                         CASE WHEN lower(contenido) LIKE '%herida%'
+                                OR lower(contenido) LIKE '%historia%'
+                                OR lower(contenido) LIKE '%sanando%'
+                              THEN 1 ELSE 0 END
+                       ) AS menciones_heridas
+                FROM conversacion_mensajes
+                WHERE datetime(replace(substr(creado_at,1,19),'T',' '))
+                      >= datetime('now', ?)
+                GROUP BY substr(creado_at, 1, 10)
+                ORDER BY dia ASC
+                """,
+                (f"-{dias} days",),
+            ).fetchall()
+            por_dia = {
+                r["dia"]: {
+                    "dia": r["dia"],
+                    "mensajes": int(r["mensajes"] or 0),
+                    "menciones_heridas": int(r["menciones_heridas"] or 0),
+                }
+                for r in rows2
+                if r["dia"]
+            }
+
+    hoy = date.today()
+    out = []
+    for i in range(dias, -1, -1):
+        d = (hoy - timedelta(days=i)).isoformat()
+        if d in por_dia:
+            out.append(por_dia[d])
+        else:
+            out.append({"dia": d, "mensajes": 0, "menciones_heridas": 0})
+    return out
+
+
+def metricas_resumen_historico() -> dict:
+    """Totales desde el inicio de la BD (útil si el gráfico diario sale en ceros)."""
+    with _transaction() as conn:
+        conv = conn.execute(
+            "SELECT COUNT(*) AS n, MIN(creado_at) AS desde, MAX(creado_at) AS hasta FROM conversacion_mensajes"
+        ).fetchone()
+        users = conn.execute(
+            """
+            SELECT COUNT(*) AS n FROM conversacion_mensajes
+            WHERE lower(rol) IN ('user','usuario','human','paciente')
+            """
+        ).fetchone()
+        heridas = conn.execute(
+            """
+            SELECT COUNT(*) AS n FROM conversacion_mensajes
+            WHERE lower(contenido) LIKE '%herida%'
+               OR lower(contenido) LIKE '%historia%'
+               OR lower(contenido) LIKE '%sanando%'
+            """
+        ).fetchone()
+        faq = conn.execute("SELECT COALESCE(SUM(veces),0) AS n FROM preguntas_frecuentes").fetchone()
+        faq_n = conn.execute("SELECT COUNT(*) AS n FROM preguntas_frecuentes").fetchone()
+        pacientes = conn.execute("SELECT COUNT(*) AS n FROM pacientes").fetchone()
+        interes = conn.execute(
+            "SELECT COUNT(*) AS n FROM interes_talleres WHERE activo = 1"
+        ).fetchone()
+        procesados = conn.execute(
+            "SELECT COUNT(*) AS n FROM mensajes_procesados"
+        ).fetchone()
+    return {
+        "mensajes_totales": int(conv["n"]) if conv else 0,
+        "mensajes_pacientes": int(users["n"]) if users else 0,
+        "menciones_heridas_totales": int(heridas["n"]) if heridas else 0,
+        "faq_preguntas_distintas": int(faq_n["n"]) if faq_n else 0,
+        "faq_veces_totales": int(faq["n"]) if faq else 0,
+        "pacientes": int(pacientes["n"]) if pacientes else 0,
+        "interes_talleres_activo": int(interes["n"]) if interes else 0,
+        "mensajes_procesados_ids": int(procesados["n"]) if procesados else 0,
+        "historial_desde": (conv["desde"] if conv else None) or "",
+        "historial_hasta": (conv["hasta"] if conv else None) or "",
+    }
 
 
 def metricas_faq_heridas() -> list[dict]:

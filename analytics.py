@@ -190,6 +190,7 @@ def _crear_grafico(service, sheet_id: int, header_row: int, num_filas: int) -> N
 
 
 def _citas_por_dia(dias: int = 90) -> dict[str, int]:
+    """Solo citas de Alessia: eventos con 'Teléfono:' en la descripción."""
     out: dict[str, int] = defaultdict(int)
     try:
         service = get_calendar_service()
@@ -212,6 +213,9 @@ def _citas_por_dia(dias: int = 90) -> dict[str, int]:
                     .execute()
                 )
                 for event in events.get("items", []):
+                    desc = event.get("description") or ""
+                    if not re.search(r"Tel[eé]fono:\s*\+?[\d\s\-()]+", desc, re.I):
+                        continue
                     start = event.get("start", {})
                     raw = start.get("dateTime") or start.get("date") or ""
                     dia = raw[:10]
@@ -221,7 +225,7 @@ def _citas_por_dia(dias: int = 90) -> dict[str, int]:
                 if not page_token:
                     break
     except Exception as e:
-        logger.warning("Analytics citas Calendar: %s", e)
+        logger.warning("Analytics citas Alessia: %s", e)
     return dict(out)
 
 
@@ -304,18 +308,13 @@ def actualizar_analytics(*, dias: int = 90) -> str:
     actividad = _tabla_actividad_compacta(diarios, citas, insc_dia)
 
     total_citas = sum(citas.values())
-    nota = "Datos: BD + Calendar + Sheets"
+    nota = "Solo datos de Alessia (chats, citas con teléfono, FAQ)"
     if hist.get("mensajes_totales", 0) == 0 and total_citas > 0:
-        nota = "Chats aún escasos en BD; citas/inscripciones sí tienen histórico"
+        nota = "Hay citas de Alessia; el historial de chats aún es escaso"
     elif hist.get("mensajes_totales", 0) == 0 and total_citas == 0:
-        nota = "Sin histórico todavía — se llenará con el uso"
+        nota = "Sin actividad Alessia todavía — se llenará con el uso"
 
     # —— Layout en bloques separados ——
-    # Filas 1–2 título
-    # Filas 4–11 resumen KPI
-    # Fila 13 título actividad + header + N filas
-    # Columna G: FAQ heridas y top
-
     grid: list[list] = [[""] * 9 for _ in range(40)]
 
     def put(r: int, c: int, val):
@@ -331,20 +330,20 @@ def actualizar_analytics(*, dias: int = 90) -> str:
     put(1, 2, nota)
 
     # Tabla 1 — Resumen
-    put(3, 0, "1. RESUMEN")
+    put(3, 0, "1. RESUMEN (solo Alessia)")
     put(4, 0, "Métrica")
     put(4, 1, "Valor")
     kpis = [
-        ("Mensajes chat (total BD)", hist.get("mensajes_totales", 0)),
+        ("Mensajes guardados (historial Alessia)", hist.get("mensajes_totales", 0)),
         ("Mensajes de pacientes", hist.get("mensajes_pacientes", 0)),
         ("Menciones heridas / historia", hist.get("menciones_heridas_totales", 0)),
         ("Preguntas FAQ (veces)", hist.get("faq_veces_totales", 0)),
-        ("Pacientes registrados", hist.get("pacientes", 0)),
-        ("Interés talleres activo", hist.get("interes_talleres_activo", 0)),
-        ("Citas en calendarios (90 d)", total_citas),
-        ("Inscripciones pagadas", insc_pag),
-        ("Inscripciones pendientes", insc_pend),
-        ("Interés heridas (7 d)", interes.get("interes_7d_heridas", 0)),
+        ("Pacientes registrados por Alessia", hist.get("pacientes", 0)),
+        ("Interés talleres (lista Alessia)", hist.get("interes_talleres_activo", 0)),
+        ("Citas agendadas por Alessia (90 d)", total_citas),
+        ("Inscripciones registradas", insc_pag),
+        ("Inscripciones pendientes de pago", insc_pend),
+        ("Interés heridas (últimos 7 d)", interes.get("interes_7d_heridas", 0)),
     ]
     for i, (label, val) in enumerate(kpis):
         put(5 + i, 0, label)
@@ -353,11 +352,11 @@ def actualizar_analytics(*, dias: int = 90) -> str:
     # Tabla 2 — Actividad compacta
     act_title_row = 16
     act_header_row = 17
-    put(act_title_row, 0, "2. ACTIVIDAD CON MOVIMIENTO (máx. 14 días)")
+    put(act_title_row, 0, "2. ACTIVIDAD ALESSIA (máx. 14 días con movimiento)")
     put(act_header_row, 0, "Fecha")
     put(act_header_row, 1, "Mensajes")
     put(act_header_row, 2, "Heridas")
-    put(act_header_row, 3, "Citas")
+    put(act_header_row, 3, "Citas Alessia")
     put(act_header_row, 4, "Inscripciones")
     for i, fila in enumerate(actividad):
         for j, val in enumerate(fila):

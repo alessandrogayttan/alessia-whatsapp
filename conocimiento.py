@@ -32,6 +32,7 @@ _HEADERS_FAQ = [
     "Respuesta_oficial",
     "Estado",
     "Notas",
+    "WhatsApp",
 ]
 
 
@@ -47,9 +48,9 @@ def _normalizar_pregunta(texto: str) -> str:
 
 
 def parece_consulta_informativa(texto: str) -> bool:
-    """Heurística simple: ¿parece pregunta de info (precios, fechas, etc.)?"""
+    """Heurística: pregunta o consulta de info (precios, talleres, etc.)."""
     t = (texto or "").strip().lower()
-    if len(t) < 8 or len(t) > 280:
+    if len(t) < 5 or len(t) > 400:
         return False
     if any(x in t for x in ("modo equipo", "salir equipo", "eliminar datos")):
         return False
@@ -74,6 +75,19 @@ def parece_consulta_informativa(texto: str) -> bool:
         "hay cupo",
         "inscripcion",
         "inscripción",
+        "quiero",
+        "necesito",
+        "me puedes",
+        "me podrías",
+        "podrias",
+        "podrías",
+        "informacion",
+        "información",
+        "info ",
+        "sara",
+        "juan",
+        "cita",
+        "agendar",
     )
     return any(t.startswith(i) or f" {i}" in f" {t}" for i in inicios)
 
@@ -217,7 +231,7 @@ def sincronizar_faq_a_sheets(top: int = 80) -> int:
         result = (
             service.spreadsheets()
             .values()
-            .get(spreadsheetId=config.ID_HOJA_CALCULO, range=f"{HOJA_FAQ}!A:F")
+            .            get(spreadsheetId=config.ID_HOJA_CALCULO, range=f"{HOJA_FAQ}!A:G")
             .execute()
         )
         for row in result.get("values", [])[1:]:
@@ -251,12 +265,13 @@ def sincronizar_faq_a_sheets(top: int = 80) -> int:
                 resp,
                 estado,
                 notas,
+                item.get("ejemplo_telefono") or "",
             ]
         )
 
     service.spreadsheets().values().clear(
         spreadsheetId=config.ID_HOJA_CALCULO,
-        range=f"{HOJA_FAQ}!A:F",
+        range=f"{HOJA_FAQ}!A:G",
     ).execute()
     service.spreadsheets().values().update(
         spreadsheetId=config.ID_HOJA_CALCULO,

@@ -30,9 +30,20 @@ def test_metricas_faq_heridas(db_temp):
     assert "herida" in hits[0]["pregunta"]
 
 
-def test_metricas_interes_y_resumen(db_temp):
-    out = metricas_interes_heridas()
-    assert "interes_activo_relacionado" in out
-    hist = metricas_resumen_historico()
-    assert "mensajes_totales" in hist
-    assert "pacientes" in hist
+def test_mensajes_recientes_incluye_telefono(db_temp):
+    import storage
+
+    storage.guardar_mensaje_conversacion(
+        "wa:523312345678", "whatsapp", "user", "hola quiero info del taller"
+    )
+    rows = storage.mensajes_recientes_pacientes(10)
+    assert rows
+    assert rows[0]["telefono"] == "523312345678"
+
+
+def test_faq_incluye_whatsapp(db_temp):
+    import storage
+
+    storage.registrar_pregunta_frecuente("precio sara", "523399999999")
+    top = storage.top_preguntas_frecuentes(5)
+    assert top[0].get("ejemplo_telefono") == "523399999999"

@@ -300,26 +300,36 @@ def actualizar_analytics(*, dias: int = 90) -> str:
 
     diarios = storage.metricas_mensajes_por_dia(dias)
     hist = storage.metricas_resumen_historico()
-    faq_heridas = storage.metricas_faq_heridas()[:12]
-    top = storage.top_preguntas_frecuentes(12)
+    faq_heridas = storage.metricas_faq_heridas()
+    faq_todas = storage.top_preguntas_frecuentes(100)
+    recientes = storage.mensajes_recientes_pacientes(60)
     interes = storage.metricas_interes_heridas()
     citas = _citas_por_dia(dias)
     insc_dia, insc_pag, insc_pend = _inscripciones_por_dia()
     actividad = _tabla_actividad_compacta(diarios, citas, insc_dia)
 
     total_citas = sum(citas.values())
-    nota = "Solo datos de Alessia (chats, citas con teléfono, FAQ)"
+    nota = "Solo Alessia · incluye FAQ con WhatsApp y últimos mensajes"
     if hist.get("mensajes_totales", 0) == 0 and total_citas > 0:
-        nota = "Hay citas de Alessia; el historial de chats aún es escaso"
+        nota = "Hay citas Alessia; chats/FAQ se irán llenando con el uso"
     elif hist.get("mensajes_totales", 0) == 0 and total_citas == 0:
         nota = "Sin actividad Alessia todavía — se llenará con el uso"
 
-    # —— Layout en bloques separados ——
-    grid: list[list] = [[""] * 9 for _ in range(40)]
+    # Filas estimadas: título + resumen + actividad + FAQ + recientes
+    filas_est = (
+        20
+        + len(actividad)
+        + 3
+        + max(len(faq_todas), 1)
+        + 3
+        + max(len(recientes), 1)
+        + 5
+    )
+    grid: list[list] = [[""] * 10 for _ in range(max(filas_est, 50))]
 
     def put(r: int, c: int, val):
         while len(grid) <= r:
-            grid.append([""] * 9)
+            grid.append([""] * 10)
         row = grid[r]
         while len(row) <= c:
             row.append("")
@@ -329,7 +339,6 @@ def actualizar_analytics(*, dias: int = 90) -> str:
     put(1, 0, f"Actualizado: {ahora}")
     put(1, 2, nota)
 
-    # Tabla 1 — Resumen
     put(3, 0, "1. RESUMEN (solo Alessia)")
     put(4, 0, "Métrica")
     put(4, 1, "Valor")
@@ -337,7 +346,8 @@ def actualizar_analytics(*, dias: int = 90) -> str:
         ("Mensajes guardados (historial Alessia)", hist.get("mensajes_totales", 0)),
         ("Mensajes de pacientes", hist.get("mensajes_pacientes", 0)),
         ("Menciones heridas / historia", hist.get("menciones_heridas_totales", 0)),
-        ("Preguntas FAQ (veces)", hist.get("faq_veces_totales", 0)),
+        ("Preguntas FAQ distintas", hist.get("faq_preguntas_distintas", 0)),
+        ("Preguntas FAQ (veces totales)", hist.get("faq_veces_totales", 0)),
         ("Pacientes registrados por Alessia", hist.get("pacientes", 0)),
         ("Interés talleres (lista Alessia)", hist.get("interes_talleres_activo", 0)),
         ("Citas agendadas por Alessia (90 d)", total_citas),
@@ -349,9 +359,8 @@ def actualizar_analytics(*, dias: int = 90) -> str:
         put(5 + i, 0, label)
         put(5 + i, 1, val)
 
-    # Tabla 2 — Actividad compacta
-    act_title_row = 16
-    act_header_row = 17
+    act_title_row = 17
+    act_header_row = 18
     put(act_title_row, 0, "2. ACTIVIDAD ALESSIA (máx. 14 días con movimiento)")
     put(act_header_row, 0, "Fecha")
     put(act_header_row, 1, "Mensajes")
@@ -364,34 +373,57 @@ def actualizar_analytics(*, dias: int = 90) -> str:
     if not actividad:
         put(act_header_row + 1, 0, "(sin datos aún)")
 
-    # Tabla 3 — FAQ heridas (col G)
-    put(3, 6, "3. FAQ · HERIDAS / HISTORIA")
+    # 3. FAQ completa con WhatsApp (debajo de actividad)
+    faq_title = act_header_row + 1 + max(len(actividad), 1) + 2
+    faq_header = faq_title + 1
+    put(faq_title, 0, "3. TODAS LAS PREGUNTAS FAQ (con WhatsApp del último que preguntó)")
+    put(faq_header, 0, "Pregunta")
+    put(faq_header, 1, "Veces")
+    put(faq_header, 2, "Última vez")
+    put(faq_header, 3, "WhatsApp")
+    put(faq_header, 4, "¿Heridas?")
+    if faq_todas:
+        heridas_set = {f.get("pregunta") for f in faq_heridas}
+        for i, f in enumerate(faq_todas):
+            preg = f.get("pregunta") or ""
+            put(faq_header + 1 + i, 0, preg[:120])
+            put(faq_header + 1 + i, 1, int(f.get("veces") or 0))
+            put(faq_header + 1 + i, 2, (f.get("ultima_vez") or "")[:19])
+            put(faq_header + 1 + i, 3, f.get("ejemplo_telefono") or "")
+            put(faq_header + 1 + i, 4, "Sí" if preg in heridas_set else "")
+    else:
+        put(faq_header + 1, 0, "(aún sin FAQ — se llenan al preguntar a Alessia)")
+
+    # 4. Últimos mensajes crudos
+    msg_title = faq_header + 1 + max(len(faq_todas), 1) + 2
+    msg_header = msg_title + 1
+    put(msg_title, 0, "4. ÚLTIMOS MENSAJES A ALESSIA (historial reciente)")
+    put(msg_header, 0, "Fecha")
+    put(msg_header, 1, "WhatsApp / sesión")
+    put(msg_header, 2, "Canal")
+    put(msg_header, 3, "Mensaje")
+    if recientes:
+        for i, m in enumerate(recientes):
+            put(msg_header + 1 + i, 0, (m.get("creado_at") or "")[:19])
+            put(msg_header + 1 + i, 1, m.get("telefono") or "")
+            put(msg_header + 1 + i, 2, m.get("canal") or "")
+            put(msg_header + 1 + i, 3, (m.get("contenido") or "")[:200])
+    else:
+        put(msg_header + 1, 0, "(sin mensajes guardados aún en el historial)")
+
+    # Panel derecho breve: solo heridas destacadas
+    put(3, 6, "HERIDAS / HISTORIA (atajo)")
     put(4, 6, "Pregunta")
     put(4, 7, "Veces")
-    put(4, 8, "Última vez")
+    put(4, 8, "WhatsApp")
     if faq_heridas:
-        for i, f in enumerate(faq_heridas):
-            put(5 + i, 6, (f.get("pregunta") or "")[:80])
+        for i, f in enumerate(faq_heridas[:15]):
+            put(5 + i, 6, (f.get("pregunta") or "")[:70])
             put(5 + i, 7, int(f.get("veces") or 0))
-            put(5 + i, 8, (f.get("ultima_vez") or "")[:16])
+            put(5 + i, 8, f.get("ejemplo_telefono") or "")
     else:
-        put(5, 6, "(sin preguntas aún)")
+        put(5, 6, "(sin menciones aún)")
 
-    # Tabla 4 — Top FAQ
-    top_start = 5 + max(len(faq_heridas), 1) + 2
-    put(top_start, 6, "4. TOP PREGUNTAS GENERALES")
-    put(top_start + 1, 6, "Pregunta")
-    put(top_start + 1, 7, "Veces")
-    put(top_start + 1, 8, "Última vez")
-    if top:
-        for i, f in enumerate(top):
-            put(top_start + 2 + i, 6, (f.get("pregunta") or "")[:80])
-            put(top_start + 2 + i, 7, int(f.get("veces") or 0))
-            put(top_start + 2 + i, 8, (f.get("ultima_vez") or "")[:16])
-    else:
-        put(top_start + 2, 6, "(sin FAQ aún)")
-
-    # Escribir
     service.spreadsheets().values().clear(
         spreadsheetId=config.ID_HOJA_CALCULO,
         range=f"{TAB}!A:L",
@@ -403,9 +435,10 @@ def actualizar_analytics(*, dias: int = 90) -> str:
         body={"values": grid},
     ).execute()
 
-    # Formato de colores
     n_act = max(len(actividad), 1)
-    n_faq = max(len(faq_heridas), 1)
+    n_faq = max(len(faq_todas), 1)
+    n_msg = max(len(recientes), 1)
+    n_her = max(min(len(faq_heridas), 15), 1)
     fmt_reqs = _col_widths(sheet_id) + [
         _paint(sheet_id, 0, 1, 0, 5, AZUL, bold=True, white_text=True),
         _paint(sheet_id, 3, 4, 0, 2, AZUL, bold=True, white_text=True),
@@ -414,11 +447,15 @@ def actualizar_analytics(*, dias: int = 90) -> str:
         _paint(sheet_id, act_title_row, act_title_row + 1, 0, 5, AZUL, bold=True, white_text=True),
         _paint(sheet_id, act_header_row, act_header_row + 1, 0, 5, CREMA, bold=True),
         _paint(sheet_id, act_header_row + 1, act_header_row + 1 + n_act, 0, 5, BLANCO),
+        _paint(sheet_id, faq_title, faq_title + 1, 0, 5, VERDE, bold=True, white_text=True),
+        _paint(sheet_id, faq_header, faq_header + 1, 0, 5, CREMA, bold=True),
+        _paint(sheet_id, faq_header + 1, faq_header + 1 + n_faq, 0, 5, BLANCO),
+        _paint(sheet_id, msg_title, msg_title + 1, 0, 4, AZUL, bold=True, white_text=True),
+        _paint(sheet_id, msg_header, msg_header + 1, 0, 4, CREMA, bold=True),
+        _paint(sheet_id, msg_header + 1, msg_header + 1 + n_msg, 0, 4, BLANCO),
         _paint(sheet_id, 3, 4, 6, 9, ROJO, bold=True, white_text=True),
         _paint(sheet_id, 4, 5, 6, 9, CREMA, bold=True),
-        _paint(sheet_id, 5, 5 + n_faq, 6, 9, BLANCO),
-        _paint(sheet_id, top_start, top_start + 1, 6, 9, VERDE, bold=True, white_text=True),
-        _paint(sheet_id, top_start + 1, top_start + 2, 6, 9, CREMA, bold=True),
+        _paint(sheet_id, 5, 5 + n_her, 6, 9, BLANCO),
     ]
     try:
         service.spreadsheets().batchUpdate(
@@ -436,7 +473,12 @@ def actualizar_analytics(*, dias: int = 90) -> str:
     url = (
         f"https://docs.google.com/spreadsheets/d/{config.ID_HOJA_CALCULO}/edit#gid={sheet_id}"
     )
-    logger.info("Analytics compacto OK (%s días con movimiento)", len(actividad))
+    logger.info(
+        "Analytics OK (faq=%s, msgs=%s, act=%s)",
+        len(faq_todas),
+        len(recientes),
+        len(actividad),
+    )
     return url
 
 

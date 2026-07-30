@@ -1921,6 +1921,7 @@ def buscar_conocimiento_clinica(consulta: str, limite: int = 5) -> list[dict]:
 
 def registrar_pregunta_frecuente(pregunta: str, telefono: str = "") -> None:
     ahora = _utcnow().isoformat()
+    tel = (telefono or "").strip()[:20] or None
     with _transaction() as conn:
         conn.execute(
             """
@@ -1929,11 +1930,9 @@ def registrar_pregunta_frecuente(pregunta: str, telefono: str = "") -> None:
             ON CONFLICT(pregunta) DO UPDATE SET
                 veces = veces + 1,
                 ultima_vez = excluded.ultima_vez,
-                ejemplo_telefono = COALESCE(
-                    preguntas_frecuentes.ejemplo_telefono, excluded.ejemplo_telefono
-                )
+                ejemplo_telefono = COALESCE(excluded.ejemplo_telefono, preguntas_frecuentes.ejemplo_telefono)
             """,
-            (pregunta, ahora, (telefono or "")[:20] or None),
+            (pregunta, ahora, tel),
         )
 
 
@@ -1941,7 +1940,7 @@ def top_preguntas_frecuentes(limite: int = 80) -> list[dict]:
     with _transaction() as conn:
         rows = conn.execute(
             """
-            SELECT pregunta, veces, ultima_vez
+            SELECT pregunta, veces, ultima_vez, ejemplo_telefono
             FROM preguntas_frecuentes
             ORDER BY veces DESC, ultima_vez DESC
             LIMIT ?
@@ -1949,6 +1948,48 @@ def top_preguntas_frecuentes(limite: int = 80) -> list[dict]:
             (limite,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+def mensajes_recientes_pacientes(limite: int = 80) -> list[dict]:
+    """Últimos mensajes de pacientes con WhatsApp/sesión extraído de la clave."""
+    limite = max(1, min(int(limite), 200))
+    with _transaction() as conn:
+        rows = conn.execute(
+            """
+            SELECT clave, canal, contenido, creado_at
+            FROM conversacion_mensajes
+            WHERE lower(rol) IN ('user', 'usuario', 'human', 'paciente')
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (limite,),
+        ).fetchall()
+    out = []
+    for r in rows:
+        clave = r["clave"] or ""
+        telefono = ""
+        if clave.startswith("wa:") or clave.startswith("whatsapp:"):
+            telefono = clave.split(":", 1)[-1]
+        elif clave.startswith("web:") and ":" in clave[4:]:
+            # web:session o web:52...
+            resto = clave.split(":", 1)[-1]
+            if resto.isdigit() or resto.startswith("52"):
+                telefono = resto
+            else:
+                telefono = f"web:{resto[:12]}"
+        elif clave.startswith("equipo:"):
+            continue
+        else:
+            telefono = clave[:24]
+        out.append(
+            {
+                "telefono": telefono,
+                "canal": r["canal"] or "",
+                "contenido": (r["contenido"] or "")[:300],
+                "creado_at": r["creado_at"] or "",
+            }
+        )
+    return out
 
 
 def metricas_mensajes_por_dia(dias: int = 90) -> list[dict]:
@@ -2095,7 +2136,7 @@ def metricas_faq_heridas() -> list[dict]:
     with _transaction() as conn:
         rows = conn.execute(
             """
-            SELECT pregunta, veces, ultima_vez
+            SELECT pregunta, veces, ultima_vez, ejemplo_telefono
             FROM preguntas_frecuentes
             WHERE lower(pregunta) LIKE '%herida%'
                OR lower(pregunta) LIKE '%historia%'

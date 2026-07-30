@@ -171,21 +171,32 @@ TALLERES_WEB = [
         "terapeuta": "Juan y Sara Rosales",
         "nombre": "Sanando tus heridas del pasado",
         "nombre_corto_web": "Sanando heridas del pasado",
-        "fechas": "30 de agosto de 2026",
-        "horario": "Por confirmar",
-        "modalidad": "Presencial en Zapopan + en línea en vivo",
-        "precio": "Consultar precio",
-        "cupo": "Lista de espera abierta — escribir HISTORIA por WhatsApp",
+        "fechas": "Presencial 6 sep 2026 · Online desde 8 sep 2026 (5 semanas)",
+        "horario": "Presencial 9:00–18:00 · Online mar/jue 19:00–20:30 (CDMX)",
+        "modalidad": "Presencial en Zapopan (Agua Azul 3008, La Palmira) + online en vivo (Zoom)",
+        "precio": (
+            "Presencial: preventa $1,000 / regular $1,200 "
+            "(dúo $950, grupos 4+ $900). "
+            "Online: preventa $900 / regular $1,000 "
+            "(dúo $800, grupos 4+ $750). "
+            "Preventa hasta el 6 ago 2026 o primeros 20 lugares por modalidad."
+        ),
+        "cupo": "Inscripciones abiertas — presencial cupo máx. 100 · mayores de 18 años",
         "temario": (
-            "Espacio psicoterapéutico vivencial sobre cómo tu historia influye en vínculos y decisiones; "
-            "facilitado por Juan y Sara Rosales; presencial (cupo limitado) y transmisión en vivo; "
-            "mayores de 18 años"
+            "Identificación de heridas del pasado; cómo se expresan hoy; patrones en vínculos; "
+            "historia personal y límites; resignificación; herramientas vivenciales. "
+            "Facilitan Juan y Sara Rosales."
         ),
         "descripcion_web": (
-            "Taller para comprender cómo tu historia influye en tus vínculos y tu presente. "
-            "Lista de espera abierta: el paciente puede escribir HISTORIA por WhatsApp."
+            "Taller psicoterapéutico vivencial para comprender cómo tu historia sigue hablando "
+            "en tus relaciones, miedos y decisiones — y dejar de vivir únicamente desde eso. "
+            "Inscripciones abiertas (presencial u online)."
         ),
-        "inscripcion": "Escribir HISTORIA por WhatsApp para unirse a la lista de espera",
+        "inscripcion": (
+            "Escríbenos por WhatsApp para apartar tu lugar. "
+            "Se aparta con el 50%; liquidar antes del 4 sep 2026. "
+            "Inscripción abierta hasta el 4 sep 2026 o agotar cupo presencial."
+        ),
         "url_web": PAGINAS_SITIO["talleres"],
     },
     {
@@ -338,10 +349,21 @@ def obtener_talleres_vigentes(*, forzar_web: bool = False) -> list[dict]:
         if remoto.get("descripcion_js") and t["id_web"] not in OVERRIDES_TALLER:
             t["descripcion_web"] = remoto["descripcion_js"]
         if t["id_web"] == "sanando-heridas":
-            if remoto.get("fechas"):
-                t["fechas"] = remoto["fechas"]
-            if remoto.get("cupo"):
-                t["cupo"] = remoto["cupo"]
+            for campo in (
+                "fechas",
+                "horario",
+                "modalidad",
+                "precio",
+                "cupo",
+                "inscripcion",
+                "descripcion_web",
+            ):
+                if remoto.get(campo):
+                    t[campo] = remoto[campo]
+            if remoto.get("descripcion_js") and "lista de espera" not in (
+                remoto.get("descripcion_js") or ""
+            ).lower():
+                t["descripcion_web"] = remoto["descripcion_js"]
         t.update(OVERRIDES_TALLER.get(t["id_web"], {}))
         talleres.append(t)
     return talleres

@@ -296,14 +296,16 @@ def preparar_contenido_mensaje(mensaje_info: dict):
                 nombre,
                 numero_remitente,
                 "Sanando tus heridas del pasado",
-                "Lista de espera taller",
+                "Interés inscripción taller heridas",
             )
             enviar_mensaje_whatsapp(
                 numero_remitente,
-                "Listo ✨ Te anoté en la lista de espera del taller "
-                "*Sanando tus heridas del pasado*. En cuanto haya lugar te avisamos por aquí.",
+                "¡Perfecto! Te anoté para el taller *Sanando tus heridas del pasado* ✨\n\n"
+                "Hay *inscripciones abiertas* (presencial 6 sep / online desde 8 sep). "
+                "Dime si te interesa *presencial* u *online* y te oriento con precios "
+                "y cómo apartar tu lugar.",
             )
-            logger.info("Lista espera HISTORIA: %s", numero_remitente)
+            logger.info("Interés HISTORIA taller heridas: %s", numero_remitente)
             return None
 
         if any(palabra in texto_lower for palabra in config.PALABRAS_PRIVACIDAD):

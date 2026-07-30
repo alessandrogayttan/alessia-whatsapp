@@ -43,19 +43,64 @@ def _extraer_bloques_js(html_text: str) -> dict[str, dict]:
 
 
 def _extraer_meta_heridas(html_text: str) -> dict:
-    meta = {}
-    if "Lista de espera abierta" in html_text:
+    """Parsea la sección viva del taller Sanando heridas (fechas, precios, cupo)."""
+    meta: dict[str, str] = {}
+    texto = _limpiar_html(html_text)
+    bajo = texto.lower()
+
+    if "lista de espera" in bajo and "inscripciones abiertas" not in bajo:
         meta["cupo"] = "Lista de espera abierta — escribir HISTORIA por WhatsApp"
-    m = re.search(
-        r"heridas-premium__chip[^>]*>\s*([^<]+(?:agosto|enero|febrero|marzo|abril|mayo|junio|julio|septiembre|octubre|noviembre|diciembre)[^<]*)",
-        html_text,
+        meta["inscripcion"] = (
+            "Escribir HISTORIA por WhatsApp para unirse a la lista de espera"
+        )
+    elif "inscripciones abiertas" in bajo:
+        meta["cupo"] = "Inscripciones abiertas — presencial cupo máx. 100 · mayores de 18 años"
+        meta["inscripcion"] = (
+            "Escríbenos por WhatsApp para apartar tu lugar. "
+            "Se aparta con el 50%; liquidar antes del 4 sep 2026."
+        )
+
+    # Fechas / modalidades desde facts o copy visible
+    if re.search(r"presencial\s*6\s*sep", bajo) and re.search(
+        r"online\s*(desde\s*)?8\s*sep", bajo
+    ):
+        meta["fechas"] = "Presencial 6 sep 2026 · Online desde 8 sep 2026 (5 semanas)"
+        meta["horario"] = "Presencial 9:00–18:00 · Online mar/jue 19:00–20:30 (CDMX)"
+        meta["modalidad"] = (
+            "Presencial en Zapopan (Agua Azul 3008, La Palmira) + online en vivo (Zoom)"
+        )
+
+    # Precios: prioriza el resumen FAQ si existe
+    m_faq = re.search(
+        r"Presencial:\s*regular\s*\$?\s*1[,.]?200\s*/\s*preventa\s*\$?\s*1[,.]?000[^.]*\."
+        r"\s*Online:\s*regular\s*\$?\s*1[,.]?000\s*/\s*preventa\s*\$?\s*900[^.]*\.",
+        texto,
         re.I,
     )
-    if m:
-        meta["fechas"] = re.sub(r"\s+", " ", m.group(1)).strip()
+    if m_faq:
+        meta["precio"] = re.sub(r"\s+", " ", m_faq.group(0)).strip()
+    elif "$1,200" in texto or "$1.200" in texto or "1,200 MXN" in texto:
+        meta["precio"] = (
+            "Presencial: preventa $1,000 / regular $1,200 "
+            "(dúo $950, grupos 4+ $900). "
+            "Online: preventa $900 / regular $1,000 "
+            "(dúo $800, grupos 4+ $750). "
+            "Preventa hasta el 6 ago 2026 o primeros 20 lugares por modalidad."
+        )
+
     chips = re.findall(r'class="heridas-premium__chip"[^>]*>([^<]+)', html_text)
     if chips:
-        meta["chips"] = [c.strip() for c in chips if c.strip()]
+        meta["chips"] = [c.strip() for c in chips if c.strip()]  # type: ignore[assignment]
+
+    facts = re.findall(
+        r'class="heridas-premium__fact"[^>]*>\s*(.*?)\s*</div>',
+        html_text,
+        re.I | re.S,
+    )
+    if facts:
+        limpios = [_limpiar_html(f) for f in facts]
+        meta["facts"] = [f for f in limpios if f]  # type: ignore[assignment]
+
     return meta
 
 
@@ -83,8 +128,10 @@ def cargar_talleres_publicados_web(*, forzar: bool = False) -> dict[str, dict]:
         return _CACHE["talleres"] or {}
 
     talleres = _extraer_bloques_js(html_text)
-    if "sanando-heridas" in talleres:
-        talleres["sanando-heridas"].update(_extraer_meta_heridas(html_text))
+    heridas = _extraer_meta_heridas(html_text)
+    if heridas:
+        talleres.setdefault("sanando-heridas", {"id_web": "sanando-heridas"})
+        talleres["sanando-heridas"].update(heridas)
 
     _CACHE["talleres"] = talleres
     _CACHE["ts"] = ahora

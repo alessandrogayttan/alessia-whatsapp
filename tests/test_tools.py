@@ -246,10 +246,40 @@ def test_estado_taller_lista_espera():
 
     estado = catalogo.estado_taller(
         "30 de agosto de 2026",
-        "Lista de espera abierta — escribir HISTORIA por WhatsApp",
+        "Lista de espera abierta",
     )
     assert estado["estado_taller"] == "lista_espera"
-    assert "HISTORIA" in estado["aviso_estado"]
+    assert "LISTA DE ESPERA" in estado["aviso_estado"]
+
+
+def test_taller_heridas_ya_no_es_lista_espera():
+    from catalogo_web import obtener_talleres_vigentes
+    from catalogo_web_live import invalidar_cache_web
+    from respuesta_fiable import intentar_respuesta_catalogo
+
+    invalidar_cache_web()
+    talleres = {t["id_web"]: t for t in obtener_talleres_vigentes(forzar_web=True)}
+    h = talleres["sanando-heridas"]
+    blob = " ".join(
+        str(h.get(k) or "")
+        for k in ("precio", "cupo", "inscripcion", "fechas", "descripcion_web")
+    ).lower()
+    assert "consultar precio" not in blob
+    assert "lista de espera" not in blob
+    assert "escribir historia" not in blob
+    assert "1,000" in h.get("precio", "") or "1000" in h.get("precio", "").replace(",", "")
+    assert "6 sep" in (h.get("fechas") or "").lower() or "6 de septiembre" in (
+        h.get("fechas") or ""
+    ).lower()
+
+    resp = intentar_respuesta_catalogo(
+        "Hola buenos días, podrías darme información sobre el taller de heridas por favor"
+    )
+    assert resp
+    r = resp.lower()
+    assert "lista de espera" not in r
+    assert "consultar precio" not in r
+    assert "1,000" in resp or "1000" in resp.replace(",", "") or "$1" in resp
 
 
 def test_sincronizar_catalogo_desactiva_nombre_viejo(monkeypatch):

@@ -479,7 +479,7 @@ def _respuesta_taller(mensaje: str) -> str | None:
             tid = "sara-club"
     if not tid:
         return None
-    for t in obtener_talleres_vigentes():
+    for t in obtener_talleres_vigentes(forzar_web=False):
         if t.get("id_web") == tid:
             return _formatear_taller(t)
     return None

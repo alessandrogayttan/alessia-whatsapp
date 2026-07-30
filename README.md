@@ -83,7 +83,7 @@ La entrada oficial es `wsgi.py` en producción y `servidor.py` en desarrollo loc
 - `MI CITA` — muestra la próxima cita al instante
 - `ELIMINAR DATOS` — borra datos locales del paciente
 - `HABLAR CON PERSONA` — escala a recepción
-- `HISTORIA` — lista de espera del taller Sanando tus heridas del pasado
+- `HISTORIA` — interés / inscripción del taller Sanando tus heridas del pasado
 
 ## Lanzamiento en producción
 

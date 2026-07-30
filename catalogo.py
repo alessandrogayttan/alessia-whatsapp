@@ -133,9 +133,8 @@ def estado_taller(fechas_txt: str, cupo: str = "") -> dict:
     texto_estado = f"{fechas_txt} {cupo}".lower()
     if "lista de espera" in texto_estado:
         aviso = (
-            "LISTA DE ESPERA ABIERTA: aún no hay cupo confirmado. "
-            "Para Sanando tus heridas del pasado, el paciente puede escribir "
-            "HISTORIA por WhatsApp para apartar lugar."
+            "LISTA DE ESPERA ABIERTA: aún no hay fechas/cupo confirmados. "
+            "Anota al paciente y avisa que le contactarán cuando abran inscripción."
         )
         sesiones = _fechas_sesiones_taller(fechas_txt)
         extra = {}
@@ -434,7 +433,7 @@ def consultar_catalogo_drive(especialista: str = "todos"):
         "En talleres usa SIEMPRE aviso_estado y estado_taller "
         "(lista_espera, en_curso, por_iniciar, finalizado) sin que el paciente pregunte si ya empezó. "
         "Si preguntan por 'taller del niño', 'taller de heridas' o 'heridas del pasado', "
-        "se refieren al taller vigente Sanando tus heridas del pasado (lista de espera HISTORIA). "
+        "se refieren al taller vigente Sanando tus heridas del pasado (inscripciones abiertas). "
         "Si preguntan por el club de lectura de Sara, menciona el libro del mes actual. "
         "Puedes mencionar la página web si el paciente quiere más contexto."
     )

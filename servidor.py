@@ -45,6 +45,7 @@ from jobs import (
     sincronizar_catalogo_web_background,
     sincronizar_catalogo_whatsapp_background,
     sincronizar_faq_conocimiento_background,
+    sincronizar_heridas_background,
     sincronizar_web_background,
     trivia_semanal_background,
     verificar_lista_espera_background,
@@ -114,6 +115,7 @@ def _iniciar_scheduler():
     _add_job(scheduler, procesar_cola_background, "interval", seconds=5)
     _add_job(scheduler, sincronizar_faq_conocimiento_background, "interval", minutes=60)
     _add_job(scheduler, sincronizar_analytics_background, "interval", minutes=30)
+    _add_job(scheduler, sincronizar_heridas_background, "interval", minutes=30)
     _add_job(scheduler, calendario_keepalive_background, "interval", minutes=5)
     _add_job(scheduler, renotificar_escalaciones_background, "interval", minutes=5)
     _add_job(scheduler, backup_db_background, "interval", hours=24)
@@ -130,9 +132,27 @@ def _iniciar_scheduler():
     def _sync_hojas_al_arrancar():
         import os
 
-        # DESACTIVADO por defecto: el sync de Sheets al arrancar tumba el único worker
-        # en DigitalOcean (503 / Degraded) y WhatsApp deja de responder.
-        if os.getenv("SYNC_HOJAS_AL_ARRANCAR", "0").strip().lower() not in (
+        # Sync pesado (analytics+faq+heridas) DESACTIVADO por defecto: tumba el worker.
+        if os.getenv("SYNC_HOJAS_AL_ARRANCAR", "0").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "si",
+            "sí",
+        ):
+            time.sleep(60)
+            try:
+                from heridas_sheet import sincronizar_heridas_completo
+
+                out = sincronizar_heridas_completo()
+                logger.info("Sync heridas al arrancar: %s", out)
+            except Exception as e:
+                logger.warning("Sync heridas al arrancar: %s", e)
+            return
+
+        # Por defecto: solo heridas, diferido, para no dejar pestañas en blanco
+        # sin competir con el arranque de WhatsApp.
+        if os.getenv("SYNC_HERIDAS_DIFERIDO", "1").strip().lower() not in (
             "1",
             "true",
             "yes",
@@ -140,18 +160,24 @@ def _iniciar_scheduler():
             "sí",
         ):
             logger.info(
-                "Sync hojas al arrancar omitido (SYNC_HOJAS_AL_ARRANCAR=0). "
-                "Usa modo equipo → sincronizar hoja heridas."
+                "Sync heridas diferido omitido. "
+                "Usa modo equipo → «sincroniza la hoja de heridas»."
             )
             return
-        time.sleep(60)
+        time.sleep(180)
         try:
             from heridas_sheet import sincronizar_heridas_completo
 
             out = sincronizar_heridas_completo()
-            logger.info("Sync heridas al arrancar: %s", out)
+            logger.info("Sync heridas diferido OK: %s", out)
         except Exception as e:
-            logger.warning("Sync heridas al arrancar: %s", e)
+            logger.warning("Sync heridas diferido: %s", e)
+            try:
+                storage.guardar_app_config(
+                    "heridas_sync_error", f"{type(e).__name__}: {e}"[:800]
+                )
+            except Exception:
+                pass
 
     threading.Thread(target=_sync_hojas_al_arrancar, daemon=True).start()
     atexit.register(_detener_scheduler)

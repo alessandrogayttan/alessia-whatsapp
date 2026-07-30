@@ -218,6 +218,7 @@ def _mensaje_acceso_ok(nombre: str) -> str:
         "en la base para cuando pregunten.\n"
         "También puedes enseñarme por texto, ej:\n"
         "«El taller de heridas cuesta $2500 y empieza el 15 de agosto».\n"
+        "Para llenar Google Sheets del taller heridas: *sincroniza la hoja de heridas*.\n"
         "Para salir escribe *SALIR EQUIPO*."
     )
 

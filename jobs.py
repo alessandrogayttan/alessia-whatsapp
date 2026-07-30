@@ -664,6 +664,33 @@ def sincronizar_analytics_background():
         logger.error("Error sync Analytics background: %s", e)
 
 
+def sincronizar_heridas_background():
+    """Rellena Heridas_Cupo / Inscritos / Interesados sin esperar modo equipo."""
+    if not config.ID_HOJA_CALCULO:
+        return
+    ahora = datetime.datetime.now(ZONA)
+    # Horas impares, minutos 10–15 (desfasado de analytics)
+    if ahora.minute < 10 or ahora.minute > 15 or ahora.hour % 2 == 0:
+        return
+    clave = f"heridas_{ahora.strftime('%Y-%m-%d-%H')}"
+    if not storage.reclamar_recordatorio(clave, "global"):
+        return
+    try:
+        from heridas_sheet import sincronizar_heridas_completo
+
+        out = sincronizar_heridas_completo()
+        logger.info("Heridas background OK: %s", out)
+    except Exception as e:
+        storage.liberar_recordatorio(clave, "global")
+        try:
+            storage.guardar_app_config(
+                "heridas_sync_error", f"{type(e).__name__}: {e}"[:800]
+            )
+        except Exception:
+            pass
+        logger.error("Error sync heridas background: %s", e)
+
+
 def forzar_sync_hojas_conocimiento_analytics() -> dict:
     """Sync inmediato al arrancar o vía endpoint ops."""
     out: dict = {"faq": None, "analytics": None, "heridas": None, "error": None}

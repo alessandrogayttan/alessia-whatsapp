@@ -18,7 +18,8 @@ ENV PORT=8080
 
 EXPOSE 8080
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD curl -fsS "http://127.0.0.1:${PORT}/health" || exit 1
 
-CMD gunicorn --bind "0.0.0.0:${PORT}" --workers 1 --timeout 120 --graceful-timeout 30 wsgi:app
+# gthread: health/webhook no se bloquean si un job de Sheets tarda
+CMD gunicorn --bind "0.0.0.0:${PORT}" --worker-class gthread --workers 1 --threads 4 --timeout 60 --graceful-timeout 20 wsgi:app

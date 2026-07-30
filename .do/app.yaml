@@ -11,19 +11,25 @@ services:
     http_port: 8080
     instance_count: 1
     instance_size_slug: basic-xs
-    run_command: gunicorn --bind 0.0.0.0:8080 --workers 1 --timeout 120 --graceful-timeout 30 wsgi:app
+    run_command: gunicorn --bind 0.0.0.0:8080 --worker-class gthread --workers 1 --threads 4 --timeout 60 --graceful-timeout 20 wsgi:app
     health_check:
       http_path: /health
-      initial_delay_seconds: 25
-      period_seconds: 30
-      timeout_seconds: 10
+      initial_delay_seconds: 40
+      period_seconds: 20
+      timeout_seconds: 5
       success_threshold: 1
-      failure_threshold: 3
+      failure_threshold: 6
     envs:
       - key: FLASK_ENV
         value: production
       - key: PORT
         value: "8080"
+      - key: SYNC_HOJAS_AL_ARRANCAR
+        value: "0"
+      - key: SYNC_HERIDAS_DIFERIDO
+        value: "0"
+      - key: SYNC_HERIDAS_JOB
+        value: "0"
       - key: TOKEN_WHATSAPP
         type: SECRET
         scope: RUN_TIME

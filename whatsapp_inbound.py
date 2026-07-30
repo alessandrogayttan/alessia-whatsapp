@@ -174,18 +174,41 @@ def preparar_contenido_mensaje(mensaje_info: dict):
             enviar_mensaje_whatsapp(numero_remitente, preflight)
             return None
         if preflight == MARCADOR_IA or sesion_equipo_activa(numero_remitente):
-            # Sync hoja heridas solo en Modo Pro (comando directo, sin depender de Gemini)
+            # Sync hoja heridas solo en Modo Pro — en hilo aparte (no bloquear webhook)
             try:
-                from heridas_sheet import intentar_comando_sync_heridas
+                from heridas_sheet import es_pedido_sync_panel_heridas
 
-                sync_msg = intentar_comando_sync_heridas(
-                    numero_remitente, texto_paciente, requerir_modo_pro=True
-                )
-                if sync_msg:
-                    enviar_mensaje_whatsapp(numero_remitente, sync_msg)
-                    logger.info(
-                        "Sync heridas (Modo Pro) para %s", numero_remitente[-4:]
+                if es_pedido_sync_panel_heridas(texto_paciente):
+                    import threading
+
+                    from heridas_sheet import intentar_comando_sync_heridas
+
+                    tel = numero_remitente
+                    enviar_mensaje_whatsapp(
+                        tel,
+                        "Actualizo la hoja de heridas ahora… te confirmo en unos segundos ✨",
                     )
+
+                    def _sync_bg():
+                        try:
+                            sync_msg = intentar_comando_sync_heridas(
+                                tel, "sincroniza la hoja de heridas", requerir_modo_pro=True
+                            )
+                            if sync_msg:
+                                enviar_mensaje_whatsapp(tel, sync_msg)
+                        except Exception as err:
+                            logger.exception("Sync heridas bg: %s", err)
+                            try:
+                                enviar_mensaje_whatsapp(
+                                    tel,
+                                    f"No pude sincronizar la hoja ({type(err).__name__}: {err}). "
+                                    "WhatsApp sigue activo; reintenta en un minuto.",
+                                )
+                            except Exception:
+                                pass
+
+                    threading.Thread(target=_sync_bg, daemon=True).start()
+                    logger.info("Sync heridas (Modo Pro, async) %s", tel[-4:])
                     return None
             except Exception as e:
                 logger.warning("Comando sync heridas Modo Pro: %s", e)

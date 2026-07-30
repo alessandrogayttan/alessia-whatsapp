@@ -834,7 +834,8 @@ def asegurar_hoja_heridas(*, forzar_crear: bool = False) -> str:
     return _sid()
 
 
-def _append_fila(tab: str, fila: list) -> bool:
+def _append_fila(tab: str, fila: list, *, refrescar_cupo: bool = False) -> bool:
+    """Append fila. NO regenera Heridas_Cupo en el hot path (tumba WhatsApp)."""
     try:
         asegurar_hoja_heridas()
         service = get_sheets_service()
@@ -845,10 +846,11 @@ def _append_fila(tab: str, fila: list) -> bool:
             insertDataOption="INSERT_ROWS",
             body={"values": [fila]},
         ).execute()
-        try:
-            actualizar_dashboard_heridas()
-        except Exception as e:
-            logger.warning("Dashboard heridas tras append: %s", e)
+        if refrescar_cupo:
+            try:
+                actualizar_dashboard_heridas()
+            except Exception as e:
+                logger.warning("Dashboard heridas tras append: %s", e)
         return True
     except Exception as e:
         logger.error("Error escribiendo %s heridas: %s", tab, e)
@@ -955,7 +957,6 @@ def actualizar_estatus_inscrito(
                         ]
                     },
                 ).execute()
-                actualizar_dashboard_heridas()
                 return True
         return registrar_inscrito_heridas(
             nombre=storage.primer_nombre(telefono) or "Paciente",
@@ -1003,7 +1004,7 @@ def registrar_interesado_heridas(
                     ]
                 },
             ).execute()
-            actualizar_dashboard_heridas()
+            # No regenerar Heridas_Cupo aquí: bloquearía WhatsApp. Usar Modo Pro sync.
             return True
         except Exception as e:
             logger.error("Error actualizando interesado heridas: %s", e)
@@ -1034,7 +1035,6 @@ def marcar_interesado_como_inscrito(telefono: str) -> None:
             valueInputOption="USER_ENTERED",
             body={"values": [["Inscrito"]]},
         ).execute()
-        actualizar_dashboard_heridas()
     except Exception as e:
         logger.debug("Marcar interesado inscrito: %s", e)
 

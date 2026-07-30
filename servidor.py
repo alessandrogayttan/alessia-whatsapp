@@ -150,9 +150,9 @@ def _iniciar_scheduler():
                 logger.warning("Sync heridas al arrancar: %s", e)
             return
 
-        # Por defecto: solo heridas, diferido, para no dejar pestañas en blanco
-        # sin competir con el arranque de WhatsApp.
-        if os.getenv("SYNC_HERIDAS_DIFERIDO", "1").strip().lower() not in (
+        # Sync diferido de heridas: OFF por defecto (Sheets puede colgar el worker
+        # único en DO → 504 y WhatsApp deja de contestar). Solo Modo Pro / job opcional.
+        if os.getenv("SYNC_HERIDAS_DIFERIDO", "0").strip().lower() not in (
             "1",
             "true",
             "yes",
@@ -160,7 +160,7 @@ def _iniciar_scheduler():
             "sí",
         ):
             logger.info(
-                "Sync heridas diferido omitido. "
+                "Sync heridas diferido omitido (SYNC_HERIDAS_DIFERIDO=0). "
                 "Usa Modo Pro → «sincroniza la hoja de heridas»."
             )
             return

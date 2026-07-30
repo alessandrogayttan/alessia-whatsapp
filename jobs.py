@@ -665,7 +665,17 @@ def sincronizar_analytics_background():
 
 
 def sincronizar_heridas_background():
-    """Rellena Heridas_Cupo / Inscritos / Interesados sin esperar modo equipo."""
+    """Rellena panel heridas. OFF por defecto: no tumbar WhatsApp en basic-xs."""
+    import os
+
+    if os.getenv("SYNC_HERIDAS_JOB", "0").strip().lower() not in (
+        "1",
+        "true",
+        "yes",
+        "si",
+        "sí",
+    ):
+        return
     if not config.ID_HOJA_CALCULO:
         return
     ahora = datetime.datetime.now(ZONA)

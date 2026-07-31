@@ -87,3 +87,42 @@ def test_pregunta_estado_sync_heridas(db_temp):
     storage.guardar_app_config("heridas_sync_ok", "2026-07-30 18:00")
     storage.guardar_app_config("heridas_sync_error", "")
     assert "listo" in responder_estado_sync_heridas(tel).lower()
+
+
+def test_sync_pendiente_expira_tras_minutos(db_temp, monkeypatch):
+    from datetime import timedelta
+
+    import heridas_sheet as hs
+
+    tel = "523310265936"
+    viejo = (hs.datetime.now(hs.ZONA) - timedelta(minutes=10)).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+    storage.guardar_app_config(hs._clave_sync_pendiente(tel), viejo)
+    storage.guardar_app_config("heridas_sync_ok", "")
+    storage.guardar_app_config("heridas_sync_error", "")
+    msg = hs.responder_estado_sync_heridas(tel)
+    assert msg and ("colgado" in msg.lower() or "reinicio" in msg.lower())
+    assert storage.obtener_app_config(hs._clave_sync_pendiente(tel), "") == ""
+
+
+def test_registrar_interesado_async_no_bloquea(monkeypatch, db_temp):
+    import heridas_sheet as hs
+
+    llamado = {"ok": False}
+
+    def fake_reg(**kwargs):
+        llamado["ok"] = True
+
+    monkeypatch.setattr(hs, "registrar_interesado_heridas", fake_reg)
+    # Ejecutar el target inline (sin esperar el hilo) para el contrato del helper
+    ran = []
+
+    def fake_bg(nombre, fn, *args, **kwargs):
+        ran.append(nombre)
+        fn(*args, **kwargs)
+
+    monkeypatch.setattr(hs, "_en_background", fake_bg)
+    hs.registrar_interesado_heridas_async(telefono="5233111", consulta="test")
+    assert ran == ["interesado"]
+    assert llamado["ok"] is True

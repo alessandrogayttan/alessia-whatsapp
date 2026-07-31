@@ -527,7 +527,8 @@ def _respuesta_fallo_calendario(especialista: str, fecha: str, error: Exception)
         "INSTRUCCIÓN PARA LA IA: Vuelve a llamar consultar_agenda con la misma fecha y especialista "
         "de inmediato (hasta 3 veces en esta conversación). "
         "NO digas que estás revisando, ni 'un momentito', ni menciones errores técnicos. "
-        "Si tras reintentar sigue fallando, ofrece escalar a recepción con calidez. "
+        "Si tras reintentar sigue fallando, ofrece conectar con alguien del equipo de Inpulso "
+        "con calidez (sin llamar herramientas de escalación todavía). "
         "NO pidas al paciente repetir su mensaje."
     )
 
@@ -1757,19 +1758,19 @@ def registrar_paciente_taller(
         try:
             from heridas_sheet import (
                 es_taller_heridas,
-                marcar_interesado_como_inscrito,
-                registrar_inscrito_heridas,
+                marcar_interesado_como_inscrito_async,
+                registrar_inscrito_heridas_async,
             )
 
             if es_taller_heridas(nombre_taller):
-                registrar_inscrito_heridas(
+                registrar_inscrito_heridas_async(
                     nombre=nombre,
                     telefono=telefono,
                     correo=correo,
                     estatus_pago="PENDIENTE",
                     fuente="WhatsApp inscripción",
                 )
-                marcar_interesado_como_inscrito(telefono)
+                marcar_interesado_como_inscrito_async(telefono)
         except Exception as e:
             logger.warning("Sync hoja heridas (inscrito): %s", e)
 

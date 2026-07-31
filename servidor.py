@@ -323,7 +323,10 @@ def health_metrics():
 
 @app.route("/ops/sync-heridas", methods=["POST", "GET"])
 def ops_sync_heridas():
-    """Fuerza panel Heridas_Cupo / Inscritos / Interesados. Devuelve error explícito."""
+    """
+    Fuerza panel heridas. Por defecto sync ligero (tablas, sin gráficas) para no
+    superar el timeout de Gunicorn. Usa ?completo=1 solo si necesitas regenerar charts.
+    """
     import hmac
     import traceback
 
@@ -335,11 +338,23 @@ def ops_sync_heridas():
         token = request.args.get("secret") or request.headers.get("X-Health-Secret", "")
         if not hmac.compare_digest(token, config.HEALTH_CONFIG_SECRET):
             return jsonify({"error": "Forbidden"}), 403
+    completo = (request.args.get("completo") or "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "si",
+        "sí",
+    )
     try:
-        from heridas_sheet import sincronizar_heridas_completo
+        from heridas_sheet import sincronizar_heridas_completo, sincronizar_heridas_datos
 
-        out = sincronizar_heridas_completo()
-        return jsonify({"ok": True, **out}), 200
+        if completo:
+            out = sincronizar_heridas_completo()
+            modo = "completo"
+        else:
+            out = sincronizar_heridas_datos()
+            modo = "rapido"
+        return jsonify({"ok": True, "modo": modo, **out}), 200
     except Exception as e:
         logger.exception("ops sync heridas")
         return (

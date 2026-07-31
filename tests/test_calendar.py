@@ -5,6 +5,11 @@ from google_client import GoogleCalendarError
 
 
 def test_fallo_calendario_no_escala_recepcion(monkeypatch):
+    """
+    Si Calendar falla tras reintentos, NO se debe llamar registrar_escalacion_humana
+    automáticamente (eso spamaba recepción). El mensaje es solo instrucción para la IA
+    de reintentar consultar_agenda; el handoff humano queda verbal, sin tool.
+    """
     llamadas = []
     monkeypatch.setattr(
         tools,
@@ -21,7 +26,9 @@ def test_fallo_calendario_no_escala_recepcion(monkeypatch):
     assert not llamadas
     assert "ERROR_CALENDARIO_TEMPORAL" in msg
     assert "consultar_agenda" in msg
+    # No empujar a la tool de escalación ni al keyword legacy «recepción»
     assert "recepción" not in msg.lower()
+    assert "registrar_escalacion" not in msg.lower()
 
 
 def test_obtener_eventos_dia_reintenta_y_recupera(monkeypatch):

@@ -80,14 +80,14 @@ def _manejar_boton_heridas(telefono: str, button_id: str) -> bool:
         return False
     enviar_mensaje_whatsapp(telefono, texto)
     try:
-        from heridas_sheet import registrar_interesado_heridas
+        from heridas_sheet import registrar_interesado_heridas_async
 
         estado = {
             "heridas_presencial": "Quiere presencial",
             "heridas_online": "Quiere online",
             "heridas_apartar": "Quiere apartar",
         }.get(button_id, "Botón ficha")
-        registrar_interesado_heridas(
+        registrar_interesado_heridas_async(
             telefono=telefono,
             consulta=f"Botón {button_id}",
             fuente="Botón ficha heridas WA",
@@ -454,9 +454,9 @@ def preparar_contenido_mensaje(mensaje_info: dict):
                 "y cómo apartar tu lugar.",
             )
             try:
-                from heridas_sheet import registrar_interesado_heridas
+                from heridas_sheet import registrar_interesado_heridas_async
 
-                registrar_interesado_heridas(
+                registrar_interesado_heridas_async(
                     telefono=numero_remitente,
                     nombre=nombre,
                     consulta="HISTORIA — interés inscripción",

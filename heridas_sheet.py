@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytz
 
@@ -18,6 +19,8 @@ from google_client import get_sheets_service
 
 logger = logging.getLogger(__name__)
 ZONA = pytz.timezone(config.ZONA_MEXICO)
+# Si el sync no limpia el flag (deploy/hang), «ya quedó?» deja de decir «en proceso»
+SYNC_PENDIENTE_MAX_MIN = 3
 
 TAB_CUPO = "Heridas_Cupo"
 TAB_INSCRITOS = "Heridas_Inscritos"
@@ -857,6 +860,30 @@ def _append_fila(tab: str, fila: list, *, refrescar_cupo: bool = False) -> bool:
         return False
 
 
+def _en_background(nombre: str, fn, *args, **kwargs) -> None:
+    """Sheets fuera del webhook/cola: no bloquea WhatsApp si Google va lento."""
+
+    def _run():
+        try:
+            fn(*args, **kwargs)
+        except Exception as e:
+            logger.warning("BG heridas %s: %s", nombre, e)
+
+    threading.Thread(target=_run, daemon=True, name=f"heridas-{nombre}").start()
+
+
+def registrar_interesado_heridas_async(**kwargs) -> None:
+    _en_background("interesado", registrar_interesado_heridas, **kwargs)
+
+
+def registrar_inscrito_heridas_async(**kwargs) -> None:
+    _en_background("inscrito", registrar_inscrito_heridas, **kwargs)
+
+
+def marcar_interesado_como_inscrito_async(telefono: str) -> None:
+    _en_background("marcar_inscrito", marcar_interesado_como_inscrito, telefono)
+
+
 def _ya_inscrito_reciente(telefono: str) -> bool:
     try:
         if not _sid():
@@ -1209,6 +1236,37 @@ def limpiar_sync_heridas_pendiente(telefono: str) -> None:
     storage.guardar_app_config(_clave_sync_pendiente(telefono), "")
 
 
+def _parse_ts_mexico(valor: str) -> datetime | None:
+    raw = (valor or "").strip()
+    if not raw:
+        return None
+    try:
+        naive = datetime.strptime(raw[:19], "%Y-%m-%d %H:%M:%S")
+        return ZONA.localize(naive)
+    except Exception:
+        return None
+
+
+def sync_heridas_pendiente_expirado(telefono: str) -> bool:
+    """True si el flag pendiente es viejo (deploy/hang); lo limpia."""
+    pendiente = storage.obtener_app_config(_clave_sync_pendiente(telefono), "")
+    if not pendiente:
+        return False
+    ts = _parse_ts_mexico(pendiente)
+    if ts is None:
+        limpiar_sync_heridas_pendiente(telefono)
+        return True
+    if datetime.now(ZONA) - ts > timedelta(minutes=SYNC_PENDIENTE_MAX_MIN):
+        limpiar_sync_heridas_pendiente(telefono)
+        logger.info(
+            "Sync heridas pendiente expirado (%s min) tel …%s",
+            SYNC_PENDIENTE_MAX_MIN,
+            (telefono or "")[-4:],
+        )
+        return True
+    return False
+
+
 def es_pregunta_estado_sync_heridas(texto: str) -> bool:
     """True si preguntan si ya terminó el sync (ej. «ya quedó?»)."""
     if not texto:
@@ -1240,6 +1298,20 @@ def es_pregunta_estado_sync_heridas(texto: str) -> bool:
 
 def responder_estado_sync_heridas(telefono: str) -> str | None:
     """Respuesta corta al preguntar por el sync reciente; None si no hay rastro."""
+    if sync_heridas_pendiente_expirado(telefono):
+        ok = storage.obtener_app_config("heridas_sync_ok", "")
+        err = storage.obtener_app_config("heridas_sync_error", "")
+        if err:
+            return f"El último sync falló: {err}"
+        if ok:
+            return (
+                f"El sync ya no está en proceso. El último OK fue a las {ok}. "
+                "Si no ves los datos, vuelve a escribir *sincroniza la hoja de heridas*."
+            )
+        return (
+            "Ese sync se quedó colgado o el servidor reinició. "
+            "Vuelve a escribir *sincroniza la hoja de heridas*."
+        )
     pendiente = storage.obtener_app_config(_clave_sync_pendiente(telefono), "")
     ok = storage.obtener_app_config("heridas_sync_ok", "")
     err = storage.obtener_app_config("heridas_sync_error", "")

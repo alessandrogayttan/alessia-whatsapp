@@ -176,33 +176,77 @@ def preparar_contenido_mensaje(mensaje_info: dict):
         if preflight == MARCADOR_IA or sesion_equipo_activa(numero_remitente):
             # Sync hoja heridas solo en Modo Pro — en hilo aparte (no bloquear webhook)
             try:
-                from heridas_sheet import es_pedido_sync_panel_heridas
+                from heridas_sheet import (
+                    es_pedido_sync_panel_heridas,
+                    es_pregunta_estado_sync_heridas,
+                    intentar_comando_sync_heridas,
+                    marcar_sync_heridas_pendiente,
+                    responder_estado_sync_heridas,
+                )
+
+                if es_pregunta_estado_sync_heridas(texto_paciente):
+                    estado = responder_estado_sync_heridas(numero_remitente)
+                    if estado:
+                        enviar_mensaje_whatsapp(numero_remitente, estado)
+                        return None
 
                 if es_pedido_sync_panel_heridas(texto_paciente):
                     import threading
 
-                    from heridas_sheet import intentar_comando_sync_heridas
-
                     tel = numero_remitente
+                    marcar_sync_heridas_pendiente(tel)
                     enviar_mensaje_whatsapp(
                         tel,
                         "Actualizo la hoja de heridas ahora… te confirmo en unos segundos ✨",
                     )
 
                     def _sync_bg():
-                        try:
-                            sync_msg = intentar_comando_sync_heridas(
-                                tel, "sincroniza la hoja de heridas", requerir_modo_pro=True
-                            )
-                            if sync_msg:
-                                enviar_mensaje_whatsapp(tel, sync_msg)
-                        except Exception as err:
-                            logger.exception("Sync heridas bg: %s", err)
+                        # Ya autorizamos en el webhook; no revalidar sesión en el hilo
+                        # (si caduca durante el sync, igual debe confirmar).
+                        done = threading.Event()
+
+                        def _run():
+                            try:
+                                sync_msg = intentar_comando_sync_heridas(
+                                    tel,
+                                    "sincroniza la hoja de heridas",
+                                    requerir_modo_pro=False,
+                                )
+                                if sync_msg:
+                                    enviar_mensaje_whatsapp(tel, sync_msg)
+                                else:
+                                    enviar_mensaje_whatsapp(
+                                        tel,
+                                        "No pude completar el sync. Revisa que estés en *Modo Pro* "
+                                        "y vuelve a escribir *sincroniza la hoja de heridas*.",
+                                    )
+                            except Exception as err:
+                                logger.exception("Sync heridas bg: %s", err)
+                                try:
+                                    from heridas_sheet import limpiar_sync_heridas_pendiente
+
+                                    limpiar_sync_heridas_pendiente(tel)
+                                except Exception:
+                                    pass
+                                try:
+                                    enviar_mensaje_whatsapp(
+                                        tel,
+                                        f"No pude sincronizar la hoja ({type(err).__name__}: {err}). "
+                                        "WhatsApp sigue activo; reintenta en un minuto.",
+                                    )
+                                except Exception:
+                                    pass
+                            finally:
+                                done.set()
+
+                        threading.Thread(target=_run, daemon=True).start()
+                        if not done.wait(timeout=90):
                             try:
                                 enviar_mensaje_whatsapp(
                                     tel,
-                                    f"No pude sincronizar la hoja ({type(err).__name__}: {err}). "
-                                    "WhatsApp sigue activo; reintenta en un minuto.",
+                                    "El sync va lento (Sheets). Los datos pueden seguir "
+                                    "escribiéndose; te confirmo aquí cuando termine "
+                                    "(o pregunta *ya quedó?*).",
                                 )
                             except Exception:
                                 pass
@@ -213,6 +257,21 @@ def preparar_contenido_mensaje(mensaje_info: dict):
             except Exception as e:
                 logger.warning("Comando sync heridas Modo Pro: %s", e)
             return texto_paciente
+
+        # Si preguntan por un sync reciente sin sesión Pro, no reintroducir como paciente
+        try:
+            from heridas_sheet import (
+                es_pregunta_estado_sync_heridas,
+                responder_estado_sync_heridas,
+            )
+
+            if es_pregunta_estado_sync_heridas(texto_paciente):
+                estado = responder_estado_sync_heridas(numero_remitente)
+                if estado:
+                    enviar_mensaje_whatsapp(numero_remitente, estado)
+                    return None
+        except Exception:
+            pass
 
         es_terapeuta = config.identificar_terapeuta(numero_remitente)
 

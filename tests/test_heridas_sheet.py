@@ -66,3 +66,24 @@ def test_comando_sync_requiere_modo_pro(monkeypatch, db_temp):
         "523310265936", "sincroniza la hoja de heridas", requerir_modo_pro=True
     )
     assert out and "ÉXITO" in out and "Sara" in out
+
+
+def test_pregunta_estado_sync_heridas(db_temp):
+    from heridas_sheet import (
+        es_pregunta_estado_sync_heridas,
+        marcar_sync_heridas_pendiente,
+        responder_estado_sync_heridas,
+        limpiar_sync_heridas_pendiente,
+    )
+
+    assert es_pregunta_estado_sync_heridas("Ya quedó?")
+    assert es_pregunta_estado_sync_heridas("ya está listo")
+    assert not es_pregunta_estado_sync_heridas("quiero info del taller de heridas")
+
+    tel = "523310265936"
+    marcar_sync_heridas_pendiente(tel)
+    assert "proceso" in responder_estado_sync_heridas(tel).lower()
+    limpiar_sync_heridas_pendiente(tel)
+    storage.guardar_app_config("heridas_sync_ok", "2026-07-30 18:00")
+    storage.guardar_app_config("heridas_sync_error", "")
+    assert "listo" in responder_estado_sync_heridas(tel).lower()

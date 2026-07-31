@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import threading
 from concurrent.futures import TimeoutError as FuturesTimeout
 
@@ -78,25 +79,30 @@ def _nombre_miembro(telefono: str) -> str:
 
 
 def _es_solicitud_acceso_equipo(texto: str) -> bool:
+    """True solo si piden entrar a Modo Pro (no si solo lo mencionan)."""
     norm = (texto or "").strip().lower().replace("_", " ")
+    norm = re.sub(r"\s+", " ", norm)
     if norm in _COMANDOS_ENTRADA:
         return True
-    indicadores = (
+    # Frases largas tipo "estábamos en modo pro sincronizando…" NO son pedido de acceso
+    if len(norm) > 36:
+        return False
+    inicios = (
         "modo pro",
-        "entrar a modo pro",
-        "quiero modo pro",
-        "acceso al modo pro",
-        "acceso pro",
-        "#pro",
-        # Alias legacy
         "modo equipo",
-        "entrar al equipo",
-        "quiero entrar al equipo",
-        "acceso al equipo",
-        "acceso equipo",
+        "#pro",
         "#equipo",
+        "acceso pro",
+        "acceso equipo",
+        "acceso al modo pro",
+        "acceso al equipo",
+        "entrar a modo pro",
+        "entrar al equipo",
+        "quiero modo pro",
+        "quiero entrar al equipo",
+        "equipo inpulso",
     )
-    return any(ind in norm for ind in indicadores)
+    return any(norm == i or norm.startswith(i + " ") or norm.startswith(i + ",") for i in inicios)
 
 
 def _instrucciones_equipo(nombre: str) -> str:
@@ -242,15 +248,9 @@ def _mensaje_pedir_clave() -> str:
 def _mensaje_acceso_ok(nombre: str) -> str:
     horas = config.EQUIPO_SESION_HORAS
     return (
-        f"✅ *Modo Pro* activado por *{horas} horas*, {nombre}.\n\n"
-        "Soy *Alessia* en modo completo — archivos, redacción, análisis.\n"
-        "Si me mandas un *PDF* con info de pacientes (talleres, precios…), lo leo y lo *guardo* "
-        "en la base para cuando pregunten.\n"
-        "También puedes enseñarme por texto, ej:\n"
-        "«El taller de heridas cuesta $2500 y empieza el 15 de agosto».\n"
-        "Para llenar Google Sheets del taller heridas escribe:\n"
-        "*sincroniza la hoja de heridas*\n"
-        "Para salir escribe *SALIR PRO*."
+        f"✅ *Modo Pro* listo por *{horas} h*, {nombre}.\n\n"
+        "Para la hoja heridas: *sincroniza la hoja de heridas*\n"
+        "Para salir: *SALIR PRO*"
     )
 
 

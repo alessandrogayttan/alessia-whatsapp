@@ -1041,21 +1041,35 @@ def marcar_interesado_como_inscrito(telefono: str) -> None:
 
 def sincronizar_panel_heridas() -> str:
     """
-    Modo equipo / comando staff: fuerza actualizar Heridas_Cupo + Inscritos + Interesados.
-    Usar cuando pidan sincronizar/llenar/actualizar la hoja del taller de heridas.
+    Modo Pro: actualiza tablas heridas. Dashboard completo (gráficas) es opcional
+    porque puede colgarse varios minutos y WhatsApp nunca confirma.
     """
     try:
-        out = sincronizar_heridas_completo()
+        out = sincronizar_heridas_datos()
         storage.guardar_app_config("heridas_sync_ok", _ahora())
         storage.guardar_app_config("heridas_sync_error", "")
         storage.guardar_app_config("heridas_sync_detalle", str(out)[:800])
+        # Cupo/gráficas en segundo plano suave (no bloquea la respuesta)
+        try:
+            import threading
+
+            def _dash():
+                try:
+                    actualizar_dashboard_heridas()
+                except Exception as e:
+                    logger.warning("Dashboard heridas post-sync: %s", e)
+
+            threading.Thread(target=_dash, daemon=True).start()
+        except Exception:
+            pass
         return (
             "ÉXITO: Panel del taller heridas actualizado en Google Sheets.\n"
             f"• Inscritos: {out.get('inscritos', 0)}\n"
             f"• Interesados: {out.get('interesados', 0)}\n"
             f"• Meta cupo presencial: {out.get('cupo_presencial_meta', CUPO_PRESENCIAL)}\n"
             f"• Link: {out.get('url') or url_hoja_heridas()}\n"
-            "Abre las pestañas *Heridas_Cupo*, *Heridas_Inscritos* y *Heridas_Interesados*."
+            "Abre *Heridas_Cupo*, *Heridas_Inscritos* y *Heridas_Interesados* "
+            "(las gráficas se refrescan en unos segundos)."
         )
     except Exception as e:
         msg = f"{type(e).__name__}: {e}"
@@ -1065,6 +1079,98 @@ def sincronizar_panel_heridas() -> str:
             f"ERROR: No pude actualizar la hoja heridas ({msg}). "
             "Revisa que la cuenta de servicio tenga acceso de editor al Sheet de Alessia."
         )
+
+
+def sincronizar_heridas_datos() -> dict:
+    """Escribe Inscritos/Interesados y un cupo simple — sin recrear gráficas."""
+    if not _sid():
+        raise RuntimeError("ID_HOJA_CALCULO vacío")
+    service = get_sheets_service()
+    _asegurar_tab(service, TAB_INSCRITOS, HEADERS_INSCRITOS)
+    _asegurar_tab(service, TAB_INTERESADOS, HEADERS_INTERESADOS)
+    _asegurar_tab(service, TAB_CUPO)
+
+    inscritos = _recolectar_inscritos_desde_fuentes(service)
+    try:
+        existentes = _leer_inscritos(service)
+        vistos = {_norm_tel(r[2]) for r in inscritos if len(r) > 2}
+        for r in existentes:
+            if len(r) < 3:
+                continue
+            if (r[1] or "").startswith("(sin registros"):
+                continue
+            key = _norm_tel(r[2])
+            if key and key not in vistos:
+                inscritos.append(r)
+                vistos.add(key)
+    except Exception:
+        pass
+
+    interesados = _recolectar_interesados_desde_fuentes(service)
+    try:
+        existentes_i = _leer_interesados(service)
+        vistos_i = {_norm_tel(r[2]) for r in interesados if len(r) > 2}
+        for r in existentes_i:
+            if len(r) < 3:
+                continue
+            if (r[1] or "").startswith("(sin registros"):
+                continue
+            key = _norm_tel(r[2]) if len(r) > 2 else ""
+            if key and key not in vistos_i:
+                interesados.append(r)
+                vistos_i.add(key)
+            elif not key and r not in interesados:
+                interesados.append(r)
+    except Exception:
+        pass
+
+    _escribir_tabla(service, TAB_INSCRITOS, HEADERS_INSCRITOS, inscritos)
+    _escribir_tabla(service, TAB_INTERESADOS, HEADERS_INTERESADOS, interesados)
+
+    n_pres = sum(
+        1
+        for r in inscritos
+        if len(r) > 1
+        and not str(r[1]).startswith("(sin registros")
+        and _es_presencial(r[4] if len(r) > 4 else "")
+    )
+    libres = max(0, CUPO_PRESENCIAL - n_pres)
+    resumen = [
+        ["TALLER: Sanando tus heridas del pasado — datos"],
+        [f"Actualizado: {_ahora()} (hora México)"],
+        [],
+        ["Inscritos totales", len(inscritos)],
+        ["Presencial (cupo)", n_pres],
+        ["Libres presencial", libres],
+        ["Interesados", len(interesados)],
+        ["Meta cupo", CUPO_PRESENCIAL],
+        [],
+        ["Las gráficas se actualizan en segundo plano tras el sync."],
+        [f"Link: {url_hoja_heridas()}"],
+    ]
+    service.spreadsheets().values().update(
+        spreadsheetId=_sid(),
+        range=f"{TAB_CUPO}!A1",
+        valueInputOption="USER_ENTERED",
+        body={"values": resumen},
+    ).execute()
+
+    out = {
+        "inscritos": len(
+            [r for r in inscritos if len(r) > 1 and not str(r[1]).startswith("(sin registros")]
+        ),
+        "interesados": len(
+            [
+                r
+                for r in interesados
+                if len(r) > 1 and not str(r[1]).startswith("(sin registros")
+            ]
+        ),
+        "url": url_hoja_heridas(),
+        "cupo_presencial_meta": CUPO_PRESENCIAL,
+    }
+    logger.info("Sync heridas datos (rápido): %s", out)
+    return out
 
 
 def es_pedido_sync_panel_heridas(texto: str) -> bool:
@@ -1091,6 +1197,66 @@ def es_pedido_sync_panel_heridas(texto: str) -> bool:
     return False
 
 
+def _clave_sync_pendiente(telefono: str) -> str:
+    return f"heridas_sync_pendiente_{(telefono or '').strip()}"
+
+
+def marcar_sync_heridas_pendiente(telefono: str) -> None:
+    storage.guardar_app_config(_clave_sync_pendiente(telefono), _ahora())
+
+
+def limpiar_sync_heridas_pendiente(telefono: str) -> None:
+    storage.guardar_app_config(_clave_sync_pendiente(telefono), "")
+
+
+def es_pregunta_estado_sync_heridas(texto: str) -> bool:
+    """True si preguntan si ya terminó el sync (ej. «ya quedó?»)."""
+    if not texto:
+        return False
+    n = unicodedata.normalize("NFD", texto.lower())
+    n = "".join(c for c in n if unicodedata.category(c) != "Mn")
+    n = re.sub(r"\s+", " ", n).strip()
+    if len(n) > 48:
+        return False
+    pistas = (
+        "ya quedo",
+        "ya quedo?",
+        "ya quedo ?",
+        "ya esta",
+        "ya esta?",
+        "quedo listo",
+        "quedo?",
+        "listo?",
+        "termino",
+        "termino?",
+        "avance",
+        "como va",
+        "como va la hoja",
+        "ya sincronizo",
+        "ya actualizo",
+    )
+    return any(p in n for p in pistas)
+
+
+def responder_estado_sync_heridas(telefono: str) -> str | None:
+    """Respuesta corta al preguntar por el sync reciente; None si no hay rastro."""
+    pendiente = storage.obtener_app_config(_clave_sync_pendiente(telefono), "")
+    ok = storage.obtener_app_config("heridas_sync_ok", "")
+    err = storage.obtener_app_config("heridas_sync_error", "")
+    detalle = storage.obtener_app_config("heridas_sync_detalle", "")
+    if pendiente:
+        return (
+            "Sigue en proceso… en cuanto termine te confirmo aquí. "
+            "Si pasan más de un minuto, vuelve a escribir *sincroniza la hoja de heridas*."
+        )
+    if err:
+        return f"El último sync falló: {err}"
+    if ok:
+        extra = f"\n{detalle}" if detalle else ""
+        return f"Sí, el último sync quedó listo a las {ok}.{extra}"
+    return None
+
+
 def intentar_comando_sync_heridas(
     telefono: str,
     texto: str,
@@ -1111,5 +1277,9 @@ def intentar_comando_sync_heridas(
         or "Equipo"
     )
     logger.info("Sync heridas por comando Modo Pro de %s (%s)", quien, telefono[-4:])
-    resultado = sincronizar_panel_heridas()
-    return f"Listo, *{quien}* ✨\n\n{resultado}"
+    marcar_sync_heridas_pendiente(telefono)
+    try:
+        resultado = sincronizar_panel_heridas()
+        return f"Listo, *{quien}* ✨\n\n{resultado}"
+    finally:
+        limpiar_sync_heridas_pendiente(telefono)

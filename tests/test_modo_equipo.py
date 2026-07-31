@@ -52,6 +52,23 @@ def test_preflight_entrada_frase_natural(monkeypatch, db_temp):
     assert "modo pro" in respuesta.lower()
 
 
+def test_preflight_no_reabre_por_mencion_modo_pro(monkeypatch, db_temp):
+    """Mencionar Modo Pro en una frase larga no debe pedir contraseña otra vez."""
+    _reload_config(
+        monkeypatch,
+        db_temp,
+        ENABLE_MODO_EQUIPO="1",
+        EQUIPO_CLAVE_ACCESO="clave-test-300",
+    )
+    from modo_equipo import procesar_preflight_equipo
+
+    respuesta = procesar_preflight_equipo(
+        "5233123456789",
+        "Estábamos en el modo pro sincronizando la hoja de heridas",
+    )
+    assert respuesta is None
+
+
 def test_clave_sin_default_inseguro(monkeypatch):
     monkeypatch.delenv("EQUIPO_CLAVE_ACCESO", raising=False)
     monkeypatch.delenv("EQUIPO_CLAVE_HASH", raising=False)
@@ -111,7 +128,7 @@ def test_preflight_clave_correcta_activa_sesion(monkeypatch, db_temp):
     procesar_preflight_equipo("5233123456789", "MODO PRO")
     respuesta = procesar_preflight_equipo("5233123456789", "inpulso2026")
     assert respuesta is not None
-    assert "activado" in respuesta.lower()
+    assert "listo" in respuesta.lower() or "activado" in respuesta.lower()
     assert "modo pro" in respuesta.lower()
     assert sesion_equipo_activa("5233123456789")
     assert procesar_preflight_equipo("5233123456789", "Hola") == MARCADOR_IA
@@ -133,7 +150,7 @@ def test_preflight_clave_con_hash(monkeypatch, db_temp):
     procesar_preflight_equipo("5233123456789", "MODO PRO")
     respuesta = procesar_preflight_equipo("5233123456789", "supersecreta")
     assert respuesta is not None
-    assert "activado" in respuesta.lower()
+    assert "listo" in respuesta.lower() or "activado" in respuesta.lower()
     assert sesion_equipo_activa("5233123456789")
 
 

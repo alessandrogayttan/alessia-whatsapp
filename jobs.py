@@ -644,7 +644,7 @@ def sincronizar_analytics_background():
     """Legacy. Con SYNC_HOJAS_AUTO_MINUTO=1 el sync minuto ya cubre Analytics."""
     import os
 
-    if os.getenv("SYNC_HOJAS_AUTO_MINUTO", "0").strip().lower() in (
+    if os.getenv("SYNC_HOJAS_AUTO_MINUTO", "1").strip().lower() in (
         "1",
         "true",
         "yes",
@@ -676,7 +676,7 @@ def sincronizar_hojas_auto_minuto_background():
     """
     import os
 
-    if os.getenv("SYNC_HOJAS_AUTO_MINUTO", "0").strip().lower() not in (
+    if os.getenv("SYNC_HOJAS_AUTO_MINUTO", "1").strip().lower() not in (
         "1",
         "true",
         "yes",
@@ -703,10 +703,11 @@ def sincronizar_hojas_auto_minuto_background():
         storage.guardar_app_config("heridas_sync_error", "")
         storage.guardar_app_config("heridas_sync_detalle", str(out_h)[:800])
 
+        # Analytics completo: barra 0-100 + colores + gráficas heridas
         url_a = actualizar_analytics(
             dias=60,
-            con_grafico=False,
-            con_formato=False,
+            con_grafico=True,
+            con_formato=True,
             con_calendario=False,
         )
         storage.guardar_app_config(
@@ -731,7 +732,7 @@ def sincronizar_heridas_background():
     """Legacy. Preferir SYNC_HOJAS_AUTO_MINUTO."""
     import os
 
-    if os.getenv("SYNC_HOJAS_AUTO_MINUTO", "0").strip().lower() in (
+    if os.getenv("SYNC_HOJAS_AUTO_MINUTO", "1").strip().lower() in (
         "1",
         "true",
         "yes",

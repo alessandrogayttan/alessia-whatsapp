@@ -457,6 +457,72 @@ def _quitar_charts(service, sheet_id: int) -> None:
         ).execute()
 
 
+def obtener_resumen_taller_heridas() -> dict:
+    """Cupo / inscritos / interesados del taller heridas (para Analytics y panel)."""
+    if not _sid():
+        return {
+            "inscritos_total": 0,
+            "presencial": 0,
+            "online": 0,
+            "pagados": 0,
+            "pendientes": 0,
+            "interesados": 0,
+            "libres": CUPO_PRESENCIAL,
+            "pct": 0.0,
+            "meta": CUPO_PRESENCIAL,
+        }
+    try:
+        service = get_sheets_service()
+        asegurar_hoja_heridas()
+        inscritos = [
+            r
+            for r in _leer_inscritos(service)
+            if len(r) > 1 and not str(r[1]).startswith("(sin registros")
+        ]
+        interesados = [
+            r
+            for r in _leer_interesados(service)
+            if len(r) > 1 and not str(r[1]).startswith("(sin registros")
+        ]
+        n_total = len(inscritos)
+        n_pres = sum(1 for r in inscritos if _es_presencial(r[4] if len(r) > 4 else ""))
+        n_online = n_total - n_pres
+        n_pagado = sum(
+            1 for r in inscritos if len(r) > 5 and str(r[5]).upper() == "PAGADO"
+        )
+        n_pend = sum(
+            1 for r in inscritos if len(r) > 5 and str(r[5]).upper() == "PENDIENTE"
+        )
+        n_interes = len(interesados)
+        libres = max(0, CUPO_PRESENCIAL - n_pres)
+        pct = min(100.0, (n_pres / CUPO_PRESENCIAL) * 100.0) if CUPO_PRESENCIAL else 0.0
+        return {
+            "inscritos_total": n_total,
+            "presencial": n_pres,
+            "online": n_online,
+            "pagados": n_pagado,
+            "pendientes": n_pend,
+            "interesados": n_interes,
+            "libres": libres,
+            "pct": round(pct, 1),
+            "meta": CUPO_PRESENCIAL,
+        }
+    except Exception as e:
+        logger.warning("Resumen taller heridas: %s", e)
+        return {
+            "inscritos_total": 0,
+            "presencial": 0,
+            "online": 0,
+            "pagados": 0,
+            "pendientes": 0,
+            "interesados": 0,
+            "libres": CUPO_PRESENCIAL,
+            "pct": 0.0,
+            "meta": CUPO_PRESENCIAL,
+            "error": str(e)[:200],
+        }
+
+
 def actualizar_dashboard_heridas() -> str:
     """Reconstruye Heridas_Cupo: KPIs, barra 0–100, tablas resumen y gráficas."""
     if not _sid():

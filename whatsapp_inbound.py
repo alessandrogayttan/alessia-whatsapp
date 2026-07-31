@@ -174,18 +174,17 @@ def preparar_contenido_mensaje(mensaje_info: dict):
             enviar_mensaje_whatsapp(numero_remitente, preflight)
             return None
         if preflight == MARCADOR_IA or sesion_equipo_activa(numero_remitente):
-            # Sync hoja heridas / analytics solo en Modo Pro — en hilo aparte
+            # Sync Sheets: encola durable (scheduler confirma). No hilos daemon.
             try:
+                from analytics import es_pedido_sync_panel_analytics
                 from heridas_sheet import (
                     es_pedido_sync_panel_heridas,
                     es_pregunta_estado_sync_heridas,
-                    intentar_comando_sync_heridas,
-                    marcar_sync_heridas_pendiente,
-                    responder_estado_sync_heridas,
                 )
-                from analytics import (
-                    es_pedido_sync_panel_analytics,
-                    intentar_comando_sync_analytics,
+                from trabajos_pesados import (
+                    encolar_sync_analytics,
+                    encolar_sync_heridas,
+                    responder_estado_trabajo,
                 )
 
                 storage.renovar_sesion_equipo(
@@ -193,142 +192,53 @@ def preparar_contenido_mensaje(mensaje_info: dict):
                 )
 
                 if es_pregunta_estado_sync_heridas(texto_paciente):
-                    estado = responder_estado_sync_heridas(numero_remitente)
+                    estado = responder_estado_trabajo(numero_remitente)
                     if estado:
                         enviar_mensaje_whatsapp(numero_remitente, estado)
                         return None
 
                 if es_pedido_sync_panel_heridas(texto_paciente):
-                    import threading
-
-                    tel = numero_remitente
-                    marcar_sync_heridas_pendiente(tel)
+                    job_id = encolar_sync_heridas(numero_remitente)
                     enviar_mensaje_whatsapp(
-                        tel,
-                        "Actualizo la hoja de heridas ahora… te confirmo en unos segundos ✨",
+                        numero_remitente,
+                        "Encolé la hoja de heridas (#%s). Te confirmo aquí cuando quede ✨"
+                        % job_id,
                     )
-
-                    def _sync_bg():
-                        done = threading.Event()
-
-                        def _run():
-                            try:
-                                sync_msg = intentar_comando_sync_heridas(
-                                    tel,
-                                    "sincroniza la hoja de heridas",
-                                    requerir_modo_pro=False,
-                                )
-                                if sync_msg:
-                                    enviar_mensaje_whatsapp(tel, sync_msg)
-                                else:
-                                    enviar_mensaje_whatsapp(
-                                        tel,
-                                        "No pude completar el sync. Revisa que estés en *Modo Pro* "
-                                        "y vuelve a escribir *sincroniza la hoja de heridas*.",
-                                    )
-                            except Exception as err:
-                                logger.exception("Sync heridas bg: %s", err)
-                                try:
-                                    from heridas_sheet import limpiar_sync_heridas_pendiente
-
-                                    limpiar_sync_heridas_pendiente(tel)
-                                except Exception:
-                                    pass
-                                try:
-                                    enviar_mensaje_whatsapp(
-                                        tel,
-                                        f"No pude sincronizar la hoja ({type(err).__name__}: {err}). "
-                                        "WhatsApp sigue activo; reintenta en un minuto.",
-                                    )
-                                except Exception:
-                                    pass
-                            finally:
-                                done.set()
-
-                        threading.Thread(target=_run, daemon=True).start()
-                        if not done.wait(timeout=90):
-                            try:
-                                enviar_mensaje_whatsapp(
-                                    tel,
-                                    "El sync va lento (Sheets). Los datos pueden seguir "
-                                    "escribiéndose; te confirmo aquí cuando termine "
-                                    "(o pregunta *ya quedó?*).",
-                                )
-                            except Exception:
-                                pass
-
-                    threading.Thread(target=_sync_bg, daemon=True).start()
-                    logger.info("Sync heridas (Modo Pro, async) %s", tel[-4:])
+                    logger.info("Sync heridas encolado #%s …%s", job_id, numero_remitente[-4:])
                     return None
 
                 if es_pedido_sync_panel_analytics(texto_paciente):
-                    import threading
-
-                    tel = numero_remitente
+                    job_id = encolar_sync_analytics(numero_remitente)
                     enviar_mensaje_whatsapp(
-                        tel,
-                        "Actualizo la hoja de *Analytics* ahora… te confirmo en unos segundos ✨",
+                        numero_remitente,
+                        "Encolé *Analytics* (#%s). Te confirmo aquí cuando quede ✨"
+                        % job_id,
                     )
-
-                    def _sync_analytics_bg():
-                        done = threading.Event()
-
-                        def _run():
-                            try:
-                                sync_msg = intentar_comando_sync_analytics(
-                                    tel,
-                                    "sincroniza la hoja de analytics",
-                                    requerir_modo_pro=False,
-                                )
-                                if sync_msg:
-                                    enviar_mensaje_whatsapp(tel, sync_msg)
-                                else:
-                                    enviar_mensaje_whatsapp(
-                                        tel,
-                                        "No pude completar Analytics. Revisa *Modo Pro* y reintenta "
-                                        "*sincroniza la hoja de analytics*.",
-                                    )
-                            except Exception as err:
-                                logger.exception("Sync analytics bg: %s", err)
-                                try:
-                                    enviar_mensaje_whatsapp(
-                                        tel,
-                                        f"No pude sincronizar Analytics ({type(err).__name__}: {err}). "
-                                        "Reintenta en un minuto.",
-                                    )
-                                except Exception:
-                                    pass
-                            finally:
-                                done.set()
-
-                        threading.Thread(target=_run, daemon=True).start()
-                        if not done.wait(timeout=90):
-                            try:
-                                enviar_mensaje_whatsapp(
-                                    tel,
-                                    "Analytics va lento (Sheets); te confirmo cuando termine.",
-                                )
-                            except Exception:
-                                pass
-
-                    threading.Thread(target=_sync_analytics_bg, daemon=True).start()
-                    logger.info("Sync analytics (Modo Pro, async) %s", tel[-4:])
+                    logger.info(
+                        "Sync analytics encolado #%s …%s", job_id, numero_remitente[-4:]
+                    )
                     return None
             except Exception as e:
                 logger.warning("Comando sync Modo Pro: %s", e)
             return texto_paciente
 
-        # Si preguntan por un sync reciente sin sesión Pro, no reintroducir como paciente
+        # Sync reciente sin sesión Pro / «ya quedó?» — no caer a saludo de paciente
         try:
-            from heridas_sheet import (
-                es_pregunta_estado_sync_heridas,
-                responder_estado_sync_heridas,
-            )
+            from heridas_sheet import es_pregunta_estado_sync_heridas
+            from trabajos_pesados import responder_estado_trabajo
 
             if es_pregunta_estado_sync_heridas(texto_paciente):
-                estado = responder_estado_sync_heridas(numero_remitente)
+                estado = responder_estado_trabajo(numero_remitente)
                 if estado:
                     enviar_mensaje_whatsapp(numero_remitente, estado)
+                    return None
+                miembro = config.identificar_miembro_equipo(numero_remitente)
+                if miembro:
+                    enviar_mensaje_whatsapp(
+                        numero_remitente,
+                        f"{miembro}, no tengo un sync reciente en cola. "
+                        "Entra con *MODO PRO* y vuelve a pedir el sync.",
+                    )
                     return None
         except Exception:
             pass

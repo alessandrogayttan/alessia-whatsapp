@@ -211,7 +211,7 @@ EQUIPO_GEMINI_TIMEOUT = int(os.getenv("EQUIPO_GEMINI_TIMEOUT", "120"))
 # Preferir EQUIPO_CLAVE_HASH (pbkdf2). EQUIPO_CLAVE_ACCESO solo texto (sin default inseguro).
 EQUIPO_CLAVE_HASH = os.getenv("EQUIPO_CLAVE_HASH", "").strip()
 EQUIPO_CLAVE_ACCESO = os.getenv("EQUIPO_CLAVE_ACCESO", "").strip()
-EQUIPO_SESION_HORAS = int(os.getenv("EQUIPO_SESION_HORAS", "12"))
+EQUIPO_SESION_HORAS = int(os.getenv("EQUIPO_SESION_HORAS", "8760"))  # 1 año por defecto
 EQUIPO_CLAVE_MAX_INTENTOS = int(os.getenv("EQUIPO_CLAVE_MAX_INTENTOS", "5"))
 EQUIPO_CLAVE_BLOQUEO_MINUTOS = int(os.getenv("EQUIPO_CLAVE_BLOQUEO_MINUTOS", "15"))
 
@@ -448,7 +448,7 @@ ENABLE_CONVERSACION_PERSISTENTE = os.getenv("ENABLE_CONVERSACION_PERSISTENTE", "
     "yes",
     "on",
 )
-CONVERSACION_MAX_TURNOS = int(os.getenv("CONVERSACION_MAX_TURNOS", "40"))
+CONVERSACION_MAX_TURNOS = int(os.getenv("CONVERSACION_MAX_TURNOS", "200"))
 ENABLE_INPULSO_RAG = os.getenv("ENABLE_INPULSO_RAG", "1").strip().lower() in (
     "1",
     "true",

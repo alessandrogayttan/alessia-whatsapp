@@ -743,6 +743,17 @@ def procesar_cola_background():
     limpiar_antiguos(7)
 
 
+def procesar_trabajos_pesados_background():
+    """Sync heridas/analytics encolados desde Modo Pro."""
+    try:
+        from trabajos_pesados import procesar_un_trabajo
+
+        if procesar_un_trabajo():
+            logger.info("Trabajo pesado procesado")
+    except Exception as e:
+        logger.exception("Cola trabajos pesados: %s", e)
+
+
 def renotificar_escalaciones_background():
     from tools import renotificar_escalaciones_pendientes
 

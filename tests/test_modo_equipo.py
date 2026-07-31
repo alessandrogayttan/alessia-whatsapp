@@ -251,9 +251,7 @@ def test_preparar_contenido_sin_sesion_usa_flujo_paciente(monkeypatch, db_temp):
 
 
 def test_sync_heridas_modo_pro_confirma_sin_revalidar_sesion(monkeypatch, db_temp):
-    """El hilo de sync debe confirmar aunque no revalide Modo Pro (requerir_modo_pro=False)."""
-    import threading
-
+    """Modo Pro encola sync durable (no hilo daemon)."""
     _reload_config(
         monkeypatch,
         db_temp,
@@ -261,33 +259,14 @@ def test_sync_heridas_modo_pro_confirma_sin_revalidar_sesion(monkeypatch, db_tem
         EQUIPO_CLAVE_ACCESO="inpulso2026",
         WHATSAPP_ALESSANDRO="5233123456789",
     )
-    import heridas_sheet as hs
     import whatsapp_inbound as wi
 
     tel = "5233123456789"
     storage.activar_sesion_equipo(tel, "Alessandro", 12)
     enviados = []
-    sync_kwargs = {}
-
     monkeypatch.setattr(
         wi, "enviar_mensaje_whatsapp", lambda t, m: enviados.append((t, m))
     )
-
-    def fake_intentar(telefono, texto, *, requerir_modo_pro=True):
-        sync_kwargs["requerir_modo_pro"] = requerir_modo_pro
-        return "Listo, *Alessandro* ✨\n\nÉXITO: ok"
-
-    class ImmediateThread:
-        def __init__(self, target=None, daemon=None, name=None, args=(), kwargs=None):
-            self._target = target
-
-        def start(self):
-            if self._target:
-                self._target()
-
-    monkeypatch.setattr(threading, "Thread", ImmediateThread)
-    monkeypatch.setattr(hs, "intentar_comando_sync_heridas", fake_intentar)
-    monkeypatch.setattr(hs, "marcar_sync_heridas_pendiente", lambda t: None)
 
     mensaje = {
         "from": tel,
@@ -295,7 +274,7 @@ def test_sync_heridas_modo_pro_confirma_sin_revalidar_sesion(monkeypatch, db_tem
         "text": {"body": "sincroniza la hoja de heridas"},
     }
     assert wi.preparar_contenido_mensaje(mensaje) is None
-    assert sync_kwargs.get("requerir_modo_pro") is False
     textos = " ".join(m for _, m in enviados)
-    assert "Actualizo" in textos
-    assert "Listo" in textos or "ÉXITO" in textos
+    assert "Encolé" in textos or "encolé" in textos.lower()
+    job = storage.ultimo_trabajo_telefono(tel, "sync_heridas")
+    assert job and job["estado"] == "pendiente"

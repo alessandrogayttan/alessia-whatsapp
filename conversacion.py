@@ -61,7 +61,7 @@ def historial_para_gemini(clave: str, limite: int | None = None) -> list:
         historial.append(
             types.Content(
                 role=rol,
-                parts=[types.Part(text=msg["contenido"][:4000])],
+                parts=[types.Part(text=msg["contenido"][:8000])],
             )
         )
     return historial

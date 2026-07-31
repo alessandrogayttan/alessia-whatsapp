@@ -250,11 +250,16 @@ def _mensaje_pedir_clave() -> str:
 
 def _mensaje_acceso_ok(nombre: str) -> str:
     horas = config.EQUIPO_SESION_HORAS
+    if horas >= 24:
+        vigencia = f"{max(1, horas // 24)} días"
+    else:
+        vigencia = f"{horas} h"
     return (
-        f"✅ *Modo Pro* listo por *{horas} h*, {nombre}.\n\n"
+        f"✅ *Modo Pro* listo por *{vigencia}*, {nombre}.\n\n"
         "• Hoja heridas: *sincroniza la hoja de heridas*\n"
         "• Analytics: *sincroniza la hoja de analytics*\n"
-        "• Salir: *SALIR PRO*"
+        "• Salir: *SALIR PRO*\n\n"
+        "Los syncs van en cola estable: te confirmo aquí al terminar."
     )
 
 

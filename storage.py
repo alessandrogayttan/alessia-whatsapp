@@ -282,6 +282,19 @@ def init_db():
                     valor TEXT NOT NULL,
                     actualizado_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS trabajos_pesados (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tipo TEXT NOT NULL,
+                    telefono TEXT NOT NULL,
+                    estado TEXT NOT NULL DEFAULT 'pendiente',
+                    resultado TEXT,
+                    error TEXT,
+                    intentos INTEGER NOT NULL DEFAULT 0,
+                    creado_at TEXT NOT NULL,
+                    actualizado_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_trabajos_estado
+                    ON trabajos_pesados(estado, creado_at);
                 CREATE INDEX IF NOT EXISTS idx_conocimiento_activo
                     ON conocimiento_clinica(activo, actualizado_at);
                 CREATE TABLE IF NOT EXISTS preguntas_frecuentes (
@@ -1526,7 +1539,7 @@ def guardar_mensaje_conversacion(
             INSERT INTO conversacion_mensajes (clave, canal, rol, contenido, creado_at)
             VALUES (?, ?, ?, ?, ?)
             """,
-            (clave, canal, rol, texto[:8000], _utcnow().isoformat()),
+            (clave, canal, rol, texto[:16000], _utcnow().isoformat()),
         )
 
 
@@ -1878,6 +1891,119 @@ def obtener_app_config(clave: str, default: str = "") -> str:
     if not row:
         return default
     return row["valor"] if isinstance(row, dict) or hasattr(row, "keys") else row[0]
+
+
+def encolar_trabajo_pesado(tipo: str, telefono: str) -> int:
+    """Encola sync/trabajo pesado durable (sobrevive reinicios del worker)."""
+    ahora = _utcnow().isoformat()
+    with _transaction() as conn:
+        row = conn.execute(
+            """
+            SELECT id FROM trabajos_pesados
+            WHERE telefono = ? AND tipo = ? AND estado IN ('pendiente', 'procesando')
+            ORDER BY id DESC LIMIT 1
+            """,
+            (telefono, tipo),
+        ).fetchone()
+        if row:
+            return int(row["id"])
+        cur = conn.execute(
+            """
+            INSERT INTO trabajos_pesados
+                (tipo, telefono, estado, intentos, creado_at, actualizado_at)
+            VALUES (?, ?, 'pendiente', 0, ?, ?)
+            """,
+            (tipo, telefono, ahora, ahora),
+        )
+        return int(cur.lastrowid)
+
+
+def reclamar_trabajo_pesado() -> dict | None:
+    ahora = _utcnow().isoformat()
+    with _transaction() as conn:
+        row = conn.execute(
+            """
+            SELECT id, tipo, telefono, intentos
+            FROM trabajos_pesados
+            WHERE estado = 'pendiente' AND intentos < 3
+            ORDER BY id ASC
+            LIMIT 1
+            """
+        ).fetchone()
+        if not row:
+            return None
+        cur = conn.execute(
+            """
+            UPDATE trabajos_pesados
+            SET estado = 'procesando', intentos = intentos + 1, actualizado_at = ?
+            WHERE id = ? AND estado = 'pendiente'
+            """,
+            (ahora, row["id"]),
+        )
+        if cur.rowcount != 1:
+            return None
+        return dict(row)
+
+
+def finalizar_trabajo_pesado(
+    trabajo_id: int,
+    *,
+    ok: bool,
+    resultado: str = "",
+    error: str = "",
+) -> None:
+    ahora = _utcnow().isoformat()
+    estado = "ok" if ok else "error"
+    with _transaction() as conn:
+        conn.execute(
+            """
+            UPDATE trabajos_pesados
+            SET estado = ?, resultado = ?, error = ?, actualizado_at = ?
+            WHERE id = ?
+            """,
+            (estado, (resultado or "")[:4000], (error or "")[:2000], ahora, trabajo_id),
+        )
+
+
+def reencolar_trabajos_procesando_atascados(minutos: int = 8) -> int:
+    """Si el worker murió a mitad del sync, vuelve a pendiente."""
+    limite = (_utcnow() - timedelta(minutes=minutos)).isoformat()
+    ahora = _utcnow().isoformat()
+    with _transaction() as conn:
+        cur = conn.execute(
+            """
+            UPDATE trabajos_pesados
+            SET estado = 'pendiente', actualizado_at = ?
+            WHERE estado = 'procesando' AND actualizado_at < ? AND intentos < 3
+            """,
+            (ahora, limite),
+        )
+        return int(cur.rowcount or 0)
+
+
+def ultimo_trabajo_telefono(telefono: str, tipo: str | None = None) -> dict | None:
+    with _transaction() as conn:
+        if tipo:
+            row = conn.execute(
+                """
+                SELECT id, tipo, estado, resultado, error, creado_at, actualizado_at
+                FROM trabajos_pesados
+                WHERE telefono = ? AND tipo = ?
+                ORDER BY id DESC LIMIT 1
+                """,
+                (telefono, tipo),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                """
+                SELECT id, tipo, estado, resultado, error, creado_at, actualizado_at
+                FROM trabajos_pesados
+                WHERE telefono = ?
+                ORDER BY id DESC LIMIT 1
+                """,
+                (telefono,),
+            ).fetchone()
+        return dict(row) if row else None
 
 
 def upsert_conocimiento_clinica(

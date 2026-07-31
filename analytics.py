@@ -290,7 +290,13 @@ def _tabla_actividad_compacta(
     return filas[-max_filas:]
 
 
-def actualizar_analytics(*, dias: int = 90, con_grafico: bool = True) -> str:
+def actualizar_analytics(
+    *,
+    dias: int = 90,
+    con_grafico: bool = True,
+    con_formato: bool = True,
+    con_calendario: bool = True,
+) -> str:
     if not config.ID_HOJA_CALCULO:
         return "ID_HOJA_CALCULO no configurado"
 
@@ -304,7 +310,7 @@ def actualizar_analytics(*, dias: int = 90, con_grafico: bool = True) -> str:
     faq_todas = storage.top_preguntas_frecuentes(100)
     recientes = storage.mensajes_recientes_pacientes(60)
     interes = storage.metricas_interes_heridas()
-    citas = _citas_por_dia(dias)
+    citas = _citas_por_dia(dias) if con_calendario else {}
     insc_dia, insc_pag, insc_pend = _inscripciones_por_dia()
     actividad = _tabla_actividad_compacta(diarios, citas, insc_dia)
 
@@ -439,31 +445,33 @@ def actualizar_analytics(*, dias: int = 90, con_grafico: bool = True) -> str:
     n_faq = max(len(faq_todas), 1)
     n_msg = max(len(recientes), 1)
     n_her = max(min(len(faq_heridas), 15), 1)
-    fmt_reqs = _col_widths(sheet_id) + [
-        _paint(sheet_id, 0, 1, 0, 5, AZUL, bold=True, white_text=True),
-        _paint(sheet_id, 3, 4, 0, 2, AZUL, bold=True, white_text=True),
-        _paint(sheet_id, 4, 5, 0, 2, CREMA, bold=True),
-        _paint(sheet_id, 5, 5 + len(kpis), 0, 2, CREMA),
-        _paint(sheet_id, act_title_row, act_title_row + 1, 0, 5, AZUL, bold=True, white_text=True),
-        _paint(sheet_id, act_header_row, act_header_row + 1, 0, 5, CREMA, bold=True),
-        _paint(sheet_id, act_header_row + 1, act_header_row + 1 + n_act, 0, 5, BLANCO),
-        _paint(sheet_id, faq_title, faq_title + 1, 0, 5, VERDE, bold=True, white_text=True),
-        _paint(sheet_id, faq_header, faq_header + 1, 0, 5, CREMA, bold=True),
-        _paint(sheet_id, faq_header + 1, faq_header + 1 + n_faq, 0, 5, BLANCO),
-        _paint(sheet_id, msg_title, msg_title + 1, 0, 4, AZUL, bold=True, white_text=True),
-        _paint(sheet_id, msg_header, msg_header + 1, 0, 4, CREMA, bold=True),
-        _paint(sheet_id, msg_header + 1, msg_header + 1 + n_msg, 0, 4, BLANCO),
-        _paint(sheet_id, 3, 4, 6, 9, ROJO, bold=True, white_text=True),
-        _paint(sheet_id, 4, 5, 6, 9, CREMA, bold=True),
-        _paint(sheet_id, 5, 5 + n_her, 6, 9, BLANCO),
-    ]
-    try:
-        service.spreadsheets().batchUpdate(
-            spreadsheetId=config.ID_HOJA_CALCULO,
-            body={"requests": fmt_reqs},
-        ).execute()
-    except Exception as e:
-        logger.warning("Formato Analytics: %s", e)
+
+    if con_formato:
+        fmt_reqs = _col_widths(sheet_id) + [
+            _paint(sheet_id, 0, 1, 0, 5, AZUL, bold=True, white_text=True),
+            _paint(sheet_id, 3, 4, 0, 2, AZUL, bold=True, white_text=True),
+            _paint(sheet_id, 4, 5, 0, 2, CREMA, bold=True),
+            _paint(sheet_id, 5, 5 + len(kpis), 0, 2, CREMA),
+            _paint(sheet_id, act_title_row, act_title_row + 1, 0, 5, AZUL, bold=True, white_text=True),
+            _paint(sheet_id, act_header_row, act_header_row + 1, 0, 5, CREMA, bold=True),
+            _paint(sheet_id, act_header_row + 1, act_header_row + 1 + n_act, 0, 5, BLANCO),
+            _paint(sheet_id, faq_title, faq_title + 1, 0, 5, VERDE, bold=True, white_text=True),
+            _paint(sheet_id, faq_header, faq_header + 1, 0, 5, CREMA, bold=True),
+            _paint(sheet_id, faq_header + 1, faq_header + 1 + n_faq, 0, 5, BLANCO),
+            _paint(sheet_id, msg_title, msg_title + 1, 0, 4, AZUL, bold=True, white_text=True),
+            _paint(sheet_id, msg_header, msg_header + 1, 0, 4, CREMA, bold=True),
+            _paint(sheet_id, msg_header + 1, msg_header + 1 + n_msg, 0, 4, BLANCO),
+            _paint(sheet_id, 3, 4, 6, 9, ROJO, bold=True, white_text=True),
+            _paint(sheet_id, 4, 5, 6, 9, CREMA, bold=True),
+            _paint(sheet_id, 5, 5 + n_her, 6, 9, BLANCO),
+        ]
+        try:
+            service.spreadsheets().batchUpdate(
+                spreadsheetId=config.ID_HOJA_CALCULO,
+                body={"requests": fmt_reqs},
+            ).execute()
+        except Exception as e:
+            logger.warning("Formato Analytics: %s", e)
 
     if con_grafico:
         try:
@@ -475,11 +483,12 @@ def actualizar_analytics(*, dias: int = 90, con_grafico: bool = True) -> str:
         f"https://docs.google.com/spreadsheets/d/{config.ID_HOJA_CALCULO}/edit#gid={sheet_id}"
     )
     logger.info(
-        "Analytics OK (faq=%s, msgs=%s, act=%s, grafico=%s)",
+        "Analytics OK (faq=%s, msgs=%s, act=%s, grafico=%s, formato=%s)",
         len(faq_todas),
         len(recientes),
         len(actividad),
         con_grafico,
+        con_formato,
     )
     return url
 
@@ -496,10 +505,17 @@ def url_hoja_analytics() -> str:
 
 
 def sincronizar_panel_analytics() -> str:
-    """Modo Pro / WhatsApp: datos Analytics sin recrear gráfico (más estable)."""
+    """Modo Pro: datos Analytics ligeros (sin calendario/formato/gráfico → no tumba el worker)."""
     try:
-        url = actualizar_analytics(dias=90, con_grafico=False)
-        storage.guardar_app_config("analytics_sync_ok", datetime.now(ZONA).strftime("%Y-%m-%d %H:%M:%S"))
+        url = actualizar_analytics(
+            dias=60,
+            con_grafico=False,
+            con_formato=False,
+            con_calendario=False,
+        )
+        storage.guardar_app_config(
+            "analytics_sync_ok", datetime.now(ZONA).strftime("%Y-%m-%d %H:%M:%S")
+        )
         storage.guardar_app_config("analytics_sync_error", "")
         storage.guardar_app_config("analytics_sync_detalle", str(url)[:500])
         return (

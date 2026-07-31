@@ -776,7 +776,7 @@ def sincronizar_hojas_graficos_background():
     """Cada 15 min: refresca gráficas (más pesado; no cada minuto)."""
     import os
 
-    if os.getenv("SYNC_HOJAS_AUTO_MINUTO", "0").strip().lower() not in (
+    if os.getenv("SYNC_HOJAS_AUTO_MINUTO", "1").strip().lower() not in (
         "1",
         "true",
         "yes",

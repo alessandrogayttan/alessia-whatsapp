@@ -675,6 +675,7 @@ def sincronizar_hojas_auto_minuto_background():
     Cada minuto: Heridas + Analytics en modo ligero (sin gráficas / sin WhatsApp).
     """
     import os
+    import threading
 
     if os.getenv("SYNC_HOJAS_AUTO_MINUTO", "1").strip().lower() not in (
         "1",
@@ -687,45 +688,67 @@ def sincronizar_hojas_auto_minuto_background():
     if not config.ID_HOJA_CALCULO:
         return
 
+    # No saturar al arrancar (evita 503 en el healthcheck de DO)
+    try:
+        import servidor as _srv
+
+        if getattr(_srv, "_scheduler_iniciado", False):
+            # Arranque reciente: esperar ~90s de vida del proceso
+            boot = getattr(_srv, "_boot_monotonic", None)
+            if boot is None:
+                import time as _t
+
+                _srv._boot_monotonic = _t.monotonic()
+                boot = _srv._boot_monotonic
+            import time as _t
+
+            if _t.monotonic() - boot < 90:
+                return
+    except Exception:
+        pass
+
     ahora = datetime.datetime.now(ZONA)
     clave = f"sync_auto_{ahora.strftime('%Y%m%d%H%M')}"
     if not storage.reclamar_recordatorio(clave, "global"):
         return
 
-    try:
-        from analytics import actualizar_analytics
-        from heridas_sheet import sincronizar_heridas_datos
+    def _run():
+        try:
+            from analytics import actualizar_analytics
+            from heridas_sheet import sincronizar_heridas_datos
 
-        out_h = sincronizar_heridas_datos()
-        storage.guardar_app_config(
-            "heridas_sync_ok", ahora.strftime("%Y-%m-%d %H:%M:%S")
-        )
-        storage.guardar_app_config("heridas_sync_error", "")
-        storage.guardar_app_config("heridas_sync_detalle", str(out_h)[:800])
+            out_h = sincronizar_heridas_datos()
+            storage.guardar_app_config(
+                "heridas_sync_ok", ahora.strftime("%Y-%m-%d %H:%M:%S")
+            )
+            storage.guardar_app_config("heridas_sync_error", "")
+            storage.guardar_app_config("heridas_sync_detalle", str(out_h)[:800])
 
-        # Datos cada minuto (ligero). Barra de texto sí; colores/gráficas cada 30 min.
-        url_a = actualizar_analytics(
-            dias=60,
-            con_grafico=False,
-            con_formato=False,
-            con_calendario=False,
-        )
-        storage.guardar_app_config(
-            "analytics_sync_ok", ahora.strftime("%Y-%m-%d %H:%M:%S")
-        )
-        storage.guardar_app_config("analytics_sync_error", "")
-        storage.guardar_app_config("analytics_sync_detalle", str(url_a)[:500])
-        storage.guardar_app_config("hojas_auto_sync_error", "")
-        logger.info(
-            "Sync auto minuto OK heridas=%s analytics=%s",
-            out_h.get("inscritos"),
-            url_a,
-        )
-    except Exception as e:
-        msg = f"{type(e).__name__}: {e}"
-        storage.guardar_app_config("hojas_auto_sync_error", msg[:800])
-        storage.liberar_recordatorio(clave, "global")
-        logger.exception("Sync auto minuto falló: %s", msg)
+            url_a = actualizar_analytics(
+                dias=60,
+                con_grafico=False,
+                con_formato=False,
+                con_calendario=False,
+            )
+            storage.guardar_app_config(
+                "analytics_sync_ok", ahora.strftime("%Y-%m-%d %H:%M:%S")
+            )
+            storage.guardar_app_config("analytics_sync_error", "")
+            storage.guardar_app_config("analytics_sync_detalle", str(url_a)[:500])
+            storage.guardar_app_config("hojas_auto_sync_error", "")
+            logger.info(
+                "Sync auto minuto OK heridas=%s analytics=%s",
+                out_h.get("inscritos"),
+                url_a,
+            )
+        except Exception as e:
+            msg = f"{type(e).__name__}: {e}"
+            storage.guardar_app_config("hojas_auto_sync_error", msg[:800])
+            storage.liberar_recordatorio(clave, "global")
+            logger.exception("Sync auto minuto falló: %s", msg)
+
+    # Fuera del hilo del scheduler/health: no bloquear /health
+    threading.Thread(target=_run, daemon=True, name="sync-hojas-auto").start()
 
 
 def sincronizar_heridas_background():

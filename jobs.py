@@ -641,9 +641,18 @@ def sincronizar_faq_conocimiento_background():
 
 
 def sincronizar_analytics_background():
-    """Crea/actualiza pestaña Analytics. Menos frecuente para no tumbar el worker."""
+    """Legacy. Con SYNC_HOJAS_AUTO_MINUTO=1 el sync minuto ya cubre Analytics."""
+    import os
+
+    if os.getenv("SYNC_HOJAS_AUTO_MINUTO", "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "si",
+        "sí",
+    ):
+        return
     ahora = datetime.datetime.now(ZONA)
-    # Solo en minutos 0–5 de cada hora par (evita picos con otros jobs)
     if ahora.minute > 5 or ahora.hour % 2 != 0:
         return
     clave = f"analytics_{ahora.strftime('%Y-%m-%d-%H')}"
@@ -651,23 +660,85 @@ def sincronizar_analytics_background():
         return
     try:
         from analytics import actualizar_analytics
-        from conocimiento import sincronizar_faq_a_sheets
 
-        try:
-            sincronizar_faq_a_sheets()
-        except Exception as e:
-            logger.warning("FAQ en sync analytics: %s", e)
-        url = actualizar_analytics()
+        url = actualizar_analytics(
+            dias=60, con_grafico=False, con_formato=False, con_calendario=False
+        )
         logger.info("Analytics background OK: %s", url)
     except Exception as e:
         storage.liberar_recordatorio(clave, "global")
         logger.error("Error sync Analytics background: %s", e)
 
 
-def sincronizar_heridas_background():
-    """Rellena panel heridas. OFF por defecto: no tumbar WhatsApp en basic-xs."""
+def sincronizar_hojas_auto_minuto_background():
+    """
+    Cada minuto: Heridas + Analytics en modo ligero (sin gráficas / sin WhatsApp).
+    """
     import os
 
+    if os.getenv("SYNC_HOJAS_AUTO_MINUTO", "0").strip().lower() not in (
+        "1",
+        "true",
+        "yes",
+        "si",
+        "sí",
+    ):
+        return
+    if not config.ID_HOJA_CALCULO:
+        return
+
+    ahora = datetime.datetime.now(ZONA)
+    clave = f"sync_auto_{ahora.strftime('%Y%m%d%H%M')}"
+    if not storage.reclamar_recordatorio(clave, "global"):
+        return
+
+    try:
+        from analytics import actualizar_analytics
+        from heridas_sheet import sincronizar_heridas_datos
+
+        out_h = sincronizar_heridas_datos()
+        storage.guardar_app_config(
+            "heridas_sync_ok", ahora.strftime("%Y-%m-%d %H:%M:%S")
+        )
+        storage.guardar_app_config("heridas_sync_error", "")
+        storage.guardar_app_config("heridas_sync_detalle", str(out_h)[:800])
+
+        url_a = actualizar_analytics(
+            dias=60,
+            con_grafico=False,
+            con_formato=False,
+            con_calendario=False,
+        )
+        storage.guardar_app_config(
+            "analytics_sync_ok", ahora.strftime("%Y-%m-%d %H:%M:%S")
+        )
+        storage.guardar_app_config("analytics_sync_error", "")
+        storage.guardar_app_config("analytics_sync_detalle", str(url_a)[:500])
+        storage.guardar_app_config("hojas_auto_sync_error", "")
+        logger.info(
+            "Sync auto minuto OK heridas=%s analytics=%s",
+            out_h.get("inscritos"),
+            url_a,
+        )
+    except Exception as e:
+        msg = f"{type(e).__name__}: {e}"
+        storage.guardar_app_config("hojas_auto_sync_error", msg[:800])
+        storage.liberar_recordatorio(clave, "global")
+        logger.exception("Sync auto minuto falló: %s", msg)
+
+
+def sincronizar_heridas_background():
+    """Legacy. Preferir SYNC_HOJAS_AUTO_MINUTO."""
+    import os
+
+    if os.getenv("SYNC_HOJAS_AUTO_MINUTO", "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "si",
+        "sí",
+    ):
+        return
     if os.getenv("SYNC_HERIDAS_JOB", "0").strip().lower() not in (
         "1",
         "true",
@@ -679,16 +750,15 @@ def sincronizar_heridas_background():
     if not config.ID_HOJA_CALCULO:
         return
     ahora = datetime.datetime.now(ZONA)
-    # Horas impares, minutos 10–15 (desfasado de analytics)
     if ahora.minute < 10 or ahora.minute > 15 or ahora.hour % 2 == 0:
         return
     clave = f"heridas_{ahora.strftime('%Y-%m-%d-%H')}"
     if not storage.reclamar_recordatorio(clave, "global"):
         return
     try:
-        from heridas_sheet import sincronizar_heridas_completo
+        from heridas_sheet import sincronizar_heridas_datos
 
-        out = sincronizar_heridas_completo()
+        out = sincronizar_heridas_datos()
         logger.info("Heridas background OK: %s", out)
     except Exception as e:
         storage.liberar_recordatorio(clave, "global")

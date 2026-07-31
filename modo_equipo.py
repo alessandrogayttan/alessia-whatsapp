@@ -256,10 +256,9 @@ def _mensaje_acceso_ok(nombre: str) -> str:
         vigencia = f"{horas} h"
     return (
         f"✅ *Modo Pro* listo por *{vigencia}*, {nombre}.\n\n"
-        "• Hoja heridas: *sincroniza la hoja de heridas*\n"
-        "• Analytics: *sincroniza la hoja de analytics*\n"
-        "• Salir: *SALIR PRO*\n\n"
-        "Los syncs van en cola estable: te confirmo aquí al terminar."
+        "Las hojas *Heridas* y *Analytics* se actualizan *solas cada minuto* "
+        "(ya no hace falta pedir sync por aquí).\n"
+        "Para salir: *SALIR PRO*"
     )
 
 

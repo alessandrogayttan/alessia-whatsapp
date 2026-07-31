@@ -37,6 +37,7 @@ from jobs import (
     frase_del_dia_background,
     limpiar_inscripciones_pendientes_background,
     procesar_cola_background,
+    procesar_trabajos_pesados_background,
     reindexar_rag_inpulso_background,
     renotificar_escalaciones_background,
     reporte_semanal_background,
@@ -46,10 +47,10 @@ from jobs import (
     sincronizar_catalogo_whatsapp_background,
     sincronizar_faq_conocimiento_background,
     sincronizar_heridas_background,
+    sincronizar_hojas_auto_minuto_background,
     sincronizar_web_background,
     trivia_semanal_background,
     verificar_lista_espera_background,
-    procesar_trabajos_pesados_background,
 )
 
 logging.basicConfig(
@@ -115,6 +116,7 @@ def _iniciar_scheduler():
     _add_job(scheduler, experiencia_diaria_background, "interval", minutes=15)
     _add_job(scheduler, procesar_cola_background, "interval", seconds=5)
     _add_job(scheduler, procesar_trabajos_pesados_background, "interval", seconds=5)
+    _add_job(scheduler, sincronizar_hojas_auto_minuto_background, "interval", minutes=1)
     _add_job(scheduler, sincronizar_faq_conocimiento_background, "interval", minutes=60)
     _add_job(scheduler, sincronizar_analytics_background, "interval", minutes=30)
     _add_job(scheduler, sincronizar_heridas_background, "interval", minutes=30)

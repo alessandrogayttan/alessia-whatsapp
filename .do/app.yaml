@@ -30,6 +30,8 @@ services:
         value: "0"
       - key: SYNC_HERIDAS_JOB
         value: "0"
+      - key: SYNC_HOJAS_AUTO_MINUTO
+        value: "1"
       - key: ENABLE_FICHA_HERIDAS_WA
         value: "0"
       - key: TOKEN_WHATSAPP

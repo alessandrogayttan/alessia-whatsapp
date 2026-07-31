@@ -1280,6 +1280,10 @@ def es_pregunta_estado_sync_heridas(texto: str) -> bool:
         "como va la hoja",
         "ya sincronizo",
         "ya actualizo",
+        "me confirmas",
+        "me confirmas?",
+        "confirmas",
+        "confirmame",
     )
     return any(p in n for p in pistas)
 

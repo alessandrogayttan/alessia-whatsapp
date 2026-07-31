@@ -188,6 +188,21 @@ def test_salir_pro_cierra_sesion(monkeypatch, db_temp):
     assert not sesion_equipo_activa("5233123456789")
 
 
+def test_salir_pro_sin_sesion_responde_claro(monkeypatch, db_temp):
+    _reload_config(
+        monkeypatch,
+        db_temp,
+        ENABLE_MODO_EQUIPO="1",
+        EQUIPO_CLAVE_ACCESO="inpulso2026",
+    )
+    from modo_equipo import procesar_preflight_equipo
+
+    respuesta = procesar_preflight_equipo("5233123456789", "SALIR PRO")
+    assert respuesta is not None
+    assert "modo pro" in respuesta.lower()
+    assert "no había" in respuesta.lower() or "no habia" in respuesta.lower()
+
+
 def test_procesar_mensaje_ia_rutea_equipo_con_sesion(monkeypatch, db_temp):
     _reload_config(
         monkeypatch, db_temp, ENABLE_MODO_EQUIPO="1", EQUIPO_CLAVE_ACCESO="inpulso2026"

@@ -1677,6 +1677,24 @@ def activar_sesion_equipo(telefono: str, nombre_miembro: str, horas: int) -> Non
         )
 
 
+def renovar_sesion_equipo(telefono: str, horas: int) -> bool:
+    """Extiende la sesión Modo Pro activa (evita «caer» a recepción tras sync/uso)."""
+    if not sesion_equipo_activa(telefono):
+        return False
+    ahora = _utcnow()
+    expira = (ahora + timedelta(hours=horas)).isoformat()
+    with _transaction() as conn:
+        conn.execute(
+            """
+            UPDATE equipo_acceso
+            SET expira_at = ?, actualizado_at = ?
+            WHERE telefono = ? AND sesion_activa = 1
+            """,
+            (expira, ahora.isoformat(), telefono),
+        )
+    return True
+
+
 def cerrar_sesion_equipo(telefono: str) -> None:
     with _transaction() as conn:
         conn.execute(

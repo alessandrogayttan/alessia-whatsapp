@@ -22,7 +22,7 @@ from tools import obtener_contexto_fecha_actual
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION = "equipo-2026-07-30b"
+PROMPT_VERSION = "equipo-2026-07-31a"
 MARCADOR_IA = "__EQUIPO_IA__"
 
 _memoria_equipo: dict[str, object] = {}
@@ -168,6 +168,7 @@ ENSEÑAR A ALESSIA PARA PACIENTES (CRÍTICO):
   "sincroniza la hoja de heridas" o similar, llama *sincronizar_panel_heridas*.
   Confirma el resultado (cuántos inscritos/interesados y el link).
   Esto solo está disponible en *Modo Pro*.
+- HOJA ANALYTICS: si piden "sincroniza la hoja de analytics" o similar, llama *sincronizar_panel_analytics*.
 - Eso se sincroniza a Google Sheets (hoja Conocimiento) para Alessandro/desarrollo.
 
 LÍMITES SANOS:
@@ -185,6 +186,7 @@ def _crear_chat_equipo(telefono: str, nombre: str, modelo: str):
         listar_conocimiento_pacientes,
     )
     from heridas_sheet import sincronizar_panel_heridas
+    from analytics import sincronizar_panel_analytics
 
     conv = clave_conversacion_equipo(telefono)
     return _cliente().chats.create(
@@ -198,6 +200,7 @@ def _crear_chat_equipo(telefono: str, nombre: str, modelo: str):
                 listar_conocimiento_pacientes,
                 borrar_conocimiento_pacientes,
                 sincronizar_panel_heridas,
+                sincronizar_panel_analytics,
             ],
         ),
     )
@@ -249,8 +252,9 @@ def _mensaje_acceso_ok(nombre: str) -> str:
     horas = config.EQUIPO_SESION_HORAS
     return (
         f"✅ *Modo Pro* listo por *{horas} h*, {nombre}.\n\n"
-        "Para la hoja heridas: *sincroniza la hoja de heridas*\n"
-        "Para salir: *SALIR PRO*"
+        "• Hoja heridas: *sincroniza la hoja de heridas*\n"
+        "• Analytics: *sincroniza la hoja de analytics*\n"
+        "• Salir: *SALIR PRO*"
     )
 
 
@@ -274,9 +278,14 @@ def procesar_preflight_equipo(telefono: str, texto: str) -> str | None:
                 "Listo, salí de *Modo Pro*. Vuelvo a recepción 😊\n"
                 "Para entrar de nuevo escribe *MODO PRO*."
             )
-        return None
+        # No caer a recepción/taller: el equipo escribió SALIR PRO a propósito
+        return (
+            "No había una sesión de *Modo Pro* activa.\n"
+            "Para entrar escribe *MODO PRO*."
+        )
 
     if sesion_equipo_activa(telefono):
+        storage.renovar_sesion_equipo(telefono, config.EQUIPO_SESION_HORAS)
         if norm in _COMANDOS_ENTRADA or _es_solicitud_acceso_equipo(limpio):
             return (
                 "Ya estás en *Modo Pro* ✅ ¿En qué te ayudo?\n"

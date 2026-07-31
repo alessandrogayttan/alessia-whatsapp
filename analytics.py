@@ -290,7 +290,7 @@ def _tabla_actividad_compacta(
     return filas[-max_filas:]
 
 
-def actualizar_analytics(*, dias: int = 90) -> str:
+def actualizar_analytics(*, dias: int = 90, con_grafico: bool = True) -> str:
     if not config.ID_HOJA_CALCULO:
         return "ID_HOJA_CALCULO no configurado"
 
@@ -465,22 +465,94 @@ def actualizar_analytics(*, dias: int = 90) -> str:
     except Exception as e:
         logger.warning("Formato Analytics: %s", e)
 
-    try:
-        _crear_grafico(service, sheet_id, act_header_row, len(actividad) or 1)
-    except Exception as e:
-        logger.warning("Gráfico Analytics: %s", e)
+    if con_grafico:
+        try:
+            _crear_grafico(service, sheet_id, act_header_row, len(actividad) or 1)
+        except Exception as e:
+            logger.warning("Gráfico Analytics: %s", e)
 
     url = (
         f"https://docs.google.com/spreadsheets/d/{config.ID_HOJA_CALCULO}/edit#gid={sheet_id}"
     )
     logger.info(
-        "Analytics OK (faq=%s, msgs=%s, act=%s)",
+        "Analytics OK (faq=%s, msgs=%s, act=%s, grafico=%s)",
         len(faq_todas),
         len(recientes),
         len(actividad),
+        con_grafico,
     )
     return url
 
 
 def inicializar_analytics() -> str:
     return actualizar_analytics(dias=90)
+
+
+def url_hoja_analytics() -> str:
+    sid = (config.ID_HOJA_CALCULO or "").strip()
+    if not sid:
+        return ""
+    return f"https://docs.google.com/spreadsheets/d/{sid}/edit"
+
+
+def sincronizar_panel_analytics() -> str:
+    """Modo Pro / WhatsApp: datos Analytics sin recrear gráfico (más estable)."""
+    try:
+        url = actualizar_analytics(dias=90, con_grafico=False)
+        storage.guardar_app_config("analytics_sync_ok", datetime.now(ZONA).strftime("%Y-%m-%d %H:%M:%S"))
+        storage.guardar_app_config("analytics_sync_error", "")
+        storage.guardar_app_config("analytics_sync_detalle", str(url)[:500])
+        return (
+            "ÉXITO: Pestaña *Analytics* actualizada en Google Sheets.\n"
+            f"• Link: {url or url_hoja_analytics()}\n"
+            "Abre la pestaña *Analytics* (métricas, FAQ, actividad)."
+        )
+    except Exception as e:
+        msg = f"{type(e).__name__}: {e}"
+        storage.guardar_app_config("analytics_sync_error", msg[:800])
+        logger.exception("sincronizar_panel_analytics")
+        return f"ERROR: No pude actualizar Analytics ({msg})."
+
+
+def es_pedido_sync_panel_analytics(texto: str) -> bool:
+    if not texto:
+        return False
+    n = texto.lower()
+    for a, b in (("á", "a"), ("é", "e"), ("í", "i"), ("ó", "o"), ("ú", "u")):
+        n = n.replace(a, b)
+    n = re.sub(r"\s+", " ", n).strip()
+    if "analytic" not in n and "analitica" not in n and "analiticas" not in n:
+        return False
+    if re.search(
+        r"(sincroniz\w*|actualiz\w*|llen\w*|refresc\w*|sync)\w*.{0,40}"
+        r"(hoja|sheet|panel|pestana|tab|analytic)",
+        n,
+    ):
+        return True
+    if re.search(r"(hoja|panel|sheet).{0,30}analytic", n) and re.search(
+        r"(sincroniz|actualiz|llen|refresc|sync)", n
+    ):
+        return True
+    if re.search(r"\b(sync|sincroniza|sincronizar|actualiza|actualizar)\s+analytics?\b", n):
+        return True
+    return False
+
+
+def intentar_comando_sync_analytics(
+    telefono: str,
+    texto: str,
+    *,
+    requerir_modo_pro: bool = True,
+) -> str | None:
+    if not es_pedido_sync_panel_analytics(texto):
+        return None
+    if requerir_modo_pro and not storage.sesion_equipo_activa(telefono):
+        return None
+    quien = (
+        config.identificar_personal_inpulso(telefono)
+        or storage.obtener_nombre_equipo_sesion(telefono)
+        or "Equipo"
+    )
+    logger.info("Sync analytics por Modo Pro de %s (%s)", quien, telefono[-4:])
+    resultado = sincronizar_panel_analytics()
+    return f"Listo, *{quien}* ✨\n\n{resultado}"

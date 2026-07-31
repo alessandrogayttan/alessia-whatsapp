@@ -47,3 +47,34 @@ def test_faq_incluye_whatsapp(db_temp):
     storage.registrar_pregunta_frecuente("precio sara", "523399999999")
     top = storage.top_preguntas_frecuentes(5)
     assert top[0].get("ejemplo_telefono") == "523399999999"
+
+
+def test_es_pedido_sync_panel_analytics():
+    from analytics import es_pedido_sync_panel_analytics
+
+    assert es_pedido_sync_panel_analytics("sincroniza la hoja de analytics")
+    assert es_pedido_sync_panel_analytics("Actualiza analytics por favor")
+    assert es_pedido_sync_panel_analytics("sync analytics")
+    assert not es_pedido_sync_panel_analytics("sincroniza la hoja de heridas")
+    assert not es_pedido_sync_panel_analytics("quiero ver analytics del taller")
+
+
+def test_comando_sync_analytics_requiere_modo_pro(monkeypatch, db_temp):
+    import storage
+    from analytics import intentar_comando_sync_analytics
+
+    monkeypatch.setattr(
+        "analytics.sincronizar_panel_analytics",
+        lambda: "ÉXITO: ok",
+    )
+    assert (
+        intentar_comando_sync_analytics(
+            "523310265936", "sincroniza la hoja de analytics", requerir_modo_pro=True
+        )
+        is None
+    )
+    storage.activar_sesion_equipo("523310265936", "Alessandro", 12)
+    out = intentar_comando_sync_analytics(
+        "523310265936", "sincroniza la hoja de analytics", requerir_modo_pro=True
+    )
+    assert out and "ÉXITO" in out

@@ -1068,35 +1068,23 @@ def marcar_interesado_como_inscrito(telefono: str) -> None:
 
 def sincronizar_panel_heridas() -> str:
     """
-    Modo Pro: actualiza tablas heridas. Dashboard completo (gráficas) es opcional
-    porque puede colgarse varios minutos y WhatsApp nunca confirma.
+    Modo Pro: actualiza tablas heridas. NO regenera gráficas aquí:
+    eso tumba el worker en basic-xs justo después del sync.
+    Gráficas: /ops/sync-heridas?completo=1
     """
     try:
         out = sincronizar_heridas_datos()
         storage.guardar_app_config("heridas_sync_ok", _ahora())
         storage.guardar_app_config("heridas_sync_error", "")
         storage.guardar_app_config("heridas_sync_detalle", str(out)[:800])
-        # Cupo/gráficas en segundo plano suave (no bloquea la respuesta)
-        try:
-            import threading
-
-            def _dash():
-                try:
-                    actualizar_dashboard_heridas()
-                except Exception as e:
-                    logger.warning("Dashboard heridas post-sync: %s", e)
-
-            threading.Thread(target=_dash, daemon=True).start()
-        except Exception:
-            pass
         return (
             "ÉXITO: Panel del taller heridas actualizado en Google Sheets.\n"
             f"• Inscritos: {out.get('inscritos', 0)}\n"
             f"• Interesados: {out.get('interesados', 0)}\n"
             f"• Meta cupo presencial: {out.get('cupo_presencial_meta', CUPO_PRESENCIAL)}\n"
             f"• Link: {out.get('url') or url_hoja_heridas()}\n"
-            "Abre *Heridas_Cupo*, *Heridas_Inscritos* y *Heridas_Interesados* "
-            "(las gráficas se refrescan en unos segundos)."
+            "Abre *Heridas_Cupo*, *Heridas_Inscritos* y *Heridas_Interesados*.\n"
+            "(Las gráficas de cupo se actualizan con sync completo en ops, no en WhatsApp.)"
         )
     except Exception as e:
         msg = f"{type(e).__name__}: {e}"

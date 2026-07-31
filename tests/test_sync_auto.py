@@ -24,7 +24,7 @@ def test_sync_auto_minuto_ejecuta_ligero(monkeypatch, db_temp):
     sincronizar_hojas_auto_minuto_background()
     assert "heridas" in llamados
     assert any(c[0] == "analytics" for c in llamados if isinstance(c, tuple))
-    assert llamados[-1][1].get("con_grafico") is True
+    assert llamados[-1][1].get("con_grafico") is False
 
 
 def test_sync_auto_minuto_off_por_defecto(monkeypatch, db_temp):

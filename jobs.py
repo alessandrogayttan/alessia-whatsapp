@@ -703,11 +703,11 @@ def sincronizar_hojas_auto_minuto_background():
         storage.guardar_app_config("heridas_sync_error", "")
         storage.guardar_app_config("heridas_sync_detalle", str(out_h)[:800])
 
-        # Analytics completo: barra 0-100 + colores + gráficas heridas
+        # Datos cada minuto (ligero). Barra de texto sí; colores/gráficas cada 30 min.
         url_a = actualizar_analytics(
             dias=60,
-            con_grafico=True,
-            con_formato=True,
+            con_grafico=False,
+            con_formato=False,
             con_calendario=False,
         )
         storage.guardar_app_config(
@@ -773,7 +773,7 @@ def sincronizar_heridas_background():
 
 
 def sincronizar_hojas_graficos_background():
-    """Cada 15 min: refresca gráficas (más pesado; no cada minuto)."""
+    """Cada 30 min: gráficas Analytics (pesado; no cada minuto)."""
     import os
 
     if os.getenv("SYNC_HOJAS_AUTO_MINUTO", "1").strip().lower() not in (
@@ -787,26 +787,27 @@ def sincronizar_hojas_graficos_background():
     if not config.ID_HOJA_CALCULO:
         return
     ahora = datetime.datetime.now(ZONA)
-    if ahora.minute % 15 != 0:
+    if ahora.minute % 30 != 0:
         return
     clave = f"sync_charts_{ahora.strftime('%Y%m%d%H%M')}"
     if not storage.reclamar_recordatorio(clave, "global"):
         return
     try:
         from analytics import actualizar_analytics
-        from heridas_sheet import actualizar_dashboard_heridas
 
         actualizar_analytics(
             dias=60, con_grafico=True, con_formato=True, con_calendario=False
         )
-        try:
-            actualizar_dashboard_heridas()
-        except Exception as e:
-            logger.warning("Dashboard heridas 15min: %s", e)
-        logger.info("Sync gráficas 15min OK")
+        storage.guardar_app_config(
+            "analytics_charts_ok", ahora.strftime("%Y-%m-%d %H:%M:%S")
+        )
+        logger.info("Sync gráficas Analytics 30min OK")
     except Exception as e:
         storage.liberar_recordatorio(clave, "global")
-        logger.exception("Sync gráficas 15min: %s", e)
+        storage.guardar_app_config(
+            "hojas_auto_sync_error", f"graficos: {type(e).__name__}: {e}"[:800]
+        )
+        logger.exception("Sync gráficas 30min: %s", e)
 
 
 def forzar_sync_hojas_conocimiento_analytics() -> dict:

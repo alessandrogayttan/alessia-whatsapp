@@ -48,6 +48,7 @@ from jobs import (
     sincronizar_faq_conocimiento_background,
     sincronizar_heridas_background,
     sincronizar_hojas_auto_minuto_background,
+    sincronizar_hojas_graficos_background,
     sincronizar_web_background,
     trivia_semanal_background,
     verificar_lista_espera_background,
@@ -117,6 +118,7 @@ def _iniciar_scheduler():
     _add_job(scheduler, procesar_cola_background, "interval", seconds=5)
     _add_job(scheduler, procesar_trabajos_pesados_background, "interval", seconds=5)
     _add_job(scheduler, sincronizar_hojas_auto_minuto_background, "interval", minutes=1)
+    _add_job(scheduler, sincronizar_hojas_graficos_background, "interval", minutes=1)
     _add_job(scheduler, sincronizar_faq_conocimiento_background, "interval", minutes=60)
     _add_job(scheduler, sincronizar_analytics_background, "interval", minutes=30)
     _add_job(scheduler, sincronizar_heridas_background, "interval", minutes=30)
@@ -273,6 +275,23 @@ def health_ready():
     except Exception:
         pass
 
+    import os
+
+    sync_info = {
+        "auto_minuto": os.getenv("SYNC_HOJAS_AUTO_MINUTO", "0"),
+        "heridas_ok": "",
+        "analytics_ok": "",
+        "auto_error": "",
+    }
+    try:
+        sync_info["heridas_ok"] = storage.obtener_app_config("heridas_sync_ok", "")
+        sync_info["analytics_ok"] = storage.obtener_app_config("analytics_sync_ok", "")
+        sync_info["auto_error"] = storage.obtener_app_config("hojas_auto_sync_error", "")
+        if sync_info["auto_error"]:
+            advertencias.append(f"Sync auto hojas: {sync_info['auto_error'][:180]}")
+    except Exception:
+        pass
+
     db_ok = True
     try:
         Path(config.DATABASE_PATH).parent.mkdir(parents=True, exist_ok=True)
@@ -289,6 +308,7 @@ def health_ready():
         "scheduler": config.ENABLE_SCHEDULER and _scheduler_iniciado,
         "bloqueantes": bloqueantes,
         "advertencias": advertencias,
+        "sync_hojas": sync_info,
     }
     return payload, 200 if listo else 503
 
@@ -388,8 +408,26 @@ def ops_sync_analytics():
         if not hmac.compare_digest(token, config.HEALTH_CONFIG_SECRET):
             return jsonify({"error": "Forbidden"}), 403
     out = forzar_sync_hojas_conocimiento_analytics()
-    code = 200 if out.get("analytics") and not out.get("error") else 500
+    code = 200 if not out.get("error") else 500
     return jsonify(out), code
+
+
+@app.route("/panel", methods=["GET"])
+def panel_alessia():
+    """Métricas en vivo (SQLite). En prod requiere ?secret=HEALTH_CONFIG_SECRET."""
+    import hmac
+
+    from flask import Response
+
+    if config.IS_PRODUCTION:
+        if not config.HEALTH_CONFIG_SECRET:
+            return {"error": "Not configured"}, 404
+        token = request.args.get("secret") or request.headers.get("X-Health-Secret", "")
+        if not hmac.compare_digest(token, config.HEALTH_CONFIG_SECRET):
+            return {"error": "Forbidden"}, 403
+    from panel_web import render_panel_html
+
+    return Response(render_panel_html(), mimetype="text/html; charset=utf-8")
 
 
 @app.route("/health/config", methods=["GET"])

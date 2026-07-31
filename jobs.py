@@ -771,6 +771,43 @@ def sincronizar_heridas_background():
         logger.error("Error sync heridas background: %s", e)
 
 
+def sincronizar_hojas_graficos_background():
+    """Cada 15 min: refresca gráficas (más pesado; no cada minuto)."""
+    import os
+
+    if os.getenv("SYNC_HOJAS_AUTO_MINUTO", "0").strip().lower() not in (
+        "1",
+        "true",
+        "yes",
+        "si",
+        "sí",
+    ):
+        return
+    if not config.ID_HOJA_CALCULO:
+        return
+    ahora = datetime.datetime.now(ZONA)
+    if ahora.minute % 15 != 0:
+        return
+    clave = f"sync_charts_{ahora.strftime('%Y%m%d%H%M')}"
+    if not storage.reclamar_recordatorio(clave, "global"):
+        return
+    try:
+        from analytics import actualizar_analytics
+        from heridas_sheet import actualizar_dashboard_heridas
+
+        actualizar_analytics(
+            dias=60, con_grafico=True, con_formato=True, con_calendario=False
+        )
+        try:
+            actualizar_dashboard_heridas()
+        except Exception as e:
+            logger.warning("Dashboard heridas 15min: %s", e)
+        logger.info("Sync gráficas 15min OK")
+    except Exception as e:
+        storage.liberar_recordatorio(clave, "global")
+        logger.exception("Sync gráficas 15min: %s", e)
+
+
 def forzar_sync_hojas_conocimiento_analytics() -> dict:
     """Sync inmediato al arrancar o vía endpoint ops."""
     out: dict = {"faq": None, "analytics": None, "heridas": None, "error": None}

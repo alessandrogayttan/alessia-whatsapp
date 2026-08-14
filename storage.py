@@ -18,7 +18,13 @@ def _utcnow() -> datetime:
 
 
 def _ensure_db_dir():
-    Path(config.DATABASE_PATH).parent.mkdir(parents=True, exist_ok=True)
+    parent = Path(config.DATABASE_PATH).parent
+    try:
+        parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        fallback = config.DATA_DIR / "alessia.db"
+        fallback.parent.mkdir(parents=True, exist_ok=True)
+        config.DATABASE_PATH = str(fallback)
 
 
 def _connect():

@@ -15,23 +15,72 @@ FLASK_ENV = os.getenv("FLASK_ENV", "development")
 IS_PRODUCTION = FLASK_ENV == "production"
 
 
-def ruta_sqlite(raw: str | None, *, produccion: bool) -> str:
-    """En producción siempre /data (volumen). Evita data/alessia.db efímero que se borra en cada deploy."""
-    valor = (raw or "").strip()
-    if produccion:
-        if valor.startswith("/data/"):
-            return valor
-        return "/data/alessia.db"
-    return valor or str(DATA_DIR / "alessia.db")
+def directorio_escribible(parent: Path) -> bool:
+    try:
+        parent.mkdir(parents=True, exist_ok=True)
+        probe = parent / ".alessia_write_probe"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+        return True
+    except OSError:
+        return False
 
 
-def ruta_backups(raw: str | None, *, produccion: bool) -> str:
+def ruta_sqlite(
+    raw: str | None,
+    *,
+    produccion: bool,
+    data_dir: Path | None = None,
+    comprobar: bool = True,
+) -> str:
+    """Prefiere /data en producción si el volumen está montado; si no, no tumba el arranque."""
+    base = Path(data_dir) if data_dir is not None else DATA_DIR
     valor = (raw or "").strip()
+    candidatos: list[str] = []
     if produccion:
         if valor.startswith("/data/"):
-            return valor
-        return "/data/backups"
-    return valor or str(DATA_DIR / "backups")
+            candidatos.append(valor)
+        else:
+            candidatos.append("/data/alessia.db")
+    if valor and valor not in candidatos:
+        candidatos.append(valor)
+    fallback = str(base / "alessia.db")
+    if fallback not in candidatos:
+        candidatos.append(fallback)
+    if not comprobar:
+        return candidatos[0]
+    for ruta in candidatos:
+        if directorio_escribible(Path(ruta).parent):
+            return ruta
+    return fallback
+
+
+def ruta_backups(
+    raw: str | None,
+    *,
+    produccion: bool,
+    data_dir: Path | None = None,
+    comprobar: bool = True,
+) -> str:
+    base = Path(data_dir) if data_dir is not None else DATA_DIR
+    valor = (raw or "").strip()
+    candidatos: list[str] = []
+    if produccion:
+        if valor.startswith("/data/"):
+            candidatos.append(valor)
+        else:
+            candidatos.append("/data/backups")
+    if valor and valor not in candidatos:
+        candidatos.append(valor)
+    fallback = str(base / "backups")
+    if fallback not in candidatos:
+        candidatos.append(fallback)
+    if not comprobar:
+        return candidatos[0]
+    for ruta in candidatos:
+        if directorio_escribible(Path(ruta)):
+            return ruta
+    return fallback
 
 
 TOKEN_WHATSAPP = os.getenv("TOKEN_WHATSAPP", "")

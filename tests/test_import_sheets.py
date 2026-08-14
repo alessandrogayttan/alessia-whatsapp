@@ -53,7 +53,7 @@ def test_import_sheets_copia_faq_y_inscritos(db_temp, monkeypatch):
     assert filas[0][1] == "Ana"
     html = __import__("panel_web").render_panel_html()
     assert "Ana" in html
-    assert "Importado de Sheets" in html
+    assert "inscritos" in html.lower()
 
 
 def test_lanzar_no_repite_si_ya_ok(db_temp):

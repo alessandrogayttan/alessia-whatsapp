@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import html
+import re
 from datetime import datetime
 
 import pytz
@@ -11,28 +12,78 @@ import storage
 ZONA = pytz.timezone("America/Mexico_City")
 META_CUPO = 100
 
+_NOMBRES_PESTANA = {
+    "Heridas_Inscritos": "Heridas · inscritos",
+    "Heridas_Interesados": "Heridas · interesados",
+    "FAQ_Pacientes": "FAQ pacientes",
+    "Inscripciones": "Inscripciones",
+    "PagosCitas": "Pagos de citas",
+    "Conocimiento": "Conocimiento clínico",
+    "Lista_Espera": "Lista de espera",
+}
+
 
 def _esc(v) -> str:
     return html.escape(str(v if v is not None else ""))
 
 
-def _filas(headers: list[str], rows: list[list], vacio: str) -> str:
+def _clase_estado(texto: str) -> str:
+    t = unicodedata_fold(texto)
+    if re.search(r"\bpagad", t) or t in {"paid", "ok pago"}:
+        return "pill pill-ok"
+    if re.search(r"\bpendiente|\bespera", t):
+        return "pill pill-warn"
+    if re.search(r"\bcancel|\brechaz|\bfallo|\berror", t):
+        return "pill pill-bad"
+    if re.search(r"\binscrit", t):
+        return "pill pill-info"
+    return ""
+
+
+def unicodedata_fold(texto: str) -> str:
+    import unicodedata
+
+    t = unicodedata.normalize("NFD", (texto or "").strip().lower())
+    return "".join(c for c in t if unicodedata.category(c) != "Mn")
+
+
+def _celda(valor) -> str:
+    s = "" if valor is None else str(valor)
+    cls = _clase_estado(s)
+    if cls:
+        return f'<td><span class="{cls}">{_esc(s)}</span></td>'
+    return f"<td>{_esc(s)}</td>"
+
+
+def _tabla(headers: list[str], rows: list[list], vacio: str) -> str:
     head = "".join(f"<th>{_esc(h)}</th>" for h in headers)
     if not rows:
-        body = f"<tr><td colspan='{len(headers)}'>{_esc(vacio)}</td></tr>"
+        body = f"<tr><td colspan='{len(headers)}' class='vacio'>{_esc(vacio)}</td></tr>"
     else:
         body = "".join(
-            "<tr>" + "".join(f"<td>{_esc(c)}</td>" for c in row) + "</tr>" for row in rows
+            "<tr>" + "".join(_celda(c) for c in row) + "</tr>" for row in rows
         )
-    return f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
+    return (
+        f"<div class='sheet'><table><thead><tr>{head}</tr></thead>"
+        f"<tbody>{body}</tbody></table></div>"
+    )
+
+
+def _seccion(kicker: str, titulo: str, cuerpo: str, nota: str = "") -> str:
+    n = f"<p class='nota'>{_esc(nota)}</p>" if nota else ""
+    return (
+        f"<section class='block'>"
+        f"<p class='kicker'>{_esc(kicker)}</p>"
+        f"<h2>{_esc(titulo)}</h2>{n}{cuerpo}</section>"
+    )
 
 
 def _color_barra(pct: float) -> str:
     if pct >= 90:
-        return "#c64a49"
+        return "#b42318"
     if pct >= 70:
-        return "#e08a2c"
-    return "#2d8a5e"
+        return "#b54708"
+    return "#067647"
 
 
 def render_panel_html() -> str:
@@ -113,20 +164,43 @@ def render_panel_html() -> str:
 
     bloques_imp = []
     for meta in pestanas_imp:
-        nombre = meta.get("pestana") or ""
+        clave = meta.get("pestana") or ""
+        titulo = _NOMBRES_PESTANA.get(clave, clave)
         heads = meta.get("encabezados") or ["Columna"]
-        rows = storage.listar_filas_importadas(nombre, 150)
+        rows = storage.listar_filas_importadas(clave, 150)
+        n = meta.get("filas", 0)
         bloques_imp.append(
-            f"<h2>Importado de Sheets · {_esc(nombre)} ({_esc(meta.get('filas', 0))} filas)</h2>"
-            f"<div class='wrap'>{_filas(heads, rows, 'Sin filas')}</div>"
+            _seccion(
+                "Copia histórica de Sheets",
+                f"{titulo} · {n} filas",
+                _tabla(heads, rows, "Sin filas en esta tabla"),
+            )
         )
-    html_import = "".join(bloques_imp) or (
-        "<p class='nota'>Aún no hay copia de Sheets. Cuando el equipo lance la importación única, "
-        "aparece aquí y de ahí en adelante solo se actualiza esta base.</p>"
+    html_import = "".join(bloques_imp) or _seccion(
+        "Copia histórica de Sheets",
+        "Sin importación todavía",
+        "<p class='nota'>Cuando se lance la importación única, las tablas aparecen aquí.</p>",
     )
     nota_import = import_estado or "sin importar"
     if import_resumen:
         nota_import = f"{nota_import} · {import_resumen}"
+
+    kpis = [
+        (hist.get("mensajes_totales", 0), "Mensajes totales"),
+        (hist.get("mensajes_pacientes", 0), "Mensajes de pacientes"),
+        (ops.get("conversaciones_activas", 0), "Conversaciones"),
+        (hist.get("pacientes", 0), "Pacientes"),
+        (hist.get("faq_veces_totales", 0), "FAQ (veces)"),
+        (hist.get("menciones_heridas_totales", 0), "Menciones heridas"),
+        (n_her, "Cupo heridas (conteo)"),
+        (interes.get("interes_7d_heridas", 0), "Interés heridas 7 días"),
+        (hist.get("interes_talleres_activo", 0), "Interés talleres"),
+        (ops.get("escalaciones_pendientes", 0), "Escalaciones"),
+        (n_insc_imp, "Inscritos importados"),
+    ]
+    html_kpis = "".join(
+        f"<div class='kpi'><b>{_esc(v)}</b><span>{_esc(l)}</span></div>" for v, l in kpis
+    )
 
     return f"""<!doctype html>
 <html lang="es">
@@ -136,70 +210,109 @@ def render_panel_html() -> str:
 <meta http-equiv="refresh" content="30"/>
 <title>Panel Alessia · Inpulso 43</title>
 <style>
-  :root {{ --bg:#f4f0ea; --ink:#1c2430; --muted:#5b6570; --card:#fff; --line:#e4ddd3; --acc:#2d4f82; }}
-  body {{ margin:0; font-family: "Segoe UI", system-ui, sans-serif; background:var(--bg); color:var(--ink); }}
-  main {{ max-width:1180px; margin:0 auto; padding:20px 14px 48px; }}
-  h1 {{ font-size:1.45rem; margin:0 0 4px; }}
-  h2 {{ font-size:1.02rem; margin:26px 0 8px; color:var(--acc); }}
-  .sub {{ color:var(--muted); margin-bottom:16px; font-size:.92rem; }}
-  .grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:16px; }}
-  .card {{ background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; }}
-  .card b {{ display:block; font-size:1.35rem; color:var(--acc); }}
-  .card span {{ color:var(--muted); font-size:.8rem; }}
-  table {{ width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); }}
-  th, td {{ text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); font-size:.84rem; vertical-align:top; }}
-  th {{ background:#e8eef6; position:sticky; top:0; }}
-  .wrap {{ max-height:420px; overflow:auto; border:1px solid var(--line); }}
-  .meta {{ color:var(--muted); font-size:.82rem; margin-top:18px; }}
-  .barra-ext {{ background:#e6e6e8; height:22px; border-radius:4px; overflow:hidden; margin:8px 0 4px; }}
+  :root {{
+    --bg:#f3f1ec; --ink:#122033; --muted:#5c6b7a; --card:#fff;
+    --line:#e2e0d8; --acc:#1f4e79; --ok:#067647; --okbg:#ecfdf3;
+    --warn:#b54708; --warnbg:#fff6ed; --bad:#b42318; --badbg:#fef3f2;
+    --info:#175cd3; --infobg:#eff8ff;
+  }}
+  * {{ box-sizing:border-box; }}
+  body {{
+    margin:0; color:var(--ink);
+    font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+    background:
+      radial-gradient(900px 280px at 10% -10%, #d9e6f5 0%, transparent 55%),
+      var(--bg);
+  }}
+  header.top {{
+    background:#122033; color:#f7f4ee; padding:22px 20px 18px;
+    border-bottom:3px solid #c4a574;
+  }}
+  header.top h1 {{ margin:0; font-size:1.35rem; font-weight:600; letter-spacing:.02em; }}
+  header.top .sub {{ margin:8px 0 0; color:#c9d4e0; font-size:.82rem; }}
+  main {{ max-width:1240px; margin:0 auto; padding:22px 16px 56px; }}
+  .kpis {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(148px,1fr)); gap:10px; margin:18px 0 8px; }}
+  .kpi {{
+    background:var(--card); border:1px solid var(--line); border-radius:10px;
+    padding:14px 12px; box-shadow:0 1px 0 rgba(18,32,51,.04);
+  }}
+  .kpi b {{ display:block; font-size:1.45rem; font-variant-numeric:tabular-nums; color:var(--acc); }}
+  .kpi span {{ display:block; margin-top:4px; color:var(--muted); font-size:.72rem; letter-spacing:.04em; text-transform:uppercase; }}
+  .block {{
+    background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:16px 16px 12px; margin:16px 0; box-shadow:0 8px 24px rgba(18,32,51,.04);
+  }}
+  .kicker {{
+    margin:0 0 4px; font-size:.7rem; letter-spacing:.14em; text-transform:uppercase;
+    color:#8a6a3b; font-weight:600;
+  }}
+  h2 {{ font-size:1.05rem; margin:0 0 10px; font-weight:600; }}
+  .nota {{ font-size:.82rem; color:var(--muted); margin:0 0 10px; }}
+  .sheet {{ max-height:440px; overflow:auto; border:1px solid var(--line); border-radius:8px; }}
+  table {{ width:100%; border-collapse:separate; border-spacing:0; }}
+  th, td {{
+    text-align:left; padding:9px 11px; font-size:.84rem; vertical-align:top;
+    border-bottom:1px solid var(--line);
+  }}
+  th {{
+    position:sticky; top:0; background:#1f4e79; color:#fff; font-weight:600;
+    font-size:.75rem; letter-spacing:.04em; text-transform:uppercase; z-index:1;
+  }}
+  tbody tr:nth-child(even) {{ background:#faf8f4; }}
+  tbody tr:hover {{ background:#eef4fb; }}
+  td.vacio {{ color:var(--muted); font-style:italic; }}
+  .pill {{
+    display:inline-block; padding:2px 9px; border-radius:999px; font-size:.75rem;
+    font-weight:650; letter-spacing:.03em; text-transform:uppercase;
+  }}
+  .pill-ok {{ background:var(--okbg); color:var(--ok); }}
+  .pill-warn {{ background:var(--warnbg); color:var(--warn); }}
+  .pill-bad {{ background:var(--badbg); color:var(--bad); }}
+  .pill-info {{ background:var(--infobg); color:var(--info); }}
+  .barra-ext {{ background:#ece9e2; height:14px; border-radius:99px; overflow:hidden; }}
   .barra-int {{ height:100%; width:{pct:.1f}%; background:{color}; }}
-  .nota {{ font-size:.85rem; color:var(--muted); margin:0 0 12px; }}
+  .meta {{ color:var(--muted); font-size:.78rem; margin-top:22px; }}
+  nav.toc {{ display:flex; flex-wrap:wrap; gap:8px; margin:14px 0 0; }}
+  nav.toc a {{
+    color:#d7c4a3; font-size:.75rem; text-decoration:none; border:1px solid #3a4d63;
+    padding:4px 8px; border-radius:999px;
+  }}
 </style>
 </head>
 <body>
+<header class="top">
+  <h1>Inpulso 43 · Panel analítico Alessia</h1>
+  <p class="sub">{_esc(ahora)} hora México · actualización cada 30 s · fuente: base del servidor · {_esc(nota_import)}</p>
+  <nav class="toc">
+    <a href="#kpis">Resumen</a>
+    <a href="#cupo">Cupo heridas</a>
+    <a href="#vivo">Actividad en vivo</a>
+    <a href="#historico">Histórico Sheets</a>
+  </nav>
+</header>
 <main>
-  <h1>Panel Alessia · Equipo Inpulso</h1>
-  <p class="sub">Base en vivo (SQLite) · {_esc(ahora)} hora México · recarga cada 30 s · import Sheets: {_esc(nota_import)}</p>
+  <div id="kpis" class="kpis">{html_kpis}</div>
 
-  <div class="grid">
-    <div class="card"><b>{_esc(hist.get('mensajes_totales', 0))}</b><span>Mensajes totales</span></div>
-    <div class="card"><b>{_esc(hist.get('mensajes_pacientes', 0))}</b><span>Mensajes de pacientes</span></div>
-    <div class="card"><b>{_esc(ops.get('conversaciones_activas', 0))}</b><span>Conversaciones</span></div>
-    <div class="card"><b>{_esc(hist.get('pacientes', 0))}</b><span>Pacientes</span></div>
-    <div class="card"><b>{_esc(hist.get('faq_veces_totales', 0))}</b><span>FAQ (veces)</span></div>
-    <div class="card"><b>{_esc(hist.get('menciones_heridas_totales', 0))}</b><span>Menciones heridas</span></div>
-    <div class="card"><b>{_esc(n_her)}</b><span>Interés heridas activo</span></div>
-    <div class="card"><b>{_esc(interes.get('interes_7d_heridas', 0))}</b><span>Interés heridas 7 días</span></div>
-    <div class="card"><b>{_esc(hist.get('interes_talleres_activo', 0))}</b><span>Interés talleres</span></div>
-    <div class="card"><b>{_esc(ops.get('escalaciones_pendientes', 0))}</b><span>Escalaciones</span></div>
+  <section class="block" id="cupo">
+    <p class="kicker">Taller heridas</p>
+    <h2>Ocupación vs meta {META_CUPO}</h2>
+    <p class="nota">Conteo combinado (interés Alessia + inscritos importados). Verde &lt;70% · ámbar 70–89% · rojo ≥90%.</p>
+    <div class="barra-ext"><div class="barra-int"></div></div>
+    <p class="nota">{n_her} de {META_CUPO} · {pct:.1f}% · {n_insc_imp} inscritos en la copia de Sheets</p>
+  </section>
+
+  <div id="vivo">
+  {_seccion("Operación en vivo", "Actividad por día", _tabla(["Fecha", "Mensajes", "Menciones heridas"], filas_act, "Sin actividad aún"))}
+  {_seccion("Operación en vivo", "Interesados en talleres", _tabla(["Fecha", "Nombre", "WhatsApp", "Taller", "Terapeuta"], filas_int, "Sin interesados aún"))}
+  {_seccion("Operación en vivo", "FAQ heridas / HISTORIA", _tabla(["Pregunta", "Veces", "Última", "WhatsApp"], filas_faq_h, "Sin FAQ de heridas aún"))}
+  {_seccion("Operación en vivo", "Todas las preguntas frecuentes", _tabla(["Pregunta", "Veces", "Última", "WhatsApp"], filas_faq, "Sin FAQ aún"))}
+  {_seccion("Operación en vivo", "Pacientes registrados", _tabla(["Alta", "Nombre", "WhatsApp"], filas_pac, "Sin pacientes aún"))}
+  {_seccion("Operación en vivo", "Últimos mensajes", _tabla(["Fecha", "WhatsApp", "Canal", "Mensaje"], filas_msg, "Sin mensajes aún"))}
   </div>
 
-  <h2>Taller heridas — cupo (interés Alessia vs meta {META_CUPO})</h2>
-  <p class="nota">Barra 0–100 con interés Alessia + inscritos copiados del Sheet (una sola vez). Verde &lt;70%, naranja 70–89%, rojo ≥90%.</p>
-  <div class="barra-ext"><div class="barra-int"></div></div>
-  <p class="nota">{n_her} / {META_CUPO} · {pct:.1f}% · inscritos importados: {n_insc_imp}</p>
+  <div id="historico">{html_import}</div>
 
-  <h2>Actividad Alessia (últimos días con movimiento)</h2>
-  <div class="wrap">{_filas(["Fecha", "Mensajes", "Menciones heridas"], filas_act, "Sin actividad aún")}</div>
-
-  <h2>Interesados en talleres (lista Alessia)</h2>
-  <div class="wrap">{_filas(["Fecha", "Nombre", "WhatsApp", "Taller", "Terapeuta"], filas_int, "Sin interesados aún")}</div>
-
-  <h2>FAQ heridas / HISTORIA</h2>
-  <div class="wrap">{_filas(["Pregunta", "Veces", "Última", "WhatsApp"], filas_faq_h, "Sin FAQ de heridas aún")}</div>
-
-  <h2>Todas las preguntas frecuentes</h2>
-  <div class="wrap">{_filas(["Pregunta", "Veces", "Última", "WhatsApp"], filas_faq, "Sin FAQ aún")}</div>
-
-  <h2>Pacientes registrados</h2>
-  <div class="wrap">{_filas(["Alta", "Nombre", "WhatsApp"], filas_pac, "Sin pacientes aún")}</div>
-
-  <h2>Últimos mensajes a Alessia</h2>
-  <div class="wrap">{_filas(["Fecha", "WhatsApp", "Canal", "Mensaje"], filas_msg, "Sin mensajes aún")}</div>
-
-  {html_import}
-
-  <p class="meta">Solo personal Inpulso. No compartir el enlace fuera del equipo (incluye teléfonos de pacientes).</p>
+  <p class="meta">Uso interno Inpulso. El enlace incluye teléfonos; no compartir fuera del equipo. Pagado se marca en verde, pendiente en ámbar, cancelado en rojo.</p>
 </main>
 </body>
 </html>"""

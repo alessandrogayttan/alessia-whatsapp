@@ -310,7 +310,7 @@ def render_panel_html() -> str:
 <body>
 <header class="top">
   <h1>Inpulso 43 · Panel analítico Alessia</h1>
-  <p class="sub">Hora México {_esc(ahora)} · esta página se recarga sola cada 30 s mientras la dejes abierta · {_esc(nota_import)}</p>
+  <p class="sub">Hora México {_esc(ahora)} · se actualiza en vivo · {_esc(nota_import)}</p>
   <nav class="toc">
     <a href="#guia">Cómo leerlo</a>
     <a href="#kpis">Resumen</a>
@@ -325,12 +325,11 @@ def render_panel_html() -> str:
     <p class="kicker">Cómo leer este panel</p>
     <h2>Guía para el equipo Inpulso</h2>
     <ul>
-      <li><strong>Se actualiza solo cada 30 segundos</strong> mientras esta pestaña esté abierta. No hay que pulsar nada. Si cierras la pestaña, se pausa; al volver a abrir el enlace, sigue.</li>
-      <li><strong>Números de arriba y “en vivo”</strong> = lo que Alessia está registrando ahora en WhatsApp (mensajes, interesados, pacientes).</li>
-      <li><strong>“Copia histórica de Sheets”</strong> = foto de las tablas que ya tenían en Google. Eso no se reescribe cada minuto (así no se cae Alessia). Lo nuevo de hoy aparece en las secciones en vivo.</li>
-      <li><strong>Las citas no viven aquí.</strong> Cuando alguien agenda, Alessia las manda <strong>directo al Google Calendar</strong> de cada especialista, igual que siempre.</li>
-      <li>Este enlace tiene teléfonos de pacientes: <strong>solo equipo Inpulso</strong>.</li>
-      <li>Si alguien se cargó mal en Google Sheets, usa el botón <strong>Sincronizar con Sheet</strong>: copia otra vez esas tablas aquí. No deja un sync permanente (WhatsApp no se cae).</li>
+      <li><strong>Se actualiza en vivo.</strong> Si cierras el enlace y lo abres después, ya verás lo nuevo.</li>
+      <li><strong>Números de arriba y “en vivo”</strong> = lo que Alessia registra en WhatsApp (mensajes, interesados, pacientes).</li>
+      <li><strong>“Copia histórica de Sheets”</strong> = tablas que ya tenían en Google. Lo nuevo del día sale en las secciones en vivo.</li>
+      <li>Este enlace tiene teléfonos: <strong>solo equipo Inpulso</strong>.</li>
+      <li>¿Alta mal en Sheets? Pulsa <strong>Sincronizar con Sheet</strong>.</li>
     </ul>
     <button type="button" class="btn-sync" id="btn-sync-sheet">Sincronizar con Sheet</button>
     <p class="nota" id="sync-sheet-msg" style="margin-top:8px"></p>
@@ -371,7 +370,7 @@ def render_panel_html() -> str:
   var msg = document.getElementById("sync-sheet-msg");
   if (!btn) return;
   btn.addEventListener("click", function () {{
-    if (!confirm("¿Copiar otra vez las tablas de Google Sheets a este panel?\\n\\nÚsalo si el equipo registró mal a alguien en el Sheet. Alessia sigue contestando WhatsApp; esto corre en segundo plano.")) return;
+    if (!confirm("¿Copiar otra vez las tablas de Google Sheets a este panel?")) return;
     var secret = new URLSearchParams(window.location.search).get("secret") || "";
     btn.disabled = true;
     msg.textContent = "Copiando desde Sheets… en unos segundos recarga sola.";

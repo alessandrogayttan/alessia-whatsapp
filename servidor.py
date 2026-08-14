@@ -41,6 +41,7 @@ from jobs import (
     reindexar_rag_inpulso_background,
     renotificar_escalaciones_background,
     reporte_semanal_background,
+    snapshot_sqlite_live_background,
     seguimiento_post_cita_background,
     sincronizar_analytics_background,
     sincronizar_catalogo_web_background,
@@ -134,6 +135,7 @@ def _iniciar_scheduler():
     _add_job(scheduler, calendario_keepalive_background, "interval", minutes=5)
     _add_job(scheduler, renotificar_escalaciones_background, "interval", minutes=5)
     _add_job(scheduler, backup_db_background, "interval", hours=24)
+    _add_job(scheduler, snapshot_sqlite_live_background, "interval", minutes=15)
     _add_job(scheduler, sincronizar_catalogo_web_background, "interval", minutes=30)
     _add_job(scheduler, sincronizar_catalogo_whatsapp_background, "interval", minutes=30)
     _add_job(scheduler, sincronizar_web_background, "interval", hours=24)
@@ -586,6 +588,29 @@ def create_app():
     config.validar_config_minima()
     config.validar_config_produccion()
     storage.init_db()
+    import threading
+
+    if config.IS_PRODUCTION:
+        try:
+            from db_backup import restaurar_sqlite_live_si_vacia
+
+            restaurar_sqlite_live_si_vacia()
+        except Exception:
+            logger.exception("No se pudo restaurar SQLite desde Spaces")
+
+        def _rellenar_si_vacia():
+            try:
+                if storage.base_operativa_vacia():
+                    from import_sheets import lanzar_importacion_una_vez
+
+                    lanzar_importacion_una_vez(forzar=True)
+                    logger.info("Import Sheets de arranque lanzado (base vacía)")
+            except Exception:
+                logger.exception("Import Sheets al arranque")
+
+        threading.Thread(
+            target=_rellenar_si_vacia, daemon=True, name="hidratar-db"
+        ).start()
     from message_queue import recuperar_atascados
 
     n_stuck = recuperar_atascados(minutos=5)
@@ -593,7 +618,6 @@ def create_app():
         logger.warning("Reclamados %s mensajes atascados al arranque", n_stuck)
     _iniciar_scheduler()
     # Cola y Google: en background para que gunicorn escuche YA (si no, DO marca Degraded)
-    import threading
 
     def _arranque_secundario():
         try:

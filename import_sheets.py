@@ -165,6 +165,12 @@ def ejecutar_importacion_sheets() -> dict:
             "sheets_import_resumen",
             ", ".join(f"{k}:{v}" for k, v in resumen.items()),
         )
+        try:
+            from db_backup import subir_sqlite_live
+
+            subir_sqlite_live()
+        except Exception as e:
+            logger.warning("No se pudo guardar copia live: %s", e)
         return {"ok": True, "estado": "ok", "resumen": resumen}
     except Exception as e:
         logger.exception("Import Sheets")

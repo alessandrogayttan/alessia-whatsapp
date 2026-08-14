@@ -191,15 +191,16 @@ def render_panel_html() -> str:
         f"filas import {diag.get('filas_import', 0)}"
     )
     aviso_db = ""
-    if not diag.get("persistente"):
+    if int(diag.get("filas_import") or 0) == 0 and int(hist.get("mensajes_totales") or 0) == 0:
         aviso_db = (
-            "<div class='alert'>La base no está en /data. Cada deploy borra los ceros. "
-            "En DigitalOcean, DATABASE_PATH debe ser /data/alessia.db y el volumen alessia-data montado en /data.</div>"
+            "<div class='alert'>App Platform no guarda disco entre deploys. "
+            "Al arrancar, Alessia restaura Spaces (si está) o vuelve a copiar Sheets. "
+            "Espera ~1 minuto y recarga. Si sigue en ceros, abre el enlace de importación con forzar=1.</div>"
         )
-    elif int(diag.get("filas_import") or 0) == 0:
+    elif not diag.get("persistente"):
         aviso_db = (
-            "<div class='alert'>La base persistente está vacía. Vuelve a abrir una vez el enlace de importación "
-            "(con forzar=1). Después de este arreglo, no debería volver a cero.</div>"
+            "<div class='alert'>Esta copia vive en el contenedor. Cada 15 min se guarda en Spaces "
+            "(si BACKUP_S3 está configurado) para no perderse en el próximo deploy.</div>"
         )
 
     kpis = [

@@ -2531,6 +2531,14 @@ def fusionar_pregunta_frecuente_import(
         )
 
 
+def base_operativa_vacia() -> bool:
+    """True si no hay mensajes ni copia importada (típico tras un deploy efímero)."""
+    hist = metricas_resumen_historico()
+    diag = diagnostico_db()
+    return int(hist.get("mensajes_totales") or 0) == 0 and int(diag.get("filas_import") or 0) == 0
+
+
+
 def diagnostico_db() -> dict:
     """Ruta y tamaño de SQLite (sin PII). Sirve para ver si el deploy borró el volumen."""
     p = Path(config.DATABASE_PATH)
@@ -2548,7 +2556,8 @@ def diagnostico_db() -> dict:
     return {
         "ruta": posix,
         "bytes": size,
-        "persistente": posix.startswith("/data/"),
+        "persistente": posix.startswith("/data/")
+        or obtener_app_config("sqlite_live_ok", "") == "1",
         "filas_import": filas_imp,
     }
 

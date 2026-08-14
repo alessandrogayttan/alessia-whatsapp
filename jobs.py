@@ -928,6 +928,16 @@ def backup_db_background():
         logger.error("Error backup DB: %s", e)
 
 
+def snapshot_sqlite_live_background():
+    """Guarda la SQLite en Spaces cada 15 min (App Platform no tiene volumen)."""
+    try:
+        from db_backup import subir_sqlite_live
+
+        subir_sqlite_live()
+    except Exception as e:
+        logger.debug("Snapshot live: %s", e)
+
+
 def sincronizar_catalogo_whatsapp_background():
     """Publica talleres vigentes en el catálogo de WhatsApp Business (Meta)."""
     if not config.WHATSAPP_CATALOG_ID and not config.WHATSAPP_BUSINESS_ACCOUNT_ID:

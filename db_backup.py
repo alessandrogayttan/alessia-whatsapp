@@ -43,6 +43,36 @@ def prune_backups(dest_dir: str | Path, pattern: str = "alessia_*.db", keep: int
     return borrados
 
 
+LIVE_KEY = "alessia-backups/alessia_live.db"
+
+
+def _s3_listo() -> bool:
+    import config
+
+    return bool(
+        config.BACKUP_S3_ENDPOINT
+        and config.BACKUP_S3_BUCKET
+        and config.BACKUP_S3_ACCESS_KEY
+        and config.BACKUP_S3_SECRET_KEY
+    )
+
+
+def _cliente_s3():
+    import boto3
+    from botocore.client import Config as BotoConfig
+
+    import config
+
+    return boto3.client(
+        "s3",
+        endpoint_url=config.BACKUP_S3_ENDPOINT,
+        aws_access_key_id=config.BACKUP_S3_ACCESS_KEY,
+        aws_secret_access_key=config.BACKUP_S3_SECRET_KEY,
+        region_name=config.BACKUP_S3_REGION or "nyc3",
+        config=BotoConfig(signature_version="s3v4"),
+    )
+
+
 def subir_backup_offsite(local_path: str | Path) -> bool:
     """
     Sube a DigitalOcean Spaces / S3 si BACKUP_S3_* está configurado.
@@ -53,25 +83,12 @@ def subir_backup_offsite(local_path: str | Path) -> bool:
     path = Path(local_path)
     if not path.is_file():
         return False
-    if not (
-        config.BACKUP_S3_ENDPOINT
-        and config.BACKUP_S3_BUCKET
-        and config.BACKUP_S3_ACCESS_KEY
-        and config.BACKUP_S3_SECRET_KEY
-    ):
+    if not _s3_listo():
         return False
     try:
-        import boto3
-        from botocore.client import Config as BotoConfig
+        import config
 
-        client = boto3.client(
-            "s3",
-            endpoint_url=config.BACKUP_S3_ENDPOINT,
-            aws_access_key_id=config.BACKUP_S3_ACCESS_KEY,
-            aws_secret_access_key=config.BACKUP_S3_SECRET_KEY,
-            region_name=config.BACKUP_S3_REGION or "nyc3",
-            config=BotoConfig(signature_version="s3v4"),
-        )
+        client = _cliente_s3()
         key = f"alessia-backups/{path.name}"
         client.upload_file(str(path), config.BACKUP_S3_BUCKET, key)
         logger.info("Backup offsite subido: s3://%s/%s", config.BACKUP_S3_BUCKET, key)
@@ -81,4 +98,59 @@ def subir_backup_offsite(local_path: str | Path) -> bool:
         return False
     except Exception as e:
         logger.error("Fallo backup offsite: %s", e)
+        return False
+
+
+def subir_sqlite_live() -> bool:
+    """Copia consistente al objeto fijo alessia_live.db (sobrevive deploys en App Platform)."""
+    import tempfile
+
+    import config
+    import storage
+
+    if not _s3_listo():
+        return False
+    src = Path(config.DATABASE_PATH)
+    if not src.is_file():
+        return False
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp) / "alessia_live.db"
+            backup_sqlite(src, dest)
+            client = _cliente_s3()
+            client.upload_file(str(dest), config.BACKUP_S3_BUCKET, LIVE_KEY)
+        logger.info("SQLite live subida a Spaces")
+        storage.guardar_app_config("sqlite_live_ok", "1")
+        return True
+    except Exception as e:
+        logger.error("No se pudo subir SQLite live: %s", e)
+        return False
+
+
+def restaurar_sqlite_live_si_vacia() -> bool:
+    """Si la base local está vacía, baja alessia_live.db de Spaces."""
+    import config
+    import storage
+
+    if not _s3_listo():
+        return False
+    if not storage.base_operativa_vacia():
+        return False
+    dest = Path(config.DATABASE_PATH)
+    tmp = dest.with_suffix(".restore.tmp")
+    try:
+        client = _cliente_s3()
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        client.download_file(config.BACKUP_S3_BUCKET, LIVE_KEY, str(tmp))
+        tmp.replace(dest)
+        logger.info("SQLite restaurada desde Spaces (%s)", dest)
+        storage.init_db()
+        storage.guardar_app_config("sqlite_live_ok", "1")
+        return True
+    except Exception as e:
+        logger.warning("No hay copia live en Spaces o falló la baja: %s", e)
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
         return False

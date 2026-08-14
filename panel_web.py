@@ -289,6 +289,8 @@ def render_panel_html() -> str:
   .pill-info {{ background:var(--infobg); color:var(--info); }}
   .barra-ext {{ background:#ece9e2; height:14px; border-radius:99px; overflow:hidden; }}
   .barra-int {{ height:100%; width:{pct:.1f}%; background:{color}; }}
+  .guia ul {{ margin:8px 0 0; padding-left:18px; color:var(--ink); font-size:.9rem; line-height:1.45; }}
+  .leyenda {{ display:flex; flex-wrap:wrap; gap:8px 14px; margin-top:10px; font-size:.82rem; }}
   .alert {{
     background:#fef3f2; color:#b42318; border:1px solid #fecdca;
     padding:10px 12px; border-radius:8px; margin:12px 0; font-size:.88rem;
@@ -303,8 +305,9 @@ def render_panel_html() -> str:
 <body>
 <header class="top">
   <h1>Inpulso 43 · Panel analítico Alessia</h1>
-  <p class="sub">{_esc(ahora)} hora México · cada 30 s · {_esc(nota_import)} · {_esc(db_txt)}</p>
+  <p class="sub">Hora México {_esc(ahora)} · esta página se recarga sola cada 30 s mientras la dejes abierta · {_esc(nota_import)}</p>
   <nav class="toc">
+    <a href="#guia">Cómo leerlo</a>
     <a href="#kpis">Resumen</a>
     <a href="#cupo">Cupo heridas</a>
     <a href="#vivo">Actividad en vivo</a>
@@ -313,6 +316,24 @@ def render_panel_html() -> str:
 </header>
 <main>
   {aviso_db}
+  <section class="block guia" id="guia">
+    <p class="kicker">Cómo leer este panel</p>
+    <h2>Guía para el equipo Inpulso</h2>
+    <ul>
+      <li><strong>Se actualiza solo cada 30 segundos</strong> mientras esta pestaña esté abierta. No hay que pulsar nada. Si cierras la pestaña, se pausa; al volver a abrir el enlace, sigue.</li>
+      <li><strong>Números de arriba y “en vivo”</strong> = lo que Alessia está registrando ahora en WhatsApp (mensajes, interesados, pacientes).</li>
+      <li><strong>“Copia histórica de Sheets”</strong> = foto de las tablas que ya tenían en Google. Eso no se reescribe cada minuto (así no se cae Alessia). Lo nuevo de hoy aparece en las secciones en vivo.</li>
+      <li><strong>Las citas no viven aquí.</strong> Cuando alguien agenda, Alessia las manda <strong>directo al Google Calendar</strong> de cada especialista, igual que siempre.</li>
+      <li>Este enlace tiene teléfonos de pacientes: <strong>solo equipo Inpulso</strong>.</li>
+    </ul>
+    <div class="leyenda">
+      <span class="pill pill-ok">Pagado</span>
+      <span class="pill pill-warn">Pendiente</span>
+      <span class="pill pill-bad">Cancelado</span>
+      <span class="pill pill-info">Inscrito</span>
+    </div>
+    <p class="nota" style="margin-top:10px">{_esc(db_txt)}</p>
+  </section>
   <div id="kpis" class="kpis">{html_kpis}</div>
 
   <section class="block" id="cupo">

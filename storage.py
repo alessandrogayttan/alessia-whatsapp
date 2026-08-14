@@ -2379,3 +2379,35 @@ def metricas_interes_heridas() -> dict:
         "interes_7d_heridas": int(recientes["n"]) if recientes else 0,
     }
 
+
+def listar_interes_talleres_panel(limite: int = 80) -> list[dict]:
+    """Interesados en talleres (SQLite). No llama a Sheets."""
+    limite = max(1, min(int(limite), 200))
+    with _transaction() as conn:
+        rows = conn.execute(
+            """
+            SELECT telefono, nombre, terapeuta, taller_origen, creado_at
+            FROM interes_talleres
+            WHERE activo = 1
+            ORDER BY creado_at DESC
+            LIMIT ?
+            """,
+            (limite,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def listar_pacientes_panel(limite: int = 60) -> list[dict]:
+    limite = max(1, min(int(limite), 200))
+    with _transaction() as conn:
+        rows = conn.execute(
+            """
+            SELECT telefono, nombre, consentimiento_at
+            FROM pacientes
+            ORDER BY consentimiento_at DESC
+            LIMIT ?
+            """,
+            (limite,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+

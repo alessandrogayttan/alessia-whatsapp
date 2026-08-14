@@ -9,3 +9,4 @@ def test_panel_html_basico(db_temp):
     assert "Panel Alessia" in html
     assert "taller heridas" in html
     assert 'http-equiv="refresh"' in html
+    assert "Interesados en talleres" in html

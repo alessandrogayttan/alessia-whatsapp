@@ -289,6 +289,11 @@ def render_panel_html() -> str:
   .pill-info {{ background:var(--infobg); color:var(--info); }}
   .barra-ext {{ background:#ece9e2; height:14px; border-radius:99px; overflow:hidden; }}
   .barra-int {{ height:100%; width:{pct:.1f}%; background:{color}; }}
+  .btn-sync {{
+    margin-top:14px; background:#1f4e79; color:#fff; border:0; border-radius:8px;
+    padding:10px 16px; font-size:.9rem; font-weight:600; cursor:pointer;
+  }}
+  .btn-sync:disabled {{ opacity:.55; cursor:wait; }}
   .guia ul {{ margin:8px 0 0; padding-left:18px; color:var(--ink); font-size:.9rem; line-height:1.45; }}
   .leyenda {{ display:flex; flex-wrap:wrap; gap:8px 14px; margin-top:10px; font-size:.82rem; }}
   .alert {{
@@ -325,7 +330,10 @@ def render_panel_html() -> str:
       <li><strong>“Copia histórica de Sheets”</strong> = foto de las tablas que ya tenían en Google. Eso no se reescribe cada minuto (así no se cae Alessia). Lo nuevo de hoy aparece en las secciones en vivo.</li>
       <li><strong>Las citas no viven aquí.</strong> Cuando alguien agenda, Alessia las manda <strong>directo al Google Calendar</strong> de cada especialista, igual que siempre.</li>
       <li>Este enlace tiene teléfonos de pacientes: <strong>solo equipo Inpulso</strong>.</li>
+      <li>Si alguien se cargó mal en Google Sheets, usa el botón <strong>Sincronizar con Sheet</strong>: copia otra vez esas tablas aquí. No deja un sync permanente (WhatsApp no se cae).</li>
     </ul>
+    <button type="button" class="btn-sync" id="btn-sync-sheet">Sincronizar con Sheet</button>
+    <p class="nota" id="sync-sheet-msg" style="margin-top:8px"></p>
     <div class="leyenda">
       <span class="pill pill-ok">Pagado</span>
       <span class="pill pill-warn">Pendiente</span>
@@ -357,5 +365,29 @@ def render_panel_html() -> str:
 
   <p class="meta">Uso interno Inpulso. El enlace incluye teléfonos; no compartir fuera del equipo. Pagado se marca en verde, pendiente en ámbar, cancelado en rojo.</p>
 </main>
+<script>
+(function () {{
+  var btn = document.getElementById("btn-sync-sheet");
+  var msg = document.getElementById("sync-sheet-msg");
+  if (!btn) return;
+  btn.addEventListener("click", function () {{
+    if (!confirm("¿Copiar otra vez las tablas de Google Sheets a este panel?\\n\\nÚsalo si el equipo registró mal a alguien en el Sheet. Alessia sigue contestando WhatsApp; esto corre en segundo plano.")) return;
+    var secret = new URLSearchParams(window.location.search).get("secret") || "";
+    btn.disabled = true;
+    msg.textContent = "Copiando desde Sheets… en unos segundos recarga sola.";
+    fetch("/ops/importar-sheets-una-vez?forzar=1&secret=" + encodeURIComponent(secret))
+      .then(function (r) {{ return r.json().then(function (j) {{ return {{ ok: r.ok, j: j }}; }}); }})
+      .then(function (x) {{
+        var est = (x.j && x.j.estado) ? x.j.estado : (x.ok ? "lanzado" : "error");
+        msg.textContent = "Estado: " + est + ". Espera y recarga.";
+        setTimeout(function () {{ window.location.reload(); }}, 12000);
+      }})
+      .catch(function () {{
+        btn.disabled = false;
+        msg.textContent = "No se pudo lanzar. Revisa el secreto del enlace o prueba de nuevo.";
+      }});
+  }});
+}})();
+</script>
 </body>
 </html>"""

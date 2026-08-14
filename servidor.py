@@ -426,16 +426,18 @@ def ops_sync_analytics():
 
 @app.route("/ops/importar-sheets-una-vez", methods=["GET", "POST"])
 def ops_importar_sheets_una_vez():
-    """Copia de una sola vez Sheets → SQLite (solo lectura de Google). No deja sync activo."""
-    import hmac
-
+    """Copia puntual Sheets → SQLite. No deja sync activo."""
     from flask import jsonify
 
     if config.IS_PRODUCTION:
-        if not config.HEALTH_CONFIG_SECRET:
-            return jsonify({"error": "Not configured"}), 404
+        panel_secret = config.PANEL_EQUIPO_SECRET or config.HEALTH_CONFIG_SECRET
         token = request.args.get("secret") or request.headers.get("X-Health-Secret", "")
-        if not hmac.compare_digest(token, config.HEALTH_CONFIG_SECRET):
+        if not panel_secret and not config.HEALTH_CONFIG_SECRET:
+            return jsonify({"error": "Not configured"}), 404
+        if not (
+            _secreto_coincide(token, panel_secret)
+            or _secreto_coincide(token, config.HEALTH_CONFIG_SECRET)
+        ):
             return jsonify({"error": "Forbidden"}), 403
     forzar = (request.args.get("forzar") or "").strip().lower() in (
         "1",

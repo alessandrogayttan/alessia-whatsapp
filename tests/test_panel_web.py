@@ -14,3 +14,4 @@ def test_panel_html_basico(db_temp):
     assert "Inpulso 43" in html
     assert "Google Calendar" in html
     assert "se recarga sola cada 30 s" in html
+    assert "Sincronizar con Sheet" in html

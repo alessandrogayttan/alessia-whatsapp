@@ -46,8 +46,18 @@ def render_panel_html() -> str:
     diarios = storage.metricas_mensajes_por_dia(21)
     interesados = storage.listar_interes_talleres_panel(80)
     pacientes = storage.listar_pacientes_panel(50)
+    import_estado = storage.obtener_app_config("sheets_import_estado", "")
+    import_resumen = storage.obtener_app_config("sheets_import_resumen", "")
+    pestanas_imp = storage.listar_pestanas_importadas()
+    inscritos_imp = [
+        r
+        for r in storage.listar_filas_importadas("Heridas_Inscritos", 200)
+        if any(str(c).strip() for c in r)
+        and "sin registros" not in " ".join(str(c).lower() for c in r)
+    ]
+    n_insc_imp = len(inscritos_imp)
 
-    n_her = int(interes.get("interes_activo_relacionado") or 0)
+    n_her = max(int(interes.get("interes_activo_relacionado") or 0), n_insc_imp)
     pct = min(100.0, (n_her / META_CUPO) * 100.0) if META_CUPO else 0.0
     color = _color_barra(pct)
     actividad = [d for d in diarios if d.get("mensajes") or d.get("menciones_heridas")][-14:]
@@ -101,6 +111,23 @@ def render_panel_html() -> str:
         for m in recientes
     ]
 
+    bloques_imp = []
+    for meta in pestanas_imp:
+        nombre = meta.get("pestana") or ""
+        heads = meta.get("encabezados") or ["Columna"]
+        rows = storage.listar_filas_importadas(nombre, 150)
+        bloques_imp.append(
+            f"<h2>Importado de Sheets · {_esc(nombre)} ({_esc(meta.get('filas', 0))} filas)</h2>"
+            f"<div class='wrap'>{_filas(heads, rows, 'Sin filas')}</div>"
+        )
+    html_import = "".join(bloques_imp) or (
+        "<p class='nota'>Aún no hay copia de Sheets. Cuando el equipo lance la importación única, "
+        "aparece aquí y de ahí en adelante solo se actualiza esta base.</p>"
+    )
+    nota_import = import_estado or "sin importar"
+    if import_resumen:
+        nota_import = f"{nota_import} · {import_resumen}"
+
     return f"""<!doctype html>
 <html lang="es">
 <head>
@@ -132,7 +159,7 @@ def render_panel_html() -> str:
 <body>
 <main>
   <h1>Panel Alessia · Equipo Inpulso</h1>
-  <p class="sub">Base en vivo (SQLite en el servidor) · {_esc(ahora)} hora México · recarga cada 30 s · no usa Google Sheets</p>
+  <p class="sub">Base en vivo (SQLite) · {_esc(ahora)} hora México · recarga cada 30 s · import Sheets: {_esc(nota_import)}</p>
 
   <div class="grid">
     <div class="card"><b>{_esc(hist.get('mensajes_totales', 0))}</b><span>Mensajes totales</span></div>
@@ -148,9 +175,9 @@ def render_panel_html() -> str:
   </div>
 
   <h2>Taller heridas — cupo (interés Alessia vs meta {META_CUPO})</h2>
-  <p class="nota">Barra 0–100 con lo que Alessia registra como interés. Verde &lt;70%, naranja 70–89%, rojo ≥90%. Los inscritos pagados del Sheet no están aquí (eso es Google); esto no tumba WhatsApp.</p>
+  <p class="nota">Barra 0–100 con interés Alessia + inscritos copiados del Sheet (una sola vez). Verde &lt;70%, naranja 70–89%, rojo ≥90%.</p>
   <div class="barra-ext"><div class="barra-int"></div></div>
-  <p class="nota">{n_her} / {META_CUPO} · {pct:.1f}% · color según llenado</p>
+  <p class="nota">{n_her} / {META_CUPO} · {pct:.1f}% · inscritos importados: {n_insc_imp}</p>
 
   <h2>Actividad Alessia (últimos días con movimiento)</h2>
   <div class="wrap">{_filas(["Fecha", "Mensajes", "Menciones heridas"], filas_act, "Sin actividad aún")}</div>
@@ -169,6 +196,8 @@ def render_panel_html() -> str:
 
   <h2>Últimos mensajes a Alessia</h2>
   <div class="wrap">{_filas(["Fecha", "WhatsApp", "Canal", "Mensaje"], filas_msg, "Sin mensajes aún")}</div>
+
+  {html_import}
 
   <p class="meta">Solo personal Inpulso. No compartir el enlace fuera del equipo (incluye teléfonos de pacientes).</p>
 </main>

@@ -421,6 +421,30 @@ def ops_sync_analytics():
     return jsonify(out), code
 
 
+@app.route("/ops/importar-sheets-una-vez", methods=["GET", "POST"])
+def ops_importar_sheets_una_vez():
+    """Copia de una sola vez Sheets → SQLite (solo lectura de Google). No deja sync activo."""
+    import hmac
+
+    from flask import jsonify
+
+    if config.IS_PRODUCTION:
+        if not config.HEALTH_CONFIG_SECRET:
+            return jsonify({"error": "Not configured"}), 404
+        token = request.args.get("secret") or request.headers.get("X-Health-Secret", "")
+        if not hmac.compare_digest(token, config.HEALTH_CONFIG_SECRET):
+            return jsonify({"error": "Forbidden"}), 403
+    forzar = (request.args.get("forzar") or "").strip().lower() in (
+        "1",
+        "true",
+        "si",
+        "sí",
+    )
+    from import_sheets import lanzar_importacion_una_vez
+
+    return jsonify(lanzar_importacion_una_vez(forzar=forzar)), 202
+
+
 def _secreto_coincide(recibido: str, esperado: str) -> bool:
     import hmac
 

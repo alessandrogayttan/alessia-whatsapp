@@ -1,3 +1,4 @@
+import json
 import re
 import sqlite3
 import threading
@@ -360,6 +361,26 @@ def init_db():
                     veces INTEGER NOT NULL DEFAULT 1,
                     ultima_vez TEXT NOT NULL,
                     ejemplo_telefono TEXT
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS import_sheets_filas (
+                    pestana TEXT NOT NULL,
+                    orden INTEGER NOT NULL,
+                    datos TEXT NOT NULL,
+                    PRIMARY KEY (pestana, orden)
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS import_sheets_meta (
+                    pestana TEXT PRIMARY KEY,
+                    encabezados TEXT NOT NULL,
+                    filas INTEGER NOT NULL DEFAULT 0,
+                    importado_at TEXT NOT NULL
                 )
                 """
             )
@@ -2410,4 +2431,96 @@ def listar_pacientes_panel(limite: int = 60) -> list[dict]:
             (limite,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+def reemplazar_pestana_importada(
+    pestana: str, encabezados: list[str], filas: list[list]
+) -> int:
+    ahora = _utcnow().isoformat()
+    with _transaction() as conn:
+        conn.execute("DELETE FROM import_sheets_filas WHERE pestana = ?", (pestana,))
+        for i, fila in enumerate(filas):
+            conn.execute(
+                """
+                INSERT INTO import_sheets_filas (pestana, orden, datos)
+                VALUES (?, ?, ?)
+                """,
+                (pestana, i, json.dumps(fila, ensure_ascii=False)),
+            )
+        conn.execute(
+            """
+            INSERT INTO import_sheets_meta (pestana, encabezados, filas, importado_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(pestana) DO UPDATE SET
+                encabezados = excluded.encabezados,
+                filas = excluded.filas,
+                importado_at = excluded.importado_at
+            """,
+            (pestana, json.dumps(encabezados, ensure_ascii=False), len(filas), ahora),
+        )
+    return len(filas)
+
+
+def listar_pestanas_importadas() -> list[dict]:
+    with _transaction() as conn:
+        rows = conn.execute(
+            """
+            SELECT pestana, encabezados, filas, importado_at
+            FROM import_sheets_meta
+            ORDER BY pestana
+            """
+        ).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["encabezados"] = json.loads(d.get("encabezados") or "[]")
+        except json.JSONDecodeError:
+            d["encabezados"] = []
+        out.append(d)
+    return out
+
+
+def listar_filas_importadas(pestana: str, limite: int = 200) -> list[list]:
+    limite = max(1, min(int(limite), 500))
+    with _transaction() as conn:
+        rows = conn.execute(
+            """
+            SELECT datos FROM import_sheets_filas
+            WHERE pestana = ?
+            ORDER BY orden
+            LIMIT ?
+            """,
+            (pestana, limite),
+        ).fetchall()
+    filas = []
+    for r in rows:
+        try:
+            filas.append(json.loads(r["datos"]))
+        except json.JSONDecodeError:
+            continue
+    return filas
+
+
+def fusionar_pregunta_frecuente_import(
+    pregunta: str, veces: int, ultima_vez: str, telefono: str = ""
+) -> None:
+    pregunta = (pregunta or "").strip()[:200]
+    if not pregunta:
+        return
+    veces = max(1, int(veces or 1))
+    ultima = (ultima_vez or "").strip() or _utcnow().isoformat()
+    tel = (telefono or "").strip()[:20] or None
+    with _transaction() as conn:
+        conn.execute(
+            """
+            INSERT INTO preguntas_frecuentes (pregunta, veces, ultima_vez, ejemplo_telefono)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(pregunta) DO UPDATE SET
+                veces = MAX(preguntas_frecuentes.veces, excluded.veces),
+                ultima_vez = excluded.ultima_vez,
+                ejemplo_telefono = COALESCE(excluded.ejemplo_telefono, preguntas_frecuentes.ejemplo_telefono)
+            """,
+            (pregunta, veces, ultima, tel),
+        )
 

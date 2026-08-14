@@ -25,7 +25,7 @@ VARS = [
     ("GEMINI_API_KEY", None),
     ("ID_HOJA_CALCULO", None),
     ("API_KEY_MAPS", ""),
-    ("DATABASE_PATH", "data/alessia.db"),
+            ("DATABASE_PATH", "/data/alessia.db"),
     ("GOOGLE_SERVICE_ACCOUNT_JSON", "__FROM_FILE__"),
 ]
 

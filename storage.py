@@ -2524,3 +2524,25 @@ def fusionar_pregunta_frecuente_import(
             (pregunta, veces, ultima, tel),
         )
 
+
+def diagnostico_db() -> dict:
+    """Ruta y tamaño de SQLite (sin PII). Sirve para ver si el deploy borró el volumen."""
+    p = Path(config.DATABASE_PATH)
+    posix = str(p).replace("\\", "/")
+    size = p.stat().st_size if p.exists() else 0
+    filas_imp = 0
+    try:
+        with _transaction() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM import_sheets_filas"
+            ).fetchone()
+            filas_imp = int(row["n"]) if row else 0
+    except Exception:
+        pass
+    return {
+        "ruta": posix,
+        "bytes": size,
+        "persistente": posix.startswith("/data/"),
+        "filas_import": filas_imp,
+    }
+

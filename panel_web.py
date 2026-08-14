@@ -100,6 +100,7 @@ def render_panel_html() -> str:
     import_estado = storage.obtener_app_config("sheets_import_estado", "")
     import_resumen = storage.obtener_app_config("sheets_import_resumen", "")
     pestanas_imp = storage.listar_pestanas_importadas()
+    diag = storage.diagnostico_db()
     inscritos_imp = [
         r
         for r in storage.listar_filas_importadas("Heridas_Inscritos", 200)
@@ -184,6 +185,22 @@ def render_panel_html() -> str:
     nota_import = import_estado or "sin importar"
     if import_resumen:
         nota_import = f"{nota_import} · {import_resumen}"
+    db_txt = (
+        f"{diag.get('ruta')} · {int(diag.get('bytes') or 0)} bytes · "
+        f"persistente={'sí' if diag.get('persistente') else 'NO'} · "
+        f"filas import {diag.get('filas_import', 0)}"
+    )
+    aviso_db = ""
+    if not diag.get("persistente"):
+        aviso_db = (
+            "<div class='alert'>La base no está en /data. Cada deploy borra los ceros. "
+            "En DigitalOcean, DATABASE_PATH debe ser /data/alessia.db y el volumen alessia-data montado en /data.</div>"
+        )
+    elif int(diag.get("filas_import") or 0) == 0:
+        aviso_db = (
+            "<div class='alert'>La base persistente está vacía. Vuelve a abrir una vez el enlace de importación "
+            "(con forzar=1). Después de este arreglo, no debería volver a cero.</div>"
+        )
 
     kpis = [
         (hist.get("mensajes_totales", 0), "Mensajes totales"),
@@ -271,7 +288,10 @@ def render_panel_html() -> str:
   .pill-info {{ background:var(--infobg); color:var(--info); }}
   .barra-ext {{ background:#ece9e2; height:14px; border-radius:99px; overflow:hidden; }}
   .barra-int {{ height:100%; width:{pct:.1f}%; background:{color}; }}
-  .meta {{ color:var(--muted); font-size:.78rem; margin-top:22px; }}
+  .alert {{
+    background:#fef3f2; color:#b42318; border:1px solid #fecdca;
+    padding:10px 12px; border-radius:8px; margin:12px 0; font-size:.88rem;
+  }}
   nav.toc {{ display:flex; flex-wrap:wrap; gap:8px; margin:14px 0 0; }}
   nav.toc a {{
     color:#d7c4a3; font-size:.75rem; text-decoration:none; border:1px solid #3a4d63;
@@ -282,7 +302,7 @@ def render_panel_html() -> str:
 <body>
 <header class="top">
   <h1>Inpulso 43 · Panel analítico Alessia</h1>
-  <p class="sub">{_esc(ahora)} hora México · actualización cada 30 s · fuente: base del servidor · {_esc(nota_import)}</p>
+  <p class="sub">{_esc(ahora)} hora México · cada 30 s · {_esc(nota_import)} · {_esc(db_txt)}</p>
   <nav class="toc">
     <a href="#kpis">Resumen</a>
     <a href="#cupo">Cupo heridas</a>
@@ -291,6 +311,7 @@ def render_panel_html() -> str:
   </nav>
 </header>
 <main>
+  {aviso_db}
   <div id="kpis" class="kpis">{html_kpis}</div>
 
   <section class="block" id="cupo">

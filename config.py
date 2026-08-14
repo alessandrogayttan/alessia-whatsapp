@@ -14,6 +14,26 @@ DATA_DIR.mkdir(exist_ok=True)
 FLASK_ENV = os.getenv("FLASK_ENV", "development")
 IS_PRODUCTION = FLASK_ENV == "production"
 
+
+def ruta_sqlite(raw: str | None, *, produccion: bool) -> str:
+    """En producción siempre /data (volumen). Evita data/alessia.db efímero que se borra en cada deploy."""
+    valor = (raw or "").strip()
+    if produccion:
+        if valor.startswith("/data/"):
+            return valor
+        return "/data/alessia.db"
+    return valor or str(DATA_DIR / "alessia.db")
+
+
+def ruta_backups(raw: str | None, *, produccion: bool) -> str:
+    valor = (raw or "").strip()
+    if produccion:
+        if valor.startswith("/data/"):
+            return valor
+        return "/data/backups"
+    return valor or str(DATA_DIR / "backups")
+
+
 TOKEN_WHATSAPP = os.getenv("TOKEN_WHATSAPP", "")
 ID_TELEFONO = os.getenv("ID_TELEFONO", "")
 META_APP_ID = os.getenv("META_APP_ID", "3817725751857412")
@@ -46,7 +66,7 @@ SERVICE_ACCOUNT_FILE = os.getenv(
     str(DATA_DIR / "google-service-account.json"),
 )
 GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
-DATABASE_PATH = os.getenv("DATABASE_PATH", str(DATA_DIR / "alessia.db"))
+DATABASE_PATH = ruta_sqlite(os.getenv("DATABASE_PATH"), produccion=IS_PRODUCTION)
 PORT = int(os.getenv("PORT", "5000"))
 
 # Scheduler: solo un worker/proceso debe ejecutar tareas en segundo plano
@@ -403,7 +423,7 @@ ZONA_MEXICO = "America/Mexico_City"
 # Observabilidad y operaciones
 SENTRY_DSN = os.getenv("SENTRY_DSN", "")
 ALERTA_FALLOS_UMBRAL = int(os.getenv("ALERTA_FALLOS_UMBRAL", "5"))
-BACKUP_DIR = os.getenv("BACKUP_DIR", str(DATA_DIR / "backups"))
+BACKUP_DIR = ruta_backups(os.getenv("BACKUP_DIR"), produccion=IS_PRODUCTION)
 # Backup offsite opcional (DigitalOcean Spaces / S3 compatible)
 BACKUP_S3_ENDPOINT = os.getenv("BACKUP_S3_ENDPOINT", "").strip()
 BACKUP_S3_BUCKET = os.getenv("BACKUP_S3_BUCKET", "").strip()

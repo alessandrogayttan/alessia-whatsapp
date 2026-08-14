@@ -318,6 +318,7 @@ def health_ready():
         "bloqueantes": bloqueantes,
         "advertencias": advertencias,
         "sync_hojas": sync_info,
+        "db": storage.diagnostico_db() if db_ok else {},
     }
     return payload, 200 if listo else 503
 

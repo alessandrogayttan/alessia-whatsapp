@@ -421,18 +421,32 @@ def ops_sync_analytics():
     return jsonify(out), code
 
 
-@app.route("/panel", methods=["GET"])
-def panel_alessia():
-    """Métricas en vivo (SQLite). En prod requiere ?secret=HEALTH_CONFIG_SECRET."""
+def _secreto_coincide(recibido: str, esperado: str) -> bool:
     import hmac
 
+    if not esperado:
+        return False
+    a = (recibido or "").encode("utf-8")
+    b = esperado.encode("utf-8")
+    if len(a) != len(b):
+        return False
+    return hmac.compare_digest(a, b)
+
+
+@app.route("/panel", methods=["GET"])
+def panel_alessia():
+    """Métricas en vivo (SQLite). Accesible desde cualquier red con el secreto."""
     from flask import Response
 
     if config.IS_PRODUCTION:
-        if not config.HEALTH_CONFIG_SECRET:
+        panel_secret = config.PANEL_EQUIPO_SECRET or config.HEALTH_CONFIG_SECRET
+        if not panel_secret:
             return {"error": "Not configured"}, 404
-        token = request.args.get("secret") or request.headers.get("X-Health-Secret", "")
-        if not hmac.compare_digest(token, config.HEALTH_CONFIG_SECRET):
+        token = request.args.get("secret") or request.headers.get("X-Panel-Secret", "")
+        if not (
+            _secreto_coincide(token, panel_secret)
+            or _secreto_coincide(token, config.HEALTH_CONFIG_SECRET)
+        ):
             return {"error": "Forbidden"}, 403
     from panel_web import render_panel_html
 

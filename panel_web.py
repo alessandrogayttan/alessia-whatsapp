@@ -49,6 +49,7 @@ def render_panel_html() -> str:
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta http-equiv="refresh" content="30"/>
 <title>Panel Alessia · Inpulso 43</title>
 <style>
   :root {{ --bg:#f6f3ee; --ink:#1c2430; --muted:#5b6570; --card:#fff; --line:#e4ddd3; --acc:#2d4f82; }}
@@ -70,8 +71,8 @@ def render_panel_html() -> str:
 </head>
 <body>
 <main>
-  <h1>Panel Alessia</h1>
-  <p class="sub">Datos en vivo desde la base de Alessia · { _esc(ahora) } (hora México)</p>
+  <h1>Panel Alessia · Equipo Inpulso</h1>
+  <p class="sub">En vivo desde internet (no es tu computadora) · {_esc(ahora)} hora México · se actualiza cada 30 s</p>
   {aviso_err}
   <div class="grid">
     <div class="card"><b>{_esc(hist.get('mensajes_totales', 0))}</b><span>Mensajes guardados</span></div>
@@ -88,7 +89,7 @@ def render_panel_html() -> str:
   <h2>Últimos mensajes a Alessia</h2>
   <table><thead><tr><th>Fecha</th><th>WhatsApp</th><th>Mensaje</th></tr></thead>
   <tbody>{filas_msg}</tbody></table>
-  <p class="meta">Este panel lee SQLite en tiempo real. El Google Sheet se actualiza cada minuto (datos) y las gráficas ~cada 15 min.</p>
+  <p class="meta">Solo personal Inpulso. Cualquier celular o PC con este enlace. No compartir fuera del equipo.</p>
 </main>
 </body>
 </html>"""

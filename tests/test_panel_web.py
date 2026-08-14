@@ -8,3 +8,4 @@ def test_panel_html_basico(db_temp):
     html = render_panel_html()
     assert "Panel Alessia" in html
     assert "taller heridas" in html
+    assert 'http-equiv="refresh"' in html

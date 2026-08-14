@@ -313,6 +313,8 @@ PALABRAS_ANSIEDAD = (
 
 # Seguridad endpoint de diagnóstico (solo producción)
 HEALTH_CONFIG_SECRET = os.getenv("HEALTH_CONFIG_SECRET", "")
+# Clave del panel para el equipo Inpulso (si vacío, se usa HEALTH_CONFIG_SECRET)
+PANEL_EQUIPO_SECRET = os.getenv("PANEL_EQUIPO_SECRET", "").strip()
 
 # Clínica
 CLINICA_WEB_URL = os.getenv("CLINICA_WEB_URL", "https://inpulso43.com")

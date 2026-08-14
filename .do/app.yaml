@@ -76,6 +76,9 @@ services:
       - key: HEALTH_CONFIG_SECRET
         type: SECRET
         scope: RUN_TIME
+      - key: PANEL_EQUIPO_SECRET
+        type: SECRET
+        scope: RUN_TIME
       - key: RECEPCION_WHATSAPP
         type: SECRET
         scope: RUN_TIME

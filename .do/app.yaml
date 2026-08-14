@@ -14,11 +14,11 @@ services:
     run_command: gunicorn --bind 0.0.0.0:8080 --worker-class gthread --workers 1 --threads 4 --timeout 60 --graceful-timeout 20 wsgi:app
     health_check:
       http_path: /health
-      initial_delay_seconds: 40
+      initial_delay_seconds: 60
       period_seconds: 20
-      timeout_seconds: 5
+      timeout_seconds: 15
       success_threshold: 1
-      failure_threshold: 6
+      failure_threshold: 12
     envs:
       - key: FLASK_ENV
         value: production

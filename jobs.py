@@ -644,7 +644,7 @@ def sincronizar_analytics_background():
     """Legacy. Con SYNC_HOJAS_AUTO_MINUTO=1 el sync minuto ya cubre Analytics."""
     import os
 
-    if os.getenv("SYNC_HOJAS_AUTO_MINUTO", "1").strip().lower() in (
+    if os.getenv("SYNC_HOJAS_AUTO_MINUTO", "0").strip().lower() in (
         "1",
         "true",
         "yes",
@@ -677,7 +677,7 @@ def sincronizar_hojas_auto_minuto_background():
     import os
     import threading
 
-    if os.getenv("SYNC_HOJAS_AUTO_MINUTO", "1").strip().lower() not in (
+    if os.getenv("SYNC_HOJAS_AUTO_MINUTO", "0").strip().lower() not in (
         "1",
         "true",
         "yes",
@@ -748,14 +748,17 @@ def sincronizar_hojas_auto_minuto_background():
             logger.exception("Sync auto minuto falló: %s", msg)
 
     # Fuera del hilo del scheduler/health: no bloquear /health
-    threading.Thread(target=_run, daemon=True, name="sync-hojas-auto").start()
+    t = threading.Thread(target=_run, daemon=True, name="sync-hojas-auto")
+    t.start()
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        t.join(timeout=5)
 
 
 def sincronizar_heridas_background():
     """Legacy. Preferir SYNC_HOJAS_AUTO_MINUTO."""
     import os
 
-    if os.getenv("SYNC_HOJAS_AUTO_MINUTO", "1").strip().lower() in (
+    if os.getenv("SYNC_HOJAS_AUTO_MINUTO", "0").strip().lower() in (
         "1",
         "true",
         "yes",
@@ -799,7 +802,7 @@ def sincronizar_hojas_graficos_background():
     """Cada 30 min: gráficas Analytics (pesado; no cada minuto)."""
     import os
 
-    if os.getenv("SYNC_HOJAS_AUTO_MINUTO", "1").strip().lower() not in (
+    if os.getenv("SYNC_HOJAS_AUTO_MINUTO", "0").strip().lower() not in (
         "1",
         "true",
         "yes",

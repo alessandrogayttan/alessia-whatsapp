@@ -117,8 +117,17 @@ def _iniciar_scheduler():
     _add_job(scheduler, experiencia_diaria_background, "interval", minutes=15)
     _add_job(scheduler, procesar_cola_background, "interval", seconds=5)
     _add_job(scheduler, procesar_trabajos_pesados_background, "interval", seconds=5)
-    _add_job(scheduler, sincronizar_hojas_auto_minuto_background, "interval", minutes=1)
-    _add_job(scheduler, sincronizar_hojas_graficos_background, "interval", minutes=1)
+    import os as _os
+
+    if _os.getenv("SYNC_HOJAS_AUTO_MINUTO", "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "si",
+        "sí",
+    ):
+        _add_job(scheduler, sincronizar_hojas_auto_minuto_background, "interval", minutes=1)
+        _add_job(scheduler, sincronizar_hojas_graficos_background, "interval", minutes=1)
     _add_job(scheduler, sincronizar_faq_conocimiento_background, "interval", minutes=60)
     _add_job(scheduler, sincronizar_analytics_background, "interval", minutes=30)
     _add_job(scheduler, sincronizar_heridas_background, "interval", minutes=30)

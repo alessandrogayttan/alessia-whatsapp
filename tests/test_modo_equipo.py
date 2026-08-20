@@ -32,6 +32,20 @@ def test_instrucciones_equipo_identidad():
     assert "Modo Pro" in texto
     assert "PDF" in texto
     assert "guardar_conocimiento_pacientes" in texto
+    assert "BANORTE" in texto or "formas de *pago*" in texto
+    assert "PROHIBIDO decir que no las tienes" in texto
+
+
+def test_modo_pro_responde_pagos_sin_pedirlos(db_temp, monkeypatch):
+    import storage
+    from modo_equipo import activar_sesion_equipo, procesar_mensaje_equipo
+
+    tel = "523399988877"
+    activar_sesion_equipo(tel, "Recepción")
+    out = procesar_mensaje_equipo(tel, "dame las formas de pago de Inpulso para citas online")
+    assert out
+    assert "BANORTE" in out and "CLABE" in out
+    assert "proporcion" not in out.lower()
 
 
 def test_preflight_entrada_frase_natural(monkeypatch, db_temp):

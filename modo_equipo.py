@@ -22,7 +22,7 @@ from tools import obtener_contexto_fecha_actual
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION = "equipo-2026-07-31a"
+PROMPT_VERSION = "equipo-2026-08-20-pagos"
 MARCADOR_IA = "__EQUIPO_IA__"
 
 _memoria_equipo: dict[str, object] = {}
@@ -127,6 +127,9 @@ def _es_solicitud_acceso_equipo(texto: str) -> bool:
 
 
 def _instrucciones_equipo(nombre: str) -> str:
+    from prompt_pagos import texto_formas_pago_completas
+
+    pagos = texto_formas_pago_completas()
     return f"""
 Eres *Alessia*, asistente de inteligencia artificial del equipo interno de Inpulso 43.
 Estás hablando con *{nombre}* (uso interno — NO es un paciente).
@@ -152,6 +155,14 @@ CONOCIMIENTO TÉCNICO INTERNO (para el equipo — no lo anuncies sin que pregunt
 - Modo actual: *Modo Pro* — IA completa sin restricciones de recepción.
 - Versión de instrucciones: {PROMPT_VERSION}.
 
+DATOS OFICIALES YA EN EL SISTEMA (CRÍTICO):
+- Las formas de pago de Inpulso *YA están configuradas*. Son las mismas para talleres, citas presencial y citas online.
+- Si Recepción o el equipo pregunta CLABE, Banorte, Banamex, transferencia o formas de pago:
+  RESPÓNDELAS YA con el bloque de abajo. PROHIBIDO decir que no las tienes, que te las tienen que proporcionar,
+  o que primero hay que guardarlas. YA están en el servidor.
+- Bloque oficial a pegar:
+{pagos}
+
 NATURALEZA DE ESTE MODO:
 - Capacidades completas de asistente IA avanzado: razonamiento, redacción, análisis, síntesis, lluvia de ideas,
   código, tablas, planes de trabajo, emails, guiones, etc.
@@ -175,14 +186,15 @@ TRABAJO CON INPULSO:
 - Conoces que Inpulso 43 es clínica de psicología, nutrición, medicina y talleres en Zapopan.
 - Sitio: {config.CLINICA_WEB_URL}
 - Puedes ayudar con copy, protocolos internos, ideas de talleres, organización — sin inventar datos
-  clínicos oficiales que no te hayan dado.
+  clínicos oficiales que no te hayan dado (excepto los DATOS OFICIALES YA EN EL SISTEMA de arriba).
 - Datos de pacientes: trata como confidenciales; no los reutilices fuera del contexto del pedido.
 
 ENSEÑAR A ALESSIA PARA PACIENTES (CRÍTICO):
-- Si te dan información que los *pacientes* deben saber (precios, fechas de talleres, horarios,
+- Si te dan información *nueva* que los pacientes deben saber (precios, fechas de talleres, horarios,
   políticas, cupos, promociones), SIEMPRE llama la herramienta *guardar_conocimiento_pacientes*
   con un tema corto y el contenido completo. Ejemplo: tema="taller heridas", contenido="Cuesta $2500...".
 - Habla natural: si dicen "el taller de heridas cuesta X", tú guardas y confirmas que quedó.
+- NO pidas que te den las formas de pago Banorte/Banamex: esas ya están; no las “enseñes” otra vez salvo que te pidan *actualizar* un dato concreto.
 - PDFs del equipo con info de pacientes: prioriza el auto-guardado del sistema; solo usa la herramienta
   si el auto-guardado falló o si te pegan texto (sin PDF).
 - Para ver lo guardado: *listar_conocimiento_pacientes*. Para quitar: *borrar_conocimiento_pacientes* con el ID.
@@ -390,12 +402,28 @@ def cerrar_sesion_equipo(telefono: str) -> None:
     invalidar_chat_equipo(telefono)
 
 
+def _respuesta_rapida_equipo(contenido) -> str | None:
+    """Respuestas fijas del equipo (pagos, etc.) sin pasar por Gemini."""
+    texto = (texto_desde_contenido(contenido) or "").strip()
+    if not texto:
+        return None
+    from respuesta_fiable import _respuesta_pagos
+
+    return _respuesta_pagos(texto)
+
+
 def procesar_mensaje_equipo(telefono: str, contenido):
     """Procesa mensaje con sesión de equipo activa y devuelve texto de respuesta."""
     if not sesion_equipo_activa(telefono):
         return None
 
     nombre = storage.obtener_nombre_equipo_sesion(telefono)
+
+    rapida = _respuesta_rapida_equipo(contenido)
+    if rapida:
+        entrada = texto_desde_contenido(contenido) or "[mensaje]"
+        registrar_turno_equipo(telefono, entrada, rapida)
+        return rapida
 
     if telefono not in _cerrojos_equipo:
         _cerrojos_equipo[telefono] = threading.Lock()

@@ -607,32 +607,17 @@ def _respuesta_contacto(mensaje: str) -> str | None:
 def _respuesta_pagos(mensaje: str) -> str | None:
     n = _norm(mensaje)
     if not re.search(
-        r"pago|pagar|transferencia|clabe|banorte|banamex|efectivo|tarjeta|factura",
+        r"pago|pagar|transferencia|clabe|banorte|banamex|efectivo|tarjeta|factura|"
+        r"formas de pago|datos bancarios|cuenta para pagar",
         n,
     ):
         return None
     # No interceptar si es claramente comprobante/tramite de pago en curso
     if re.search(r"comprobante|ya pague|envie el pago|confirmar pago", n):
         return None
-    banorte = config.CUENTAS_OFICIALES.get("BANORTE", {})
-    banamex = config.CUENTAS_OFICIALES.get("BANAMEX", {})
-    lineas = [
-        "Formas de *pago* en Inpulso 43 💳",
-        "",
-        "• Efectivo en recepción",
-        "• Tarjeta (débito/crédito) en recepción",
-        "• Transferencia *sin factura* — BANORTE:",
-        f"  Tarjeta {banorte.get('tarjeta', '—')} · CLABE {banorte.get('clabe', '—')} "
-        f"a nombre de {banorte.get('titular', '—')}",
-        "• Transferencia *con factura* — BANAMEX:",
-        f"  Cuenta {banamex.get('cuenta', '—')} · CLABE {banamex.get('clabe', '—')} "
-        f"a nombre de {banamex.get('titular', '—')}",
-        "",
-        "En el concepto pon tu *nombre completo*. "
-        "Las citas *en línea* se pagan completas al confirmar (a más tardar 24 h antes).",
-        "Si cancelas con menos de 24 h, aplica penalización del 50%.",
-    ]
-    return "\n".join(lineas)
+    from prompt_pagos import texto_formas_pago_completas
+
+    return texto_formas_pago_completas()
 
 
 def _respuesta_faq_clinica(mensaje: str) -> str | None:

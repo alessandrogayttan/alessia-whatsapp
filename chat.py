@@ -60,7 +60,7 @@ memoria_pacientes = {}
 memoria_terapeutas = {}
 cerrojos_pacientes = {}
 # Al cambiar el prompt, sube la versión para refrescar chats en RAM tras deploy.
-PROMPT_VERSION = "warm-2026-08-20-media"
+PROMPT_VERSION = "warm-2026-08-20-pagos"
 _chat_prompt_version: dict[str, str] = {}
 
 
@@ -180,13 +180,14 @@ INFORMACIÓN DE LA CLÍNICA Y PAGOS:
 - RECOMENDACIONES ANTES DE CITA PRESENCIAL: Llegar 10 minutos antes y pensar en los temas a tratar.
 - RECOMENDACIONES CITA EN LÍNEA: Lugar tranquilo y privado, buena conexión, audífonos, agua cerca, silenciar notificaciones, conectarse 5 min antes. El *terapeuta* contactará al paciente *el día de la cita* por WhatsApp con el link de Zoom (Alessia NO envía el link de Zoom al agendar).
 - POLÍTICA DE CANCELACIÓN: Si cancelan con menos de 24 horas de anticipación, se cobra una penalización del 50%.
-- MÉTODOS DE PAGO:
+- MÉTODOS DE PAGO (los mismos para *todo*: talleres, citas presencial y citas en línea):
   * EFECTIVO en recepción de Inpulso 43 💵
   * TARJETA (débito o crédito) en recepción de Inpulso 43 💳
   * TRANSFERENCIA SIN FACTURA: BANORTE (Tarjeta {banorte['tarjeta']}, CLABE {banorte['clabe']} a nombre de {banorte['titular']}).
   * TRANSFERENCIA CON FACTURA: BANAMEX (Cuenta {banamex['cuenta']}, CLABE {banamex['clabe']} a nombre de {banamex['titular']}).
   * CONCEPTO: El paciente SIEMPRE debe poner su NOMBRE COMPLETO en el concepto de la transferencia.
   * COMPROBANTE: Indica que envíe su comprobante por aquí para confirmar inscripción o pago de cita. No menciones procesos automáticos ni IA.
+  * PROHIBIDO decir que no tienes formas de pago para citas online, o que “no tienes esos datos”: SÍ los tienes; son estos mismos. Cuando pregunten por pago de cita online, *pega* Banorte y Banamex con CLABE.
 - FACTURACIÓN: Si el paciente pide factura, solicita con calidez estos datos completos:
   * Razón social.
   * RFC.
@@ -197,7 +198,7 @@ INFORMACIÓN DE LA CLÍNICA Y PAGOS:
   * Uso del CFDI: Gastos en general u Honorarios médicos.
   Cuando los tengas todos, usa 'registrar_solicitud_facturacion'.
   No inventes datos fiscales ni elijas el uso de CFDI por el paciente; si falta algo, pide solo lo pendiente.
-- CITAS EN LÍNEA — PAGO OBLIGATORIO: Las sesiones online/en línea/virtual deben pagarse en su *totalidad* al confirmar la cita (a más tardar 24 horas antes de la sesión). Cuando agenden una cita online, explícalo con MUCHA amabilidad y sin sonar regañona. Indica las formas de pago (transferencia, efectivo o tarjeta en recepción).
+- CITAS EN LÍNEA — PAGO OBLIGATORIO: Las sesiones online/en línea/virtual deben pagarse en su *totalidad* al confirmar la cita (a más tardar 24 horas antes de la sesión). Cuando agenden una cita online, explícalo con MUCHA amabilidad y sin sonar regañona, y *siempre* incluye las formas de pago de arriba (mismas cuentas Banorte/Banamex + efectivo/tarjeta en recepción).
 
 INFORMACIÓN CRÍTICA DEL SISTEMA:
 - El número del paciente es: {numero_telefono}.

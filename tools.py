@@ -94,17 +94,15 @@ def _texto_recomendaciones_online(especialista_texto: str) -> str:
 
 
 def _texto_pago_online() -> str:
-    banorte = config.CUENTAS_OFICIALES["BANORTE"]
-    banamex = config.CUENTAS_OFICIALES["BANAMEX"]
+    """Mismas cuentas que el resto de Inpulso (no hay formas distintas para online)."""
+    from prompt_pagos import texto_formas_pago_completas
+
     return (
-        f"\n\n💳 *Pago de tu sesión online*\n"
-        f"Para confirmar tu cita, el pago debe hacerse en su *totalidad* al confirmar "
-        f"(a más tardar 24 horas antes de la sesión) 🙏\n\n"
-        f"Puedes pagar con:\n"
-        f"• Transferencia BANORTE (CLABE {banorte['clabe']})\n"
-        f"• Transferencia BANAMEX (CLABE {banamex['clabe']})\n"
-        f"• Efectivo o tarjeta en recepción de Inpulso 43 💳\n\n"
-        f"Envía tu comprobante por aquí cuando lo tengas — con gusto te ayudamos 😊"
+        "\n\n💳 *Pago de tu sesión online*\n"
+        "Para confirmar tu cita, el pago debe hacerse en su *totalidad* al confirmar "
+        "(a más tardar 24 horas antes de la sesión) 🙏\n\n"
+        f"{texto_formas_pago_completas()}\n\n"
+        "Envía tu comprobante por aquí cuando lo tengas — con gusto te ayudamos 😊"
     )
 
 

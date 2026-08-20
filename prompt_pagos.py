@@ -13,16 +13,10 @@ def texto_cuentas_validas() -> str:
 
 
 def instruccion_comprobante_pago(*, telefono_paciente: str | None = None) -> str:
-    prefijo = "[COMPROBANTE DE PAGO"
-    if telefono_paciente:
-        prefijo += f" — teléfono paciente: {telefono_paciente}"
-    return (
-        f"{prefijo}]. "
-        "Analiza internamente: monto numérico, cuenta destino, estatus COMPLETADO. "
-        f"Cuentas válidas: {texto_cuentas_validas()}. "
-        "OBLIGATORIO: llama confirmar_pago_comprobante con el monto. "
-        "Al paciente NO le digas que hay confirmación automática por IA."
-    )
+    """Compat: delega a media_prompts (instrucciones enriquecidas)."""
+    from media_prompts import instruccion_comprobante_pago as _rich
+
+    return _rich(telefono_paciente=telefono_paciente)
 
 
 def instruccion_comprobante_web() -> str:

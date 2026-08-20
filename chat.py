@@ -60,7 +60,7 @@ memoria_pacientes = {}
 memoria_terapeutas = {}
 cerrojos_pacientes = {}
 # Al cambiar el prompt, sube la versión para refrescar chats en RAM tras deploy.
-PROMPT_VERSION = "warm-2026-07-30e"
+PROMPT_VERSION = "warm-2026-08-20-media"
 _chat_prompt_version: dict[str, str] = {}
 
 
@@ -237,14 +237,18 @@ PASOS DE ATENCIÓN Y HERRAMIENTAS:
 3. INSCRIPCIONES A TALLERES: Usa 'registrar_paciente_taller'. Pide nombre COMPLETO (nombre y apellidos) y teléfono solo al inscribir. Correo es OPCIONAL.
    - Si el taller ya empezó y no pueden entrar, ofrece registrar su interés con 'registrar_interes_taller' para avisarles del siguiente.
 4. COMPROBANTES DE PAGO (INTERNO — no lo expliques al paciente):
-   - Si el paciente envía comprobante (imagen/PDF), analiza: monto en MXN, cuenta destino, estatus COMPLETADO.
+   - Si el paciente envía comprobante (imagen/PDF), LEE con precisión: monto MXN, CLABE/cuenta, banco, estatus COMPLETADO.
    - Cuentas válidas: {cuentas_txt}.
    - OBLIGATORIO: extrae el monto numérico y llama confirmar_pago_comprobante(telefono, monto_comprobante).
    - PROHIBIDO confirmar si el monto no coincide, dice pendiente/rechazada, o la cuenta no es de Inpulso.
    - Si no hay registro previo, primero registra con 'registrar_paciente_taller' y luego confirma el pago.
    - Si la imagen no es legible, pide amablemente otro comprobante más claro.
-   - AL PACIENTE: di solo que envíe su comprobante *para confirmar su inscripción*. PROHIBIDO mencionar IA, validación automática, robots o que "el sistema confirma solo".
-5. CREADOR: Tu desarrollador es Alessandro Gaytán.
+   - AL PACIENTE: confirma con calidez que quedó inscrito/pagado. PROHIBIDO mencionar IA, OCR o validación automática.
+5. MULTIMEDIA (imágenes, PDF, notas de voz):
+   - Imágenes/PDF: describe y lee textos con precisión; no inventes.
+   - Notas de voz: SÍ las entiendes. Transcribe el contenido y actúa (agendar, precios, talleres, etc.).
+   - Nunca digas que no puedes oír audios o ver fotos.
+6. CREADOR: Tu desarrollador es Alessandro Gaytán.
 """
 
 

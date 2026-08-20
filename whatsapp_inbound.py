@@ -521,25 +521,31 @@ def preparar_contenido_mensaje(mensaje_info: dict):
 
         if file_bytes:
             caption = mensaje_info.get(tipo_clave, {}).get("caption", "")
+            from media_prompts import instruccion_media_paciente, normalizar_mime_media
             from modo_equipo import asegurar_privilegios_staff, sesion_equipo_activa
+
+            mime_type = normalizar_mime_media(mime_type, tipo_mensaje)
 
             # Sara y terapeutas: tratar archivos como trabajo (no como comprobante de paciente)
             asegurar_privilegios_staff(numero_remitente)
 
             if sesion_equipo_activa(numero_remitente):
                 from modo_equipo import _nombre_miembro
+                from media_prompts import instruccion_voz
 
                 miembro_equipo = _nombre_miembro(numero_remitente)
                 meta_doc = mensaje_info.get(tipo_clave, {}) or {}
                 filename = (meta_doc.get("filename") or "").strip()
                 if tipo_mensaje in ("audio", "voice"):
                     texto_descriptivo = (
-                        "NOTA DE VOZ del equipo Inpulso. Transcribe y responde con lo que necesiten."
+                        f"NOTA DE VOZ del equipo Inpulso ({miembro_equipo}). "
+                        + instruccion_voz()
                     )
                 else:
                     texto_descriptivo = (
                         f"Archivo de trabajo ({tipo_mensaje}) enviado por {miembro_equipo}. "
-                        "Analízalo a fondo: extrae, resume, estructura o transforma según el pedido."
+                        "Analízalo a fondo: describe con precisión, extrae textos/montos, "
+                        "resume, estructura o transforma según el pedido."
                     )
                 if caption:
                     texto_descriptivo += f" Instrucciones del equipo: {caption}"
@@ -577,26 +583,28 @@ def preparar_contenido_mensaje(mensaje_info: dict):
                     types.Part(inline_data=types.Blob(data=file_bytes, mime_type=mime_type)),
                     types.Part(text=texto_descriptivo),
                 ]
-            if tipo_mensaje in ("audio", "voice"):
-                texto_descriptivo = (
-                    "NOTA DE VOZ del paciente. Escucha/transcribe el audio y responde "
-                    "al contenido de forma natural. Si no entiendes el audio, pide "
-                    "amablemente que lo repita por texto."
-                )
-            else:
-                texto_descriptivo = f"Archivo tipo {tipo_mensaje}."
-            if caption:
-                texto_descriptivo += f" Texto adjunto: {caption}"
-            instruccion_pago = ""
-            if tipo_mensaje in ("image", "document"):
-                from prompt_pagos import instruccion_comprobante_pago
 
-                instruccion_pago = " " + instruccion_comprobante_pago(
-                    telefono_paciente=numero_remitente
-                )
+            texto_pdf = ""
+            if tipo_mensaje == "document":
+                from conocimiento import es_mime_pdf, texto_desde_pdf_bytes
+
+                meta_doc = mensaje_info.get(tipo_clave, {}) or {}
+                filename = (meta_doc.get("filename") or "").strip()
+                if es_mime_pdf(mime_type, filename):
+                    try:
+                        texto_pdf = texto_desde_pdf_bytes(file_bytes) or ""
+                    except Exception:
+                        texto_pdf = ""
+
+            texto_descriptivo = instruccion_media_paciente(
+                tipo_mensaje=tipo_mensaje,
+                caption=caption,
+                telefono=numero_remitente,
+                texto_pdf=texto_pdf,
+            )
             return [
                 types.Part(inline_data=types.Blob(data=file_bytes, mime_type=mime_type)),
-                types.Part(text=(texto_contexto + texto_descriptivo + instruccion_pago)),
+                types.Part(text=(texto_contexto + texto_descriptivo)),
             ]
         return texto_contexto + "Error al descargar archivo."
 

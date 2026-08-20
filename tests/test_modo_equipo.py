@@ -37,7 +37,6 @@ def test_instrucciones_equipo_identidad():
 
 
 def test_modo_pro_responde_pagos_sin_pedirlos(db_temp, monkeypatch):
-    import storage
     from modo_equipo import activar_sesion_equipo, procesar_mensaje_equipo
 
     tel = "523399988877"
@@ -46,6 +45,27 @@ def test_modo_pro_responde_pagos_sin_pedirlos(db_temp, monkeypatch):
     assert out
     assert "BANORTE" in out and "CLABE" in out
     assert "proporcion" not in out.lower()
+
+
+def test_modo_pro_recuerda_info_pero_deja_agregar(db_temp):
+    from modo_equipo import (
+        _es_pedido_ensenar_o_agregar,
+        _respuesta_rapida_equipo,
+        activar_sesion_equipo,
+        procesar_mensaje_equipo,
+    )
+
+    assert _es_pedido_ensenar_o_agregar("guarda que el taller cuesta 3000")
+    assert not _es_pedido_ensenar_o_agregar("¿cuánto cuesta con Sara?")
+    # Recuerdo: respuesta rápida
+    assert _respuesta_rapida_equipo("¿formas de pago?")
+    # Enseñar: no interceptar (Gemini + tool)
+    assert _respuesta_rapida_equipo("agrega: el club de lectura ahora es jueves") is None
+
+    tel = "523399988866"
+    activar_sesion_equipo(tel, "Recepción")
+    out = procesar_mensaje_equipo(tel, "¿dónde está Inpulso?")
+    assert out and ("Hidalgo" in out or "Zapopan" in out or "ubicación" in out.lower() or "dirección" in out.lower() or "Av." in out)
 
 
 def test_preflight_entrada_frase_natural(monkeypatch, db_temp):

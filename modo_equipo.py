@@ -22,7 +22,7 @@ from tools import obtener_contexto_fecha_actual
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION = "equipo-2026-08-20-pagos"
+PROMPT_VERSION = "equipo-2026-08-20-recuerda"
 MARCADOR_IA = "__EQUIPO_IA__"
 
 _memoria_equipo: dict[str, object] = {}
@@ -163,6 +163,15 @@ DATOS OFICIALES YA EN EL SISTEMA (CRÍTICO):
 - Bloque oficial a pegar:
 {pagos}
 
+RECORDAR vs AGREGAR (CRÍTICO):
+- Si preguntan información de Inpulso (precios, talleres, horarios, ubicación, equipo, pagos, políticas):
+  RESPÓNDELA YA con lo que sabes / herramientas de consulta. Nunca digas "no tengo esa info" ni pidas que te la den primero.
+- Si te *enseñan* o piden *agregar/actualizar/guardar* un dato nuevo para pacientes
+  ("agrega…", "guarda…", "actualiza el precio a…", "enséñale a Alessia…"):
+  usa *guardar_conocimiento_pacientes* y confirma qué quedó guardado.
+- Puedes usar *listar_conocimiento_pacientes*, *buscar_conocimiento_clinica*, *consultar_precios_y_servicios*
+  y *consultar_sitio_inpulso* para recordar.
+
 NATURALEZA DE ESTE MODO:
 - Capacidades completas de asistente IA avanzado: razonamiento, redacción, análisis, síntesis, lluvia de ideas,
   código, tablas, planes de trabajo, emails, guiones, etc.
@@ -229,6 +238,19 @@ def _crear_chat_equipo(telefono: str, nombre: str, modelo: str):
         sincronizar_panel_heridas,
         sincronizar_panel_analytics,
     ]
+    try:
+        from conocimiento import buscar_conocimiento_clinica
+        from tools import consultar_precios_y_servicios, consultar_sitio_inpulso
+
+        tools.extend(
+            [
+                buscar_conocimiento_clinica,
+                consultar_precios_y_servicios,
+                consultar_sitio_inpulso,
+            ]
+        )
+    except ImportError:
+        pass
     # Terapeutas (Sara, Juan, …): también agenda/catálogo de staff dentro de Modo Pro
     if config.identificar_terapeuta(telefono):
         from chat import _crear_herramientas_terapeuta
@@ -402,14 +424,54 @@ def cerrar_sesion_equipo(telefono: str) -> None:
     invalidar_chat_equipo(telefono)
 
 
-def _respuesta_rapida_equipo(contenido) -> str | None:
-    """Respuestas fijas del equipo (pagos, etc.) sin pasar por Gemini."""
-    texto = (texto_desde_contenido(contenido) or "").strip()
-    if not texto:
-        return None
-    from respuesta_fiable import _respuesta_pagos
+def _es_pedido_ensenar_o_agregar(texto: str) -> bool:
+    n = (texto or "").strip().lower()
+    return bool(
+        re.search(
+            r"\b("
+            r"agrega|agregar|guarda|guardar|actualiza|actualizar|ense[nñ]a|"
+            r"ense[nñ]ale|cambia el precio|nuevo precio|anota|registra en (la )?base|"
+            r"para que (los )?pacientes (sepan|sepan)|gu[aá]rdalo"
+            r")\b",
+            n,
+        )
+    )
 
-    return _respuesta_pagos(texto)
+
+def _respuesta_rapida_equipo(contenido) -> str | None:
+    """Recuerda info oficial al equipo; no intercepta si están enseñando/agregando."""
+    texto = (texto_desde_contenido(contenido) or "").strip()
+    if not texto or _es_pedido_ensenar_o_agregar(texto):
+        return None
+    from respuesta_fiable import intentar_respuesta_catalogo
+
+    return intentar_respuesta_catalogo(texto)
+
+
+def envolver_mensaje_equipo(telefono: str, contenido):
+    """Contexto Modo Pro + hechos oficiales si la pregunta es de recuerdo."""
+    nombre = _nombre_miembro(telefono)
+    ctx = (
+        obtener_contexto_fecha_actual()
+        + f"[Sistema: MODO PRO — {nombre}. Asistente IA completa. "
+        "Si preguntan datos de Inpulso, respóndelos; si piden agregar/actualizar, guarda.]\n"
+    )
+    texto = (texto_desde_contenido(contenido) or "").strip()
+    if texto and not _es_pedido_ensenar_o_agregar(texto):
+        from respuesta_fiable import intentar_respuesta_catalogo
+
+        hechos = intentar_respuesta_catalogo(texto)
+        if hechos:
+            ctx += (
+                "[Sistema: HECHOS OFICIALES para recordar al equipo — úsalos; "
+                "no digas que faltan ni pidas que te los den:]\n"
+                f"{hechos}\n"
+            )
+    if isinstance(contenido, str):
+        return ctx + contenido
+    if isinstance(contenido, list):
+        return [types.Part(text=ctx)] + contenido
+    return contenido
 
 
 def procesar_mensaje_equipo(telefono: str, contenido):
@@ -428,6 +490,8 @@ def procesar_mensaje_equipo(telefono: str, contenido):
     if telefono not in _cerrojos_equipo:
         _cerrojos_equipo[telefono] = threading.Lock()
 
+    contenido_env = envolver_mensaje_equipo(telefono, contenido)
+
     with _cerrojos_equipo[telefono]:
         import time
 
@@ -443,7 +507,7 @@ def procesar_mensaje_equipo(telefono: str, contenido):
             for intento in range(2):
                 try:
                     respuesta = send_message_con_timeout(
-                        chat, contenido, timeout=timeout
+                        chat, contenido_env, timeout=timeout
                     )
                     texto = (getattr(respuesta, "text", None) or "").strip()
                     if texto:

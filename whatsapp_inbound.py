@@ -232,19 +232,19 @@ def preparar_contenido_mensaje(mensaje_info: dict):
                 if estado:
                     enviar_mensaje_whatsapp(numero_remitente, estado)
                     return None
-                miembro = config.identificar_miembro_equipo(numero_remitente)
+                miembro = config.identificar_personal_inpulso(numero_remitente)
                 if miembro:
                     enviar_mensaje_whatsapp(
                         numero_remitente,
                         f"{miembro}, no tengo un sync reciente en cola. "
-                        "Entra con *MODO PRO* y vuelve a pedir el sync.",
+                        "Pídeme de nuevo *sincroniza la hoja de heridas* o *analytics*.",
                     )
                     return None
         except Exception:
             pass
 
-        # Personal Inpulso sin Modo Pro: no tratar como paciente nuevo con saludo de recepción
-        miembro = config.identificar_miembro_equipo(numero_remitente)
+        # Personal Inpulso: no tratar como paciente nuevo con saludo de recepción
+        miembro = config.identificar_personal_inpulso(numero_remitente)
         if miembro and len(texto_paciente.strip()) < 80:
             baja = texto_paciente.strip().lower()
             if baja in (
@@ -258,8 +258,7 @@ def preparar_contenido_mensaje(mensaje_info: dict):
             ) or baja.startswith("gracias"):
                 enviar_mensaje_whatsapp(
                     numero_remitente,
-                    f"De nada, {miembro} 😊\n"
-                    "Si necesitas *Modo Pro* otra vez, escribe *MODO PRO*.",
+                    f"De nada, {miembro} 😊 ¿En qué más te ayudo?",
                 )
                 return None
 
@@ -522,7 +521,10 @@ def preparar_contenido_mensaje(mensaje_info: dict):
 
         if file_bytes:
             caption = mensaje_info.get(tipo_clave, {}).get("caption", "")
-            from modo_equipo import sesion_equipo_activa
+            from modo_equipo import asegurar_privilegios_staff, sesion_equipo_activa
+
+            # Sara y terapeutas: tratar archivos como trabajo (no como comprobante de paciente)
+            asegurar_privilegios_staff(numero_remitente)
 
             if sesion_equipo_activa(numero_remitente):
                 from modo_equipo import _nombre_miembro

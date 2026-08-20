@@ -115,23 +115,25 @@ def test_preflight_alias_legacy_modo_equipo(monkeypatch, db_temp):
 
 
 def test_preflight_clave_correcta_activa_sesion(monkeypatch, db_temp):
+    """Número externo (no staff): sigue el flujo contraseña → sesión."""
     _reload_config(
         monkeypatch,
         db_temp,
         ENABLE_MODO_EQUIPO="1",
         EQUIPO_CLAVE_ACCESO="inpulso2026",
-        WHATSAPP_ALESSANDRO="5233123456789",
+        WHATSAPP_ALESSANDRO="",
         EQUIPO_SESION_HORAS="8",
     )
     from modo_equipo import MARCADOR_IA, procesar_preflight_equipo, sesion_equipo_activa
 
-    procesar_preflight_equipo("5233123456789", "MODO PRO")
-    respuesta = procesar_preflight_equipo("5233123456789", "inpulso2026")
+    tel = "529998887766"
+    procesar_preflight_equipo(tel, "MODO PRO")
+    respuesta = procesar_preflight_equipo(tel, "inpulso2026")
     assert respuesta is not None
     assert "listo" in respuesta.lower() or "activado" in respuesta.lower()
     assert "modo pro" in respuesta.lower()
-    assert sesion_equipo_activa("5233123456789")
-    assert procesar_preflight_equipo("5233123456789", "Hola") == MARCADOR_IA
+    assert sesion_equipo_activa(tel)
+    assert procesar_preflight_equipo(tel, "Hola") == MARCADOR_IA
 
 
 def test_preflight_clave_con_hash(monkeypatch, db_temp):
@@ -226,6 +228,31 @@ def test_procesar_mensaje_ia_rutea_equipo_con_sesion(monkeypatch, db_temp):
 
     chat.procesar_mensaje_ia("5233123456789", "Resume este PDF")
     assert llamadas == [("5233123456789", "Resume este PDF")]
+
+
+def test_sara_auto_modo_pro_sin_contraseña(monkeypatch, db_temp):
+    """Sara (terapeuta) entra a Modo Pro sin pedir clave."""
+    _reload_config(
+        monkeypatch,
+        db_temp,
+        ENABLE_MODO_EQUIPO="1",
+        EQUIPO_CLAVE_ACCESO="clave-test-300",
+        WHATSAPP_SARA="523310265936",
+    )
+    from modo_equipo import (
+        MARCADOR_IA,
+        _nombre_miembro,
+        asegurar_privilegios_staff,
+        procesar_preflight_equipo,
+        sesion_equipo_activa,
+    )
+
+    tel = "523310265936"
+    assert asegurar_privilegios_staff(tel) is True
+    assert sesion_equipo_activa(tel)
+    assert _nombre_miembro(tel) == "Sara Rosales"
+    assert procesar_preflight_equipo(tel, "¿tengo citas el lunes?") == MARCADOR_IA
+    assert procesar_preflight_equipo(tel, "sincroniza la hoja de heridas") == MARCADOR_IA
 
 
 def test_preparar_contenido_sin_sesion_usa_flujo_paciente(monkeypatch, db_temp):

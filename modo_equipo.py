@@ -73,9 +73,30 @@ def _cliente():
 
 def _nombre_miembro(telefono: str) -> str:
     if sesion_equipo_activa(telefono):
-        return storage.obtener_nombre_equipo_sesion(telefono)
-    conocido = config.identificar_miembro_equipo(telefono)
+        guardado = storage.obtener_nombre_equipo_sesion(telefono)
+        if guardado and guardado != "Equipo Inpulso":
+            return guardado
+    conocido = config.identificar_personal_inpulso(telefono)
     return conocido or "Equipo Inpulso"
+
+
+def asegurar_privilegios_staff(telefono: str) -> bool:
+    """
+    Terapeutas y personal Inpulso entran a Modo Pro sin contraseña.
+    Así Sara (y el resto) pueden pedir sync, archivos, agenda, etc. sin quedar a medias.
+    """
+    if not config.ENABLE_MODO_EQUIPO:
+        return False
+    if sesion_equipo_activa(telefono):
+        storage.renovar_sesion_equipo(telefono, config.EQUIPO_SESION_HORAS)
+        return True
+    nombre = config.identificar_personal_inpulso(telefono)
+    if not nombre:
+        return False
+    activar_sesion_equipo(telefono, nombre)
+    invalidar_chat_equipo(telefono)
+    logger.info("Modo Pro auto para staff %s (%s)", nombre, telefono[-4:])
+    return True
 
 
 def _es_solicitud_acceso_equipo(texto: str) -> bool:
@@ -125,8 +146,9 @@ IDENTIDAD (CRÍTICO — SIEMPRE):
 CONOCIMIENTO TÉCNICO INTERNO (para el equipo — no lo anuncies sin que pregunten):
 - Motor LLM configurado: {config.EQUIPO_GEMINI_MODEL} (descríbelo como "modelo multimodal de lenguaje avanzado",
   no digas la marca Gemini).
-- Backend: Python (Flask), API de mensajería WhatsApp, persistencia SQLite, herramientas de catálogo/citas solo
-  en modo paciente (aquí no las usas).
+- Backend: Python (Flask), API de mensajería WhatsApp, persistencia SQLite.
+- Si hablas con una terapeuta (p. ej. Sara Rosales): también puedes consultar SU agenda
+  (citas agendadas, disponibilidad, bloquear horario, inscritos a taller) con las herramientas staff.
 - Modo actual: *Modo Pro* — IA completa sin restricciones de recepción.
 - Versión de instrucciones: {PROMPT_VERSION}.
 
@@ -188,6 +210,19 @@ def _crear_chat_equipo(telefono: str, nombre: str, modelo: str):
     from heridas_sheet import sincronizar_panel_heridas
     from analytics import sincronizar_panel_analytics
 
+    tools = [
+        guardar_conocimiento_pacientes,
+        listar_conocimiento_pacientes,
+        borrar_conocimiento_pacientes,
+        sincronizar_panel_heridas,
+        sincronizar_panel_analytics,
+    ]
+    # Terapeutas (Sara, Juan, …): también agenda/catálogo de staff dentro de Modo Pro
+    if config.identificar_terapeuta(telefono):
+        from chat import _crear_herramientas_terapeuta
+
+        tools.extend(_crear_herramientas_terapeuta(telefono))
+
     conv = clave_conversacion_equipo(telefono)
     return _cliente().chats.create(
         model=modelo,
@@ -195,13 +230,7 @@ def _crear_chat_equipo(telefono: str, nombre: str, modelo: str):
         config=types.GenerateContentConfig(
             system_instruction=_instrucciones_equipo(nombre),
             temperature=config.EQUIPO_GEMINI_TEMPERATURE,
-            tools=[
-                guardar_conocimiento_pacientes,
-                listar_conocimiento_pacientes,
-                borrar_conocimiento_pacientes,
-                sincronizar_panel_heridas,
-                sincronizar_panel_analytics,
-            ],
+            tools=tools,
         ),
     )
 
@@ -278,6 +307,11 @@ def procesar_preflight_equipo(telefono: str, texto: str) -> str | None:
     if norm in _COMANDOS_SALIR:
         if sesion_equipo_activa(telefono) or storage.esperando_clave_equipo(telefono):
             cerrar_sesion_equipo(telefono)
+            if config.identificar_personal_inpulso(telefono):
+                return (
+                    "Salí de la sesión marcada, pero como eres del *equipo Inpulso* "
+                    "sigo pudiendo ayudarte con lo que pidas (agenda, sync, archivos, etc.)."
+                )
             return (
                 "Listo, salí de *Modo Pro*. Vuelvo a recepción 😊\n"
                 "Para entrar de nuevo escribe *MODO PRO*."
@@ -287,6 +321,15 @@ def procesar_preflight_equipo(telefono: str, texto: str) -> str | None:
             "No había una sesión de *Modo Pro* activa.\n"
             "Para entrar escribe *MODO PRO*."
         )
+
+    # Staff conocido (Sara, Juan, Alessandro…): acceso completo sin contraseña
+    if asegurar_privilegios_staff(telefono):
+        if norm in _COMANDOS_ENTRADA or _es_solicitud_acceso_equipo(limpio):
+            return (
+                f"Ya estás con acceso completo, {_nombre_miembro(telefono)} ✅ "
+                "¿En qué te ayudo?"
+            )
+        return MARCADOR_IA
 
     if sesion_equipo_activa(telefono):
         storage.renovar_sesion_equipo(telefono, config.EQUIPO_SESION_HORAS)

@@ -155,6 +155,12 @@ ENABLE_RECIBOS_PAGO = os.getenv("ENABLE_RECIBOS_PAGO", "1").strip().lower() in (
     "yes",
     "on",
 )
+ENABLE_IMAGEN_FORMAS_PAGO = os.getenv("ENABLE_IMAGEN_FORMAS_PAGO", "1").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
 
 
 def _normalizar_whatsapp(numero: str) -> str:

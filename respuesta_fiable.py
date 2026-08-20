@@ -397,6 +397,13 @@ def enviar_respuesta_catalogo_whatsapp(telefono: str, contenido: Any) -> str | N
     if not mensaje or _es_charla_casual(mensaje):
         return None
 
+    # Formas de pago → imagen oficial (si está habilitada)
+    if config.ENABLE_IMAGEN_FORMAS_PAGO:
+        from tarjeta_pagos import es_consulta_formas_pago, enviar_formas_pago_whatsapp
+
+        if es_consulta_formas_pago(mensaje) and enviar_formas_pago_whatsapp(telefono):
+            return "formas_pago_imagen"
+
     texto = intentar_respuesta_catalogo(contenido)
     if not texto:
         return None

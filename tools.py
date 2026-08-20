@@ -94,15 +94,13 @@ def _texto_recomendaciones_online(especialista_texto: str) -> str:
 
 
 def _texto_pago_online() -> str:
-    """Mismas cuentas que el resto de Inpulso (no hay formas distintas para online)."""
-    from prompt_pagos import texto_formas_pago_completas
-
+    """Pago online: mismas cuentas; la imagen con datos se envía aparte por WhatsApp."""
     return (
         "\n\n💳 *Pago de tu sesión online*\n"
         "Para confirmar tu cita, el pago debe hacerse en su *totalidad* al confirmar "
-        "(a más tardar 24 horas antes de la sesión) 🙏\n\n"
-        f"{texto_formas_pago_completas()}\n\n"
-        "Envía tu comprobante por aquí cuando lo tengas — con gusto te ayudamos 😊"
+        "(a más tardar 24 horas antes de la sesión) 🙏\n"
+        "Te enviamos la imagen con las *formas de pago*. "
+        "En el concepto pon tu *nombre completo* y envía tu comprobante por aquí 😊"
     )
 
 
@@ -1346,6 +1344,13 @@ def agendar_cita(
                 confirmacion_enviada = enviar_mensaje_whatsapp(
                     telefono_paciente, bloque_fallback
                 )
+            if confirmacion_enviada and es_online and config.ENABLE_IMAGEN_FORMAS_PAGO:
+                try:
+                    from tarjeta_pagos import enviar_formas_pago_whatsapp
+
+                    enviar_formas_pago_whatsapp(telefono_paciente)
+                except Exception as e:
+                    logger.warning("Imagen formas de pago (cita online): %s", e)
 
         if confirmacion_enviada:
             extra_online = (

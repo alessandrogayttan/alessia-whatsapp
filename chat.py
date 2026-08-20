@@ -476,10 +476,32 @@ def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
             cerrojos_pacientes[numero_paciente] = threading.Lock()
         enviado = False
         with cerrojos_pacientes[numero_paciente]:
-            texto = procesar_mensaje_equipo(numero_paciente, contenido_para_ia)
-            if texto:
-                enviar_mensaje_whatsapp(numero_paciente, texto)
-                enviado = True
+            # Imagen oficial si piden formas de pago
+            if config.ENABLE_IMAGEN_FORMAS_PAGO:
+                try:
+                    from respuesta_fiable import (
+                        _solo_mensaje_paciente,
+                        extraer_texto_usuario,
+                    )
+                    from tarjeta_pagos import (
+                        es_consulta_formas_pago,
+                        enviar_formas_pago_whatsapp,
+                    )
+
+                    msg_eq = _solo_mensaje_paciente(
+                        extraer_texto_usuario(contenido_para_ia)
+                    )
+                    if es_consulta_formas_pago(msg_eq) and enviar_formas_pago_whatsapp(
+                        numero_paciente
+                    ):
+                        enviado = True
+                except Exception as e:
+                    logger.debug("Imagen pagos (equipo): %s", e)
+            if not enviado:
+                texto = procesar_mensaje_equipo(numero_paciente, contenido_para_ia)
+                if texto:
+                    enviar_mensaje_whatsapp(numero_paciente, texto)
+                    enviado = True
             if not enviado:
                 for intento in range(3):
                     if enviar_mensaje_whatsapp(numero_paciente, MENSAJE_RESCATE):
@@ -493,7 +515,7 @@ def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
     enviado = False
     with cerrojos_pacientes[numero_paciente]:
         import tools as tools_ctx
-        from respuesta_fiable import asegurar_respuesta_util, enviar_respuesta_catalogo_whatsapp
+        from respuesta_fiable import asegurar_respuesta_util
 
         tools_ctx._telefono_contexto = numero_paciente
         listo = {"ok": False}
@@ -551,6 +573,36 @@ def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
                         + contenido_para_ia
                     )
 
+                # Formas de pago → imagen oficial (sin pasar por Gemini)
+                if (
+                    config.ENABLE_IMAGEN_FORMAS_PAGO
+                    and msg_user
+                    and not listo["ok"]
+                ):
+                    try:
+                        from tarjeta_pagos import (
+                            es_consulta_formas_pago,
+                            enviar_formas_pago_whatsapp,
+                        )
+
+                        if es_consulta_formas_pago(msg_user) and enviar_formas_pago_whatsapp(
+                            numero_paciente
+                        ):
+                            listo["ok"] = True
+                            enviado = True
+                            try:
+                                from conversacion import registrar_turno_whatsapp
+
+                                registrar_turno_whatsapp(
+                                    numero_paciente,
+                                    contenido_para_ia,
+                                    "[imagen formas de pago]",
+                                )
+                            except Exception as e:
+                                logger.debug("Historial WA pagos: %s", e)
+                    except Exception as e:
+                        logger.debug("Imagen formas de pago: %s", e)
+
             def _aviso_espera():
                 if listo["ok"] or not MENSAJE_ESPERA:
                     return
@@ -561,94 +613,95 @@ def procesar_mensaje_ia(numero_paciente: str, contenido_para_ia):
                 except Exception:
                     pass
 
-            espera_s = float(getattr(config, "GEMINI_AVISO_ESPERA_SEGUNDOS", 0) or 0)
-            timer = None
-            if espera_s > 0 and MENSAJE_ESPERA:
-                timer = threading.Timer(espera_s, _aviso_espera)
-                timer.daemon = True
-                timer.start()
-            try:
-                chat_alessia = obtener_chat_paciente(numero_paciente)
-                nombre_terapeuta = identificar_terapeuta(numero_paciente)
-                if nombre_terapeuta and isinstance(contenido_para_ia, str):
-                    contenido_para_ia = (
-                        f"[Sistema: MODO STAFF — Terapeuta autenticado: {nombre_terapeuta}]\n"
-                        + contenido_para_ia
-                    )
-
-                for intento in range(2):
-                    try:
-                        respuesta_ia = _gemini_send_message(
-                            chat_alessia, contenido_para_ia
+            if not listo["ok"]:
+                espera_s = float(getattr(config, "GEMINI_AVISO_ESPERA_SEGUNDOS", 0) or 0)
+                timer = None
+                if espera_s > 0 and MENSAJE_ESPERA:
+                    timer = threading.Timer(espera_s, _aviso_espera)
+                    timer.daemon = True
+                    timer.start()
+                try:
+                    chat_alessia = obtener_chat_paciente(numero_paciente)
+                    nombre_terapeuta = identificar_terapeuta(numero_paciente)
+                    if nombre_terapeuta and isinstance(contenido_para_ia, str):
+                        contenido_para_ia = (
+                            f"[Sistema: MODO STAFF — Terapeuta autenticado: {nombre_terapeuta}]\n"
+                            + contenido_para_ia
                         )
-                        texto = (getattr(respuesta_ia, "text", None) or "").strip()
-                        if texto:
 
-                            def _regen(msg):
-                                r = _gemini_send_message(chat_alessia, msg)
-                                return (getattr(r, "text", None) or "").strip()
-
-                            texto = asegurar_respuesta_util(
-                                contenido_para_ia, texto, regenerar=_regen
+                    for intento in range(2):
+                        try:
+                            respuesta_ia = _gemini_send_message(
+                                chat_alessia, contenido_para_ia
                             )
-                            if not texto:
-                                continue
-                            # Nunca reenviar la ficha del taller en saludos/charla
-                            bajo_t = texto.lower()
-                            if (
-                                "sanando tus heridas" in bajo_t
-                                or "elige abajo" in bajo_t
-                            ) and _es_charla_casual(msg_user or ""):
-                                texto = (
-                                    "¡Hola! Qué gusto saludarte 😊 "
-                                    "¿En qué te puedo ayudar hoy?"
-                                )
-                            listo["ok"] = True
-                            if timer:
-                                timer.cancel()
-                            enviar_mensaje_whatsapp(numero_paciente, texto)
-                            try:
-                                from conversacion import registrar_turno_whatsapp
+                            texto = (getattr(respuesta_ia, "text", None) or "").strip()
+                            if texto:
 
-                                registrar_turno_whatsapp(
-                                    numero_paciente, contenido_para_ia, texto
+                                def _regen(msg):
+                                    r = _gemini_send_message(chat_alessia, msg)
+                                    return (getattr(r, "text", None) or "").strip()
+
+                                texto = asegurar_respuesta_util(
+                                    contenido_para_ia, texto, regenerar=_regen
                                 )
-                            except Exception as e:
-                                logger.debug("Historial WA no guardado: %s", e)
-                            enviado = True
-                            break
-                        logger.warning(
-                            "Gemini respuesta vacía para %s (intento %s)",
-                            numero_paciente,
-                            intento + 1,
-                        )
-                    except FuturesTimeout:
-                        logger.error(
-                            "Timeout Gemini para %s (intento %s)",
-                            numero_paciente,
-                            intento + 1,
-                        )
-                        registrar_fallo_gemini(numero_paciente)
-                        if intento == 0:
-                            time.sleep(1)
-                            continue
-                    except Exception as e:
-                        logger.exception(
-                            "Error Gemini para %s (intento %s): %s",
-                            numero_paciente,
-                            intento + 1,
-                            e,
-                        )
-                        registrar_fallo_gemini(numero_paciente)
-                        if intento == 0:
-                            time.sleep(1)
-                            continue
-            finally:
-                if timer:
-                    try:
-                        timer.cancel()
-                    except Exception:
-                        pass
+                                if not texto:
+                                    continue
+                                # Nunca reenviar la ficha del taller en saludos/charla
+                                bajo_t = texto.lower()
+                                if (
+                                    "sanando tus heridas" in bajo_t
+                                    or "elige abajo" in bajo_t
+                                ) and _es_charla_casual(msg_user or ""):
+                                    texto = (
+                                        "¡Hola! Qué gusto saludarte 😊 "
+                                        "¿En qué te puedo ayudar hoy?"
+                                    )
+                                listo["ok"] = True
+                                if timer:
+                                    timer.cancel()
+                                enviar_mensaje_whatsapp(numero_paciente, texto)
+                                try:
+                                    from conversacion import registrar_turno_whatsapp
+
+                                    registrar_turno_whatsapp(
+                                        numero_paciente, contenido_para_ia, texto
+                                    )
+                                except Exception as e:
+                                    logger.debug("Historial WA no guardado: %s", e)
+                                enviado = True
+                                break
+                            logger.warning(
+                                "Gemini respuesta vacía para %s (intento %s)",
+                                numero_paciente,
+                                intento + 1,
+                            )
+                        except FuturesTimeout:
+                            logger.error(
+                                "Timeout Gemini para %s (intento %s)",
+                                numero_paciente,
+                                intento + 1,
+                            )
+                            registrar_fallo_gemini(numero_paciente)
+                            if intento == 0:
+                                time.sleep(1)
+                                continue
+                        except Exception as e:
+                            logger.exception(
+                                "Error Gemini para %s (intento %s): %s",
+                                numero_paciente,
+                                intento + 1,
+                                e,
+                            )
+                            registrar_fallo_gemini(numero_paciente)
+                            if intento == 0:
+                                time.sleep(1)
+                                continue
+                finally:
+                    if timer:
+                        try:
+                            timer.cancel()
+                        except Exception:
+                            pass
         finally:
             tools_ctx._telefono_contexto = None
 

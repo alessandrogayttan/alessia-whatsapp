@@ -195,9 +195,7 @@ def test_formatear_confirmacion_cita_online_incluye_pago():
     )
     assert "en línea" in bloque.lower() or "en línea" in bloque
     assert "totalidad" in bloque.lower()
-    assert "BANORTE" in bloque
-    assert "BANAMEX" in bloque
-    assert "CLABE" in bloque
+    assert "formas de pago" in bloque.lower()
     assert "zoom" in bloque.lower()
     assert "día de tu cita" in bloque.lower()
 
@@ -211,6 +209,17 @@ def test_formas_pago_cita_online_misma_cuenta():
     assert "BANORTE" in txt and "CLABE" in txt
     out = intentar_respuesta_catalogo("¿cuáles son las formas de pago para citas online?")
     assert out and "BANORTE" in out and "CLABE" in out
+
+
+def test_imagen_formas_pago_existe_y_detecta_consulta():
+    from tarjeta_pagos import bytes_formas_pago, es_consulta_formas_pago
+
+    png = bytes_formas_pago()
+    assert png and png[:8] == b"\x89PNG\r\n\x1a\n"
+    assert es_consulta_formas_pago("¿me pasas la CLABE de Banorte?")
+    assert es_consulta_formas_pago("formas de pago para cita online")
+    assert not es_consulta_formas_pago("ya pagué, te envío el comprobante")
+    assert not es_consulta_formas_pago("hola buenos días")
 
 
 def test_normalizar_modalidad_presencial_y_online():
